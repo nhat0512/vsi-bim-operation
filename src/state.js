@@ -73,32 +73,26 @@ if (state.theme === 'dark') {
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx7XiBpWK5409sDFQGFsJCtQHv3WHWGe8U4sfOQjZNqjQMmW3PTX9Csy431W3sQwm8y/exec";
 
 let syncTimeout = null;
-function syncToGoogleSheets() {
+function syncToFirestore() {
+  if (!db) return;
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     try {
-      const payload = {
-        action: "syncData",
-        collections: {
-          Projects: state.projects || [],
-          Personnel: state.personnel || [],
-          SoftwareAssets: state.softwareAssets || [],
-          HardwareAssets: state.hardwareAssets || [],
-          ActivityLog: state.activityLog || [],
-          Timesheets: state.timesheets || []
-        }
+      const dataToSave = {
+        projects: state.projects || [],
+        personnel: state.personnel || [],
+        softwareAssets: state.softwareAssets || [],
+        hardwareAssets: state.hardwareAssets || [],
+        activityLog: state.activityLog || [],
+        timesheets: state.timesheets || [],
+        lastUpdated: new Date().toISOString()
       };
-      
-      const response = await fetch(GAS_URL, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      const result = await response.text();
-      console.log("✅ Đồng bộ Google Sheets:", result);
+      await setDoc(doc(db, "app_data", "main"), dataToSave);
+      console.log("✅ Đồng bộ Firestore thành công");
     } catch (e) {
-      console.error("❌ Lỗi đồng bộ Google Sheets:", e);
+      console.error("❌ Lỗi đồng bộ Firestore:", e);
     }
-  }, 3000);
+  }, 1000);
 }
 
 
@@ -307,9 +301,9 @@ export function setState(key, value, fromCloud = false) {
      } catch(e) {}
   }
   
-  // Sync to Google Sheets if the change originated from the UI
+  // Sync to Firestore if the change originated from the UI
   if (!fromCloud && ['projects', 'personnel', 'softwareAssets', 'hardwareAssets', 'activityLog', 'timesheets'].includes(key)) {
-    syncToGoogleSheets();
+    syncToFirestore();
   }
 
   listeners.forEach(fn => fn(key, value, { ...state }));
@@ -600,57 +594,44 @@ export async function loadInitialData() {
       import('./data/quality.js')
     ]);
 
-    // Fetch from Google Sheets
-    console.log("⏳ Đang tải dữ liệu từ Google Sheets...");
-    try {
-      const res = await fetch(GAS_URL);
-      const data = await res.json();
-      
-      const parseJsonFields = (arr) => {
-        return arr.map(item => {
-          const obj = { ...item };
-          for (const key in obj) {
-            if (typeof obj[key] === 'string' && (obj[key].startsWith('[') || obj[key].startsWith('{'))) {
-              try { obj[key] = JSON.parse(obj[key]); } catch (e) {}
-            }
-          }
-          return obj;
-        });
-      };
-
-      if (data.Projects && data.Projects.length > 0) {
-        setState('projects', parseJsonFields(data.Projects), true);
-      } else {
-        setState('projects', projectsMod.projectItems);
-        syncToGoogleSheets(); // Seed data to Google Sheets
-      }
-      
-      setState('personnel', data.Personnel ? parseJsonFields(data.Personnel) : []);
-      setState('softwareAssets', (data.SoftwareAssets && data.SoftwareAssets.length > 0) ? parseJsonFields(data.SoftwareAssets) : resourcesMod.softwareAssets);
-      setState('hardwareAssets', (data.HardwareAssets && data.HardwareAssets.length > 0) ? parseJsonFields(data.HardwareAssets) : resourcesMod.hardwareAssets);
-      setState('activityLog', (data.ActivityLog && data.ActivityLog.length > 0) ? parseJsonFields(data.ActivityLog) : resourcesMod.activityLog);
-      setState('timesheets', data.Timesheets ? parseJsonFields(data.Timesheets) : []);
-
-      console.log('✅ Dữ liệu Google Sheets tải thành công');
-    } catch (e) {
-      console.error("❌ Lỗi lấy dữ liệu từ Google Sheets, dùng dữ liệu mẫu", e);
-      setState('projects', projectsMod.projectItems);
-      setState('personnel', []);
-      setState('softwareAssets', resourcesMod.softwareAssets);
-      setState('hardwareAssets', resourcesMod.hardwareAssets);
-      setState('activityLog', resourcesMod.activityLog);
-      setState('timesheets', []);
-    }
+    const defaultProjects = projectsMod.projectItems;
     
-    // Non-firestore data for now (Quality)
+    if (db) {
+      console.log("⏳ Đang kết nối Real-time với Firestore...");
+      onSnapshot(doc(db, "app_data", "main"), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setState('projects', data.projects || [], true);
+          setState('personnel', data.personnel || [], true);
+          setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
+          setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
+          setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
+          setState('timesheets', data.timesheets || [], true);
+          console.log("🔄 Dữ liệu Firestore đã cập nhật real-time");
+          
+          if (typeof window !== 'undefined' && (location.hash === '' || location.hash.startsWith('#dashboard'))) {
+            window.dispatchEvent(new Event('hashchange'));
+          }
+        } else {
+          // Khởi tạo lần đầu
+          setState('projects', defaultProjects, true);
+          setState('personnel', [], true);
+          setState('softwareAssets', resourcesMod.softwareAssets, true);
+          setState('hardwareAssets', resourcesMod.hardwareAssets, true);
+          setState('activityLog', resourcesMod.activityLog, true);
+          setState('timesheets', [], true);
+          syncToFirestore(); // seed
+        }
+      }, (error) => {
+         console.error("Lỗi onSnapshot:", error);
+      });
+    } else {
+      setState('projects', defaultProjects, true);
+    }
+
     setState('qualityData', qualityMod.qualityData);
-
-    // Initialize history stack with the initial load
     pushToHistory(getState().projects);
-
-    // Initial check for overdue items
     checkOverdueItems();
-
     console.log('✅ BIM PM data loaded successfully');
   } catch (e) {
     console.error('❌ Error loading data:', e);

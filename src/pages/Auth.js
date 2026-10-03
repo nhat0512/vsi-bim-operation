@@ -152,8 +152,10 @@ export function init() {
 
     const res = await registerUser(name, email, pass);
     if (res.success) {
-      window.location.hash = '';
-      window.location.reload();
+      setTimeout(() => {
+        window.location.hash = '';
+        window.location.reload();
+      }, 1500);
     } else {
       errBox.textContent = res.message;
       errBox.style.display = 'block';

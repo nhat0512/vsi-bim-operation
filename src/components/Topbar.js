@@ -28,11 +28,6 @@ export function renderTopbar() {
       <input type="text" placeholder="Tìm kiếm dự án, nhân sự..." id="search-input" />
     </div>
     <div class="topbar-actions" style="display: flex; align-items: center; gap: 8px;">
-      <!-- Sync to Cloud button (BIM Manager only) -->
-      ${getState().currentUserRole === 'BIM Manager' ? `
-      <button id="btn-sync-cloud" title="Đồng bộ toàn bộ dữ liệu local lên Firestore" style="display:flex; align-items:center; gap:4px; background: linear-gradient(135deg,#1565c0,#0d47a1); color:white; border:none; border-radius:6px; padding:5px 10px; font-size:0.75rem; cursor:pointer; font-weight:bold;">
-        ☁️ Đồng bộ Cloud
-      </button>` : ''}
       <!-- User Profile & Logout -->
       <div class="topbar-role-selector" style="display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: 1px solid var(--border-color);">
         <div style="width: 24px; height: 24px; background: var(--accent-primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">
@@ -168,45 +163,5 @@ export function initTopbar() {
     });
   }
 
-  // Sync to Cloud Button
-  const btnSync = document.getElementById('btn-sync-cloud');
-  if (btnSync) {
-    btnSync.addEventListener('click', async () => {
-      const { db } = await import('../state.js');
-      if (!db) {
-        alert('Chưa kết nối Firebase!');
-        return;
-      }
-      
-      btnSync.textContent = '⏳ Đang đồng bộ...';
-      btnSync.disabled = true;
-
-      try {
-        const { setDoc, doc } = await import('https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js');
-        const s = getState();
-        
-        await Promise.all([
-          setDoc(doc(db, 'appState', 'projects'),      { items: s.projects || [] }),
-          setDoc(doc(db, 'appState', 'personnel'),     { items: s.personnel || [] }),
-          setDoc(doc(db, 'appState', 'softwareAssets'),{ items: s.softwareAssets || [] }),
-          setDoc(doc(db, 'appState', 'hardwareAssets'),{ items: s.hardwareAssets || [] }),
-          setDoc(doc(db, 'appState', 'activityLog'),   { items: s.activityLog || [] }),
-          setDoc(doc(db, 'appState', 'timesheets'),    { items: s.timesheets || [] }),
-          setDoc(doc(db, 'appState', 'status'),        { seeded: true, timestamp: Date.now() })
-        ]);
-
-        btnSync.textContent = '✅ Đã đồng bộ!';
-        btnSync.style.background = 'linear-gradient(135deg,#2e7d32,#1b5e20)';
-        setTimeout(() => {
-          btnSync.textContent = '☁️ Đồng bộ Cloud';
-          btnSync.style.background = 'linear-gradient(135deg,#1565c0,#0d47a1)';
-          btnSync.disabled = false;
-        }, 3000);
-      } catch (err) {
-        console.error('Sync error:', err);
-        btnSync.textContent = '❌ Lỗi: ' + err.message;
-        btnSync.disabled = false;
-      }
-    });
-  }
+  // removed manual sync button logic
 }

@@ -566,7 +566,7 @@ export function init() {
         progress: parseInt(taskProgresses[idx].value) || 0,
         dueDate: taskDues[idx].value,
         status: parseInt(taskProgresses[idx].value) === 100 ? 'completed' : 'active',
-        segmentIdx: segVal >= 0 ? segVal : undefined
+        segmentIdx: segVal >= 0 ? segVal : null
       });
     });
     updates.tasks = newTasks;

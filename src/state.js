@@ -647,6 +647,16 @@ export async function loadInitialData() {
         // ------------------------------------------------------
       }, (error) => {
          console.error("Lỗi onSnapshot:", error);
+         if (error.code === 'permission-denied') {
+            alert("LỖI BẢO MẬT FIREBASE: Bạn chưa thiết lập Rules cho phép đọc/ghi dữ liệu!\nVui lòng vào tab Rules trên Firebase Console và đổi thành 'allow read, write: if request.auth != null;'");
+         }
+         // Fallback load data locally so UI doesn't stay empty
+         setState('projects', defaultProjects, true);
+         setState('personnel', [], true);
+         setState('softwareAssets', resourcesMod.softwareAssets, true);
+         setState('hardwareAssets', resourcesMod.hardwareAssets, true);
+         setState('activityLog', resourcesMod.activityLog, true);
+         setState('timesheets', [], true);
       });
     } else {
       setState('projects', defaultProjects, true);

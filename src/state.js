@@ -609,7 +609,7 @@ export async function loadInitialData() {
           setState('timesheets', data.timesheets || [], true);
           console.log("🔄 Dữ liệu Firestore đã cập nhật real-time");
           
-          if (typeof window !== 'undefined' && (location.hash === '' || location.hash.startsWith('#dashboard'))) {
+          if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('hashchange'));
           }
         } else {

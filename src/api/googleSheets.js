@@ -1,5 +1,5 @@
 // Endpoint URL từ Google Apps Script (Thêm URL của bạn vào đây sau khi Deploy)
-export const GAS_URL = 'YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL';
+export const GAS_URL = 'https://script.google.com/macros/s/AKfycbx7XiBpWK5409sDFQGFsJCtQHv3WHWGe8U4sfOQjZNqjQMmW3PTX9Csy431W3sQwm8y/exec';
 
 /**
  * Lấy toàn bộ dữ liệu từ Google Sheets (Contents, Projects, Team)

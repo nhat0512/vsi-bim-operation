@@ -1,0 +1,15 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "dist/**",
+      "package.json",
+      "package-lock.json",
+      "h_th_ng_bim_infraflow_b_n_ho_n_ch_nh.html"
+    ]
+  }
+}
+

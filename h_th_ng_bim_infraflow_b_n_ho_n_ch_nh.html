@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BIM-InfraFlow: Quản lý Dự án & Nguồn lực</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; color: #1f2937; overflow-x: hidden; }
+        .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border: 1px solid rgba(229, 231, 235, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar { height: 6px; width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        /* CẤU HÌNH GIAO DIỆN TỐI (DARK MODE) */
+        html.dark body { background-color: #0f172a; color: #f8fafc; }
+        html.dark .bg-white { background-color: #1e293b !important; border-color: #334155 !important; }
+        html.dark .bg-gray-50, html.dark .bg-slate-50, html.dark .bg-slate-100 { background-color: #0f172a !important; border-color: #334155 !important; color: #cbd5e1 !important; }
+        html.dark .text-gray-800, html.dark .text-gray-900 { color: #f8fafc !important; }
+        html.dark .text-gray-700, html.dark .text-gray-600, html.dark .text-gray-500 { color: #94a3b8 !important; }
+        html.dark .border-gray-200, html.dark .border-gray-100, html.dark .border-gray-300 { border-color: #334155 !important; }
+        html.dark input, html.dark select { background-color: #0f172a !important; color: #f8fafc !important; border-color: #334155 !important; }
+        html.dark .hover\:bg-gray-50:hover { background-color: #334155 !important; }
+        html.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.15) !important; color: #93c5fd !important; border-color: rgba(59, 130, 246, 0.3) !important; }
+        html.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.15) !important; color: #fdba74 !important; border-color: rgba(249, 115, 22, 0.3) !important; }
+        html.dark header { background-color: #1e293b !important; border-bottom-color: #334155 !important; }
+        html.dark #main-app { background-color: #0f172a !important; }
+        html.dark .shadow-sm { box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.5); }
+        
+        @media (max-width: 768px) {
+            #sidebar { transform: translateX(-100%); transition: transform 0.3s ease; position: fixed; z-index: 50; height: 100vh; }
+            #sidebar.open { transform: translateX(0); }
+            #mobile-overlay { display: none; }
+            #mobile-overlay.open { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 40; }
+        }
+    </style>
+</head>
+<body>
+    <!-- MÀN HÌNH ĐĂNG NHẬP -->
+    <div id="login-screen" class="fixed inset-0 bg-slate-900 flex flex-col items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md mx-4">
+            <div class="text-center mb-8">
+                <div class="w-16 h-16 bg-blue-600 rounded-xl mx-auto flex items-center justify-center shadow-lg mb-4">
+                    <i class="fa-solid fa-cloud text-white text-3xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">BIM-InfraFlow</h1>
+                <p class="text-gray-500 text-sm mt-1">Hệ thống Quản lý Dự án & Nguồn lực Hạ tầng</p>
+                <div class="mt-2 text-[10px] font-bold px-2 py-1 rounded bg-green-100 text-green-700 animate-pulse inline-block">
+                    <i class="fa-solid fa-wifi mr-1"></i> Firebase Cloud Ready
+                </div>
+            </div>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email nội bộ</label>
+                    <input type="email" id="login-email" class="w-full bg-gray-50 border border-gray-300 text-gray-900 rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 outline-none font-medium" placeholder="VD: admin@bim.com" value="admin@bim.com" onkeydown="if(event.key==='Enter') window.handleLogin()">
+                </div>
+                <button onclick="window.handleLogin()" class="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-bold rounded-lg text-sm px-5 py-3 text-center transition shadow-md">
+                    <i class="fa-solid fa-right-to-bracket mr-2"></i> Đăng nhập hệ thống
+                </button>
+            </div>
+
+            <div class="mt-6 pt-6 border-t border-gray-100">
+                <p class="text-xs text-gray-400 mb-3 text-center">Tài khoản Demo (Click để điền nhanh):</p>
+                <div class="flex flex-wrap gap-2 justify-center">
+                    <button onclick="document.getElementById('login-email').value='admin@bim.com'; window.handleLogin();" class="text-[11px] bg-slate-100 px-2 py-1.5 rounded border hover:bg-slate-200 font-medium cursor-pointer">admin@bim.com (Giám đốc)</button>
+                    <button onclick="document.getElementById('login-email').value='pm1@bim.com'; window.handleLogin();" class="text-[11px] bg-slate-100 px-2 py-1.5 rounded border hover:bg-slate-200 font-medium cursor-pointer">pm1@bim.com (PM Bắc Nam)</button>
+                    <button onclick="document.getElementById('login-email').value='modeler.a@bim.com'; window.handleLogin();" class="text-[11px] bg-slate-100 px-2 py-1.5 rounded border hover:bg-slate-200 font-medium cursor-pointer">modeler.a@bim.com (NV A)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MÀN HÌNH CHÍNH -->
+    <div id="main-app" class="hidden h-screen flex flex-col md:flex-row overflow-hidden bg-gray-50">
+        <div id="mobile-overlay" onclick="window.toggleSidebar()" class="hidden"></div>
+        
+        <!-- SIDEBAR -->
+        <aside id="sidebar" class="w-64 bg-slate-900 text-white flex flex-col shadow-xl shrink-0">
+            <div class="p-5 flex items-center gap-3 border-b border-slate-700">
+                <div class="w-8 h-8 bg-blue-500 rounded flex items-center justify-center font-bold shadow-lg">IF</div>
+                <h2 class="text-lg font-bold tracking-wide">InfraFlow</h2>
+            </div>
+            
+            <nav class="flex-1 p-4 space-y-2" id="main-nav">
+                <button id="nav-dashboard" onclick="window.switchTab('dashboard')" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
+                    <i class="fa-solid fa-chart-pie w-5 text-center"></i> <span class="font-medium">Tổng quan</span>
+                </button>
+                <button id="nav-wbs" onclick="window.switchTab('wbs')" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-800 text-white transition">
+                    <i class="fa-solid fa-network-wired w-5 text-center"></i> <span class="font-medium">Quản lý Dự án (WBS)</span>
+                </button>
+                <button id="nav-resources" onclick="window.switchTab('resources')" class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition">
+                    <i class="fa-solid fa-users w-5 text-center"></i> <span class="font-medium">Nguồn lực</span>
+                </button>
+            </nav>
+            
+            <div class="p-4 border-t border-slate-700">
+                <button onclick="window.exportToCSV()" id="btn-export-csv" class="w-full flex items-center justify-center gap-2 px-4 py-2 mb-3 rounded bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500 hover:text-white transition text-sm font-bold hidden">
+                    <i class="fa-solid fa-file-csv"></i> Xuất Google Sheets
+                </button>
+                <div class="flex items-center gap-3 mb-4 bg-slate-800 p-3 rounded-lg border border-slate-600">
+                    <div class="w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center font-bold text-white shadow-inner" id="user-avatar-text">A</div>
+                    <div class="overflow-hidden">
+                        <p class="text-sm font-bold truncate text-white" id="user-name">Đang tải...</p>
+                        <p class="text-[10px] text-blue-300 uppercase tracking-wider font-bold" id="user-role">Role</p>
+                    </div>
+                </div>
+                <button onclick="window.handleLogout()" class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded border border-rose-500/50 text-rose-300 hover:bg-rose-500 hover:text-white transition text-sm font-bold">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i> Đăng xuất
+                </button>
+            </div>
+        </aside>
+
+        <!-- MAIN CONTENT -->
+        <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <!-- HEADER -->
+            <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6 shrink-0 shadow-sm z-10">
+                <div class="flex items-center gap-4">
+                    <button onclick="window.toggleSidebar()" class="md:hidden text-gray-500 hover:text-gray-700 text-xl"><i class="fa-solid fa-bars"></i></button>
+                    <h1 class="text-xl font-bold text-gray-800 hidden sm:block" id="header-title">Quản lý Dự án</h1>
+                </div>
+                
+                <div id="wbs-controls" class="flex items-center gap-3">
+                    <button onclick="window.toggleTheme()" class="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 border border-gray-200 transition shadow-inner text-gray-600 hover:bg-gray-200" title="Đổi giao diện Sáng/Tối" id="btn-theme-toggle">
+                        <i class="fa-solid fa-moon" id="icon-theme-dark"></i>
+                        <i class="fa-solid fa-sun hidden" id="icon-theme-light" style="color: #fbbf24;"></i>
+                    </button>
+                    <div class="flex items-center bg-gray-100 rounded-lg p-1 shadow-inner border border-gray-200" id="week-controls-group">
+                        <button onclick="window.changeWeek(-1)" class="w-8 h-8 flex items-center justify-center rounded text-gray-600 hover:bg-white hover:shadow transition"><i class="fa-solid fa-chevron-left"></i></button>
+                        <div class="px-3 font-bold text-sm text-gray-700 flex items-center gap-2 cursor-pointer" id="current-week-display">Đang tải...</div>
+                        <button onclick="window.changeWeek(1)" class="w-8 h-8 flex items-center justify-center rounded text-gray-600 hover:bg-white hover:shadow transition"><i class="fa-solid fa-chevron-right"></i></button>
+                        <button onclick="window.resetWeek()" class="ml-1 px-2 py-1 text-[11px] bg-blue-100 text-blue-700 font-bold hover:bg-blue-200 rounded border border-blue-200 uppercase tracking-wider shadow-sm">Hiện tại</button>
+                    </div>
+                    
+                    <div class="flex bg-gray-100 rounded-lg p-1 shadow-inner border border-gray-200" id="mode-toggle-group">
+                        <button id="btn-mode-planned" onclick="window.toggleMode(false)" class="px-4 py-1.5 rounded-md text-sm font-bold transition shadow-sm bg-blue-600 text-white">Kế hoạch</button>
+                        <button id="btn-mode-actual" onclick="window.toggleMode(true)" class="px-4 py-1.5 rounded-md text-sm font-bold transition text-gray-500 hover:text-gray-700">Thực tế</button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- TABS -->
+            <div class="flex-1 overflow-auto custom-scrollbar relative bg-slate-50 p-4 lg:p-6">
+                
+                <!-- TAB DASHBOARD -->
+                <div id="tab-dashboard" class="hidden max-w-7xl mx-auto space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 text-xl"><i class="fa-solid fa-road"></i></div>
+                            <div><p class="text-sm text-gray-500 font-medium">Dự án Đang chạy</p><p class="text-2xl font-bold text-gray-800" id="stat-projects">0</p></div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl"><i class="fa-solid fa-list-check"></i></div>
+                            <div><p class="text-sm text-gray-500 font-medium">Hạng mục WBS</p><p class="text-2xl font-bold text-gray-800" id="stat-tasks">0</p></div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center text-amber-600 text-xl"><i class="fa-solid fa-users-gear"></i></div>
+                            <div><p class="text-sm text-gray-500 font-medium">Nhân sự</p><p class="text-2xl font-bold text-gray-800" id="stat-resources">0</p></div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4">
+                            <div class="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-600 text-xl"><i class="fa-solid fa-fire"></i></div>
+                            <div><p class="text-sm text-gray-500 font-medium">Overload (>40h)</p><p class="text-2xl font-bold text-gray-800" id="stat-overload">0</p></div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-chart-line text-blue-500"></i> Tiến độ Tiêu hao Giờ công</h3>
+                            <div class="h-64"><canvas id="sCurveChart"></canvas></div>
+                        </div>
+                        <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-battery-half text-amber-500"></i> Heatmap Nguồn lực (Tuần này)</h3>
+                            <div class="h-64"><canvas id="workloadChart"></canvas></div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                        <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2"><i class="fa-solid fa-bolt text-yellow-500"></i> Năng suất Hàng ngày (KH vs TT)</h3>
+                        <div class="h-64"><canvas id="dailyProductivityChart"></canvas></div>
+                    </div>
+                </div>
+
+                <!-- TAB WBS -->
+                <div id="tab-wbs" class="max-w-[1600px] mx-auto">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                        <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+                            <div class="flex items-center gap-4">
+                                <select id="filter-phase" onchange="window.renderApp()" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 shadow-sm font-medium outline-none cursor-pointer">
+                                    <option value="all">Tất cả Giai đoạn</option>
+                                    <option value="Concept">Thiết kế Cơ sở (Concept)</option>
+                                    <option value="TKCS">Thiết kế Kỹ thuật (TKCS)</option>
+                                    <option value="BVTC">Bản vẽ Thi công (BVTC)</option>
+                                </select>
+                                <button onclick="window.openAddProjectModal()" id="btn-add-project" class="text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-2 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition hidden">
+                                    <i class="fa-solid fa-folder-plus mr-1"></i> Thêm Dự án mới
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="overflow-x-auto custom-scrollbar flex-1 pb-32">
+                            <table class="w-full text-left border-collapse min-w-[1200px]">
+                                <thead>
+                                    <tr class="bg-slate-100 border-b border-gray-200 text-gray-600 text-xs uppercase tracking-wider" id="wbs-thead-tr">
+                                        <!-- Rendered by JS -->
+                                    </tr>
+                                </thead>
+                                <tbody id="wbs-tbody" class="text-sm divide-y divide-gray-100">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB RESOURCES -->
+                <div id="tab-resources" class="hidden max-w-5xl mx-auto space-y-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div class="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                            <h2 class="font-bold text-gray-800 flex items-center gap-2"><i class="fa-solid fa-users text-blue-600"></i> Ma trận Kỹ năng & Tải trọng</h2>
+                            <div class="flex items-center gap-3">
+                                <select id="filter-forecast" onchange="window.renderApp()" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-lg outline-none cursor-pointer p-2 shadow-sm">
+                                    <option value="current">Hiệu suất Hiện tại</option>
+                                    <option value="future">Dự báo 3 tháng tới</option>
+                                </select>
+                                <button onclick="window.openAddResourceModal()" id="btn-add-resource" class="text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-2 rounded-lg font-bold shadow-sm hover:bg-emerald-100 transition hidden">
+                                    <i class="fa-solid fa-user-plus mr-1"></i> Thêm Nhân sự
+                                </button>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-slate-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wider">
+                                    <tr>
+                                        <th class="p-4 font-semibold w-1/4">Nhân sự</th>
+                                        <th class="p-4 font-semibold">Chức danh</th>
+                                        <th class="p-4 font-semibold">Kỹ năng</th>
+                                        <th class="p-4 font-semibold w-1/4">Tải trọng</th>
+                                        <th class="p-4 font-semibold w-24 text-center" id="col-action-res">Thao tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="resources-tbody" class="text-sm">
+                                    <!-- Rendered by JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- MODAL: ADD PROJECT -->
+    <div id="modal-addProject" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-indigo-600 p-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-folder-plus mr-2"></i>Thêm Dự án mới</h3>
+                <button onclick="document.getElementById('modal-addProject').classList.add('hidden')" class="text-indigo-200 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tên Dự án</label>
+                    <input type="text" id="new-project-name" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Nhập tên dự án..." onkeydown="if(event.key==='Enter') window.addProject()">
+                </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t">
+                <button onclick="document.getElementById('modal-addProject').classList.add('hidden')" class="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Hủy</button>
+                <button onclick="window.addProject()" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium shadow-sm hover:bg-indigo-700">Tạo Dự án</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD TASK -->
+    <div id="modal-addTask" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-blue-600 p-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-layer-group mr-2"></i>Thêm Hạng mục mới</h3>
+                <button onclick="document.getElementById('modal-addTask').classList.add('hidden')" class="text-blue-200 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="newTaskProject">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Tên Hạng mục</label>
+                    <input type="text" id="newTaskName" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500" placeholder="VD: Cầu vượt Km12">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Giai đoạn</label>
+                        <select id="newTaskPhase" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="Concept">Concept</option>
+                            <option value="TKCS">TKCS</option>
+                            <option value="BVTC">BVTC</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">LOD</label>
+                        <select id="newTaskLOD" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="LOD 200">LOD 200</option>
+                            <option value="LOD 300">LOD 300</option>
+                            <option value="LOD 350">LOD 350</option>
+                            <option value="LOD 400">LOD 400</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Lý trình</label>
+                    <input type="text" id="newTaskChainage" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500" placeholder="VD: Km0 - Km5">
+                </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t">
+                <button onclick="document.getElementById('modal-addTask').classList.add('hidden')" class="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Hủy</button>
+                <button onclick="window.submitNewTask()" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium shadow-sm hover:bg-blue-700">Tạo Hạng mục</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ADD RESOURCE -->
+    <div id="modal-addResource" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-emerald-600 p-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-user-plus mr-2"></i>Thêm Nhân sự mới</h3>
+                <button onclick="document.getElementById('modal-addResource').classList.add('hidden')" class="text-emerald-200 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Họ và Tên</label>
+                    <input type="text" id="newResName" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="VD: Phạm Văn D">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Chức danh / Vai trò</label>
+                    <input type="text" id="newResRole" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="VD: Modeler, Coordinator...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Kỹ năng (Phân tách bằng dấu phẩy)</label>
+                    <input type="text" id="newResSkills" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-emerald-500" placeholder="VD: Civil 3D, Infraworks, Revit">
+                </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t">
+                <button onclick="document.getElementById('modal-addResource').classList.add('hidden')" class="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Hủy</button>
+                <button onclick="window.submitNewResource()" class="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium shadow-sm hover:bg-emerald-700">Lưu Nhân sự</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: EDIT RESOURCE -->
+    <div id="modal-editResource" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div class="bg-amber-600 p-4 text-white flex justify-between items-center">
+                <h3 class="font-bold text-lg"><i class="fa-solid fa-user-pen mr-2"></i>Chỉnh sửa Nhân sự</h3>
+                <button onclick="document.getElementById('modal-editResource').classList.add('hidden')" class="text-amber-200 hover:text-white"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="editResId">
+                <input type="hidden" id="editResOldName">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Họ và Tên</label>
+                    <input type="text" id="editResName" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-amber-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Chức danh / Vai trò</label>
+                    <input type="text" id="editResRole" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-amber-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Kỹ năng (Phân tách bằng dấu phẩy)</label>
+                    <input type="text" id="editResSkills" class="w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-amber-500">
+                </div>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t">
+                <button onclick="document.getElementById('modal-editResource').classList.add('hidden')" class="px-4 py-2 bg-white border border-gray-300 rounded-lg font-medium hover:bg-gray-50">Hủy</button>
+                <button onclick="window.submitEditResource()" class="px-4 py-2 bg-amber-600 text-white rounded-lg font-medium shadow-sm hover:bg-amber-700">Lưu thay đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HỆ THỐNG HỘP THOẠI CUSTOM (THAY THẾ ALERT/CONFIRM BỊ CHẶN) -->
+    <div id="custom-dialog-overlay" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-[100] backdrop-blur-sm transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden transform transition-all scale-95 opacity-0" id="custom-dialog-box">
+            <div id="dialog-header" class="p-4 text-white font-bold flex items-center gap-2"></div>
+            <div class="p-6">
+                <p id="dialog-message" class="text-gray-700 text-sm mb-4 font-medium"></p>
+                <input type="text" id="dialog-input" class="hidden w-full border border-gray-300 rounded-lg p-2.5 outline-none focus:ring-2 focus:ring-blue-500 mb-2 font-medium">
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-100" id="dialog-buttons">
+                <!-- Nút được nhúng tự động bằng JS -->
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        window.closeDialog = function() {
+            const overlay = document.getElementById('custom-dialog-overlay');
+            const box = document.getElementById('custom-dialog-box');
+            box.classList.remove('scale-100', 'opacity-100');
+            setTimeout(() => overlay.classList.replace('flex', 'hidden'), 200);
+        };
+
+        window.showDialog = function({ type, title, message, bgColor, icon, defaultValue, onConfirm }) {
+            const overlay = document.getElementById('custom-dialog-overlay');
+            const box = document.getElementById('custom-dialog-box');
+            const header = document.getElementById('dialog-header');
+            const input = document.getElementById('dialog-input');
+            const buttons = document.getElementById('dialog-buttons');
+
+            header.className = `p-4 text-white font-bold flex items-center gap-2 ${bgColor}`;
+            header.innerHTML = `<i class="${icon}"></i> ${title}`;
+            document.getElementById('dialog-message').innerText = message;
+
+            input.classList.add('hidden');
+            input.value = '';
+            buttons.innerHTML = '';
+
+            const cancelBtn = `<button onclick="window.closeDialog()" class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 shadow-sm transition">Hủy</button>`;
+
+            if (type === 'alert') {
+                buttons.innerHTML = `<button onclick="window.closeDialog()" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 shadow-sm transition">Đã hiểu</button>`;
+            } else if (type === 'confirm') {
+                buttons.innerHTML = cancelBtn + `<button id="btn-dialog-confirm" class="px-4 py-2 bg-rose-600 text-white rounded-lg font-medium shadow-sm hover:bg-rose-700 transition">Xác nhận</button>`;
+            } else if (type === 'prompt') {
+                input.classList.remove('hidden');
+                input.value = defaultValue || '';
+                buttons.innerHTML = cancelBtn + `<button id="btn-dialog-confirm" class="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium shadow-sm hover:bg-indigo-700 transition">Lưu thay đổi</button>`;
+                setTimeout(() => input.focus(), 100);
+            }
+
+            overlay.classList.replace('hidden', 'flex');
+            setTimeout(() => box.classList.add('scale-100', 'opacity-100'), 10);
+
+            const confirmBtn = document.getElementById('btn-dialog-confirm');
+            if(confirmBtn) {
+                confirmBtn.onclick = () => {
+                    window.closeDialog();
+                    if(onConfirm) onConfirm(type === 'prompt' ? input.value : true);
+                };
+            }
+        };
+
+        window.customAlert = (msg) => window.showDialog({ type: 'alert', title: 'Thông báo', message: msg, bgColor: 'bg-blue-600', icon: 'fa-solid fa-circle-info' });
+        window.customConfirm = (msg, onConfirm) => window.showDialog({ type: 'confirm', title: 'Xác nhận hành động', message: msg, bgColor: 'bg-rose-600', icon: 'fa-solid fa-triangle-exclamation', onConfirm });
+        window.customPrompt = (msg, defaultVal, onConfirm) => window.showDialog({ type: 'prompt', title: 'Đổi tên Dự án', message: msg, bgColor: 'bg-indigo-600', icon: 'fa-solid fa-pen-to-square', defaultValue: defaultVal, onConfirm });
+
+        window.appState = { tasks: [], resources: [] };
+        window.currentUserProfile = null;
+        window.currentWeekStart = getMonday(new Date());
+        window.isActualMode = false;
+        window.currentTab = 'wbs';
+
+        const USER_ROLES = {
+            'admin@bim.com': { name: 'Quản trị viên', role: 'admin' },
+            'pm1@bim.com': { name: 'Nguyễn Trần (PM)', role: 'pm', projects: ['Cao tốc Bắc Nam', 'Vành đai 4 - Vùng Thủ Đô'] },
+            'modeler.a@bim.com': { name: 'Nguyễn Văn A', role: 'modeler' }
+        };
+
+        let sCurveChartInst = null;
+        let workloadChartInst = null;
+        let dailyProductivityChartInst = null;
+
+        window.dbOps = {
+            async set(col, id, data) {
+                if(col==='tasks') {
+                    const idx = window.appState.tasks.findIndex(t=>t.id===id);
+                    if(idx>=0) window.appState.tasks[idx]=data; else window.appState.tasks.push(data);
+                } else if(col==='resources') {
+                    const idx = window.appState.resources.findIndex(t=>t.id===id);
+                    if(idx>=0) window.appState.resources[idx]=data; else window.appState.resources.push(data);
+                }
+                window.renderApp();
+            },
+            async update(col, id, data) {
+                if(col==='tasks') {
+                    const idx = window.appState.tasks.findIndex(t=>t.id===id);
+                    if(idx>=0) window.appState.tasks[idx] = {...window.appState.tasks[idx], ...data};
+                } else if(col==='resources') {
+                    const idx = window.appState.resources.findIndex(t=>t.id===id);
+                    if(idx>=0) window.appState.resources[idx] = {...window.appState.resources[idx], ...data};
+                }
+                window.renderApp();
+            },
+            async delete(col, id) {
+                if(col==='tasks') {
+                    window.appState.tasks = window.appState.tasks.filter(t=>t.id!==id);
+                } else if(col==='resources') {
+                    window.appState.resources = window.appState.resources.filter(t=>t.id!==id);
+                }
+                window.renderApp();
+            },
+            async get(col, id) {
+                if(col==='tasks') return window.appState.tasks.find(t=>t.id===id);
+                if(col==='resources') return window.appState.resources.find(t=>t.id===id);
+                return null;
+            }
+        };
+
+        function getMockResources() {
+            return [
+                { id: 'r1', name: 'Nguyễn Văn A', role: 'Modeler', skills: 'Civil 3D, Infraworks', workload_future: 30 },
+                { id: 'r2', name: 'Trần Thị B', role: 'Coordinator', skills: 'Navisworks, Revit', workload_future: 90 },
+                { id: 'r3', name: 'Lê Hoàng C', role: 'BIM Lead', skills: 'All, Python', workload_future: 50 }
+            ];
+        }
+
+        function getMockTasks() {
+            const getWeekDate = (offset) => { let d = new Date(window.currentWeekStart); d.setDate(d.getDate() + offset); return window.formatDateString(d); };
+            return [
+                { id: 't1', projectName: 'Cao tốc Bắc Nam', name: 'Mặt đường Cao tốc', phase: 'BVTC', lod: 'LOD 350', chainage: 'Km0-Km10', assignee: 'Nguyễn Văn A', dailyHours_planned: { [getWeekDate(0)]: 4, [getWeekDate(1)]: 4 }, dailyHours_actual: { [getWeekDate(0)]: 4 } },
+                { id: 't2', projectName: 'Cao tốc Bắc Nam', name: 'Thoát nước dọc tuyến', phase: 'BVTC', lod: 'LOD 300', chainage: 'Km0-Km10', assignee: 'Trần Thị B', dailyHours_planned: { [getWeekDate(0)]: 8 }, dailyHours_actual: { [getWeekDate(0)]: 6 } },
+                { id: 't3', projectName: 'Vành đai 4 - Vùng Thủ Đô', name: 'Nút giao VĐ3', phase: 'TKCS', lod: 'LOD 200', chainage: 'IC-01', assignee: 'Nguyễn Văn A', dailyHours_planned: { [getWeekDate(0)]: 4 }, dailyHours_actual: { [getWeekDate(0)]: 4 } }
+            ];
+        }
+
+        window.handleLogin = async function() {
+            const email = document.getElementById('login-email').value.trim();
+            if (!USER_ROLES[email]) { window.customAlert('Email không tồn tại trong hệ thống demo.'); return; }
+            
+            window.currentUserProfile = USER_ROLES[email];
+            window.currentUserProfile.email = email;
+            
+            document.getElementById('user-name').innerText = window.currentUserProfile.name;
+            document.getElementById('user-role').innerText = window.currentUserProfile.role.toUpperCase();
+            document.getElementById('user-avatar-text').innerText = window.currentUserProfile.name.charAt(0);
+            
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            
+            if(window.appState.resources.length === 0) {
+                window.appState.resources = getMockResources();
+                window.appState.tasks = getMockTasks();
+            }
+            
+            setupRoleUI();
+            
+            if(window.currentUserProfile.role === 'modeler') {
+                window.isActualMode = true; 
+                window.switchTab('wbs');
+            } else {
+                window.isActualMode = false;
+                window.switchTab('dashboard');
+            }
+        }
+
+        window.handleLogout = function() { window.location.reload(); }
+
+        function setupRoleUI() {
+            const role = window.currentUserProfile.role;
+            const navDashboard = document.getElementById('nav-dashboard');
+            const navResources = document.getElementById('nav-resources');
+            const btnAddProject = document.getElementById('btn-add-project');
+            const btnAddResource = document.getElementById('btn-add-resource');
+            const colActionRes = document.getElementById('col-action-res');
+            const btnExportCsv = document.getElementById('btn-export-csv');
+            
+            if (role === 'modeler') {
+                navDashboard.classList.add('hidden');
+                navResources.classList.add('hidden');
+                btnAddProject.classList.add('hidden');
+                if (btnExportCsv) btnExportCsv.classList.add('hidden');
+                window.switchTab('wbs');
+            } else {
+                navDashboard.classList.remove('hidden');
+                navResources.classList.remove('hidden');
+                btnAddProject.classList.remove('hidden');
+                if (btnExportCsv) btnExportCsv.classList.remove('hidden');
+                if(role === 'admin' && btnAddResource) btnAddResource.classList.remove('hidden');
+                if(role === 'admin' && colActionRes) colActionRes.classList.remove('hidden');
+                window.switchTab('dashboard');
+            }
+            updateModeButtons();
+        }
+
+        function getMonday(d) {
+            d = new Date(d);
+            var day = d.getDay(), diff = d.getDate() - day + (day == 0 ? -6 : 1);
+            return new Date(d.setDate(diff));
+        }
+        window.formatDateString = function(date) { return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0'); }
+        function getDatesOfWeek(startDate) {
+            let dates = [];
+            for (let i = 0; i < 7; i++) {
+                let d = new Date(startDate);
+                d.setDate(d.getDate() + i);
+                dates.push(d);
+            }
+            return dates;
+        }
+
+        window.switchTab = function(tabName) {
+            window.currentTab = tabName;
+            ['dashboard', 'wbs', 'resources'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                if (el) el.classList.add('hidden');
+                const nav = document.getElementById(`nav-${t}`);
+                if (nav) { nav.classList.remove('bg-slate-800', 'text-white'); nav.classList.add('text-slate-300'); }
+            });
+            const targetEl = document.getElementById(`tab-${tabName}`);
+            if (targetEl) targetEl.classList.remove('hidden');
+            const targetNav = document.getElementById(`nav-${tabName}`);
+            if (targetNav) { targetNav.classList.remove('text-slate-300'); targetNav.classList.add('bg-slate-800', 'text-white'); }
+            
+            const titles = { 'dashboard': 'Tổng quan Hệ thống', 'wbs': 'Phân bổ Nguồn lực & WBS', 'resources': 'Quản trị Nhân sự' };
+            document.getElementById('header-title').innerText = titles[tabName];
+            
+            if(window.innerWidth <= 768) { document.getElementById('sidebar').classList.remove('open'); document.getElementById('mobile-overlay').classList.remove('open'); }
+            window.renderApp();
+        }
+
+        window.toggleSidebar = function() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('mobile-overlay').classList.toggle('open'); }
+
+        window.toggleMode = function(isActual) {
+            if (window.currentUserProfile.role === 'modeler' && !isActual) {
+                window.customAlert('Modeler chỉ được phép nhập giờ Thực tế (Actual).'); return;
+            }
+            window.isActualMode = isActual;
+            updateModeButtons();
+            window.renderApp();
+        }
+
+        function updateModeButtons() {
+            const btnPlanned = document.getElementById('btn-mode-planned');
+            const btnActual = document.getElementById('btn-mode-actual');
+            if (window.isActualMode) {
+                btnActual.className = "px-4 py-1.5 rounded-md text-sm font-bold transition shadow-sm bg-orange-500 text-white";
+                btnPlanned.className = "px-4 py-1.5 rounded-md text-sm font-bold transition text-gray-500 hover:text-gray-700 hover:bg-gray-200";
+            } else {
+                btnPlanned.className = "px-4 py-1.5 rounded-md text-sm font-bold transition shadow-sm bg-blue-600 text-white";
+                btnActual.className = "px-4 py-1.5 rounded-md text-sm font-bold transition text-gray-500 hover:text-gray-700 hover:bg-gray-200";
+            }
+        }
+
+        window.changeWeek = function(offset) { window.currentWeekStart.setDate(window.currentWeekStart.getDate() + (offset * 7)); window.renderApp(); }
+        window.resetWeek = function() { window.currentWeekStart = getMonday(new Date()); window.renderApp(); }
+
+        /* --- XUẤT GOOGLE SHEETS / EXCEL (CSV UTF-8) --- */
+        window.exportToCSV = function() {
+            const tasks = window.getVisibleTasks();
+            if (tasks.length === 0) { window.customAlert("Không có dữ liệu để xuất!"); return; }
+            
+            const dates = getDatesOfWeek(window.currentWeekStart);
+            const dateHeaders = dates.map(d => window.formatDateString(d));
+            
+            // Sử dụng \uFEFF để đánh dấu BOM UTF-8, giúp Excel/Google Sheets đọc được Tiếng Việt
+            let csvContent = "\uFEFFDự án,Hạng mục,Giai đoạn,LOD,Lý trình,Người phụ trách,Loại dữ liệu," + dateHeaders.join(",") + ",Tổng Tuần\n";
+            
+            tasks.forEach(t => {
+                const safeStr = (str) => '"' + (str || '').replace(/"/g, '""') + '"'; // Tránh lỗi dấu phẩy
+                
+                // Dòng Kế hoạch
+                let rowP = [safeStr(t.projectName), safeStr(t.name), safeStr(t.phase), safeStr(t.lod), safeStr(t.chainage), safeStr(t.assignee), "Kế hoạch"];
+                let totalP = 0;
+                dateHeaders.forEach(d => { const h = (t.dailyHours_planned && t.dailyHours_planned[d]) || 0; rowP.push(h); totalP += parseFloat(h); });
+                rowP.push(totalP); csvContent += rowP.join(",") + "\n";
+                
+                // Dòng Thực tế
+                let rowA = [safeStr(t.projectName), safeStr(t.name), safeStr(t.phase), safeStr(t.lod), safeStr(t.chainage), safeStr(t.assignee), "Thực tế"];
+                let totalA = 0;
+                dateHeaders.forEach(d => { const h = (t.dailyHours_actual && t.dailyHours_actual[d]) || 0; rowA.push(h); totalA += parseFloat(h); });
+                rowA.push(totalA); csvContent += rowA.join(",") + "\n";
+            });
+            
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `BIM_InfraFlow_Timesheet_${window.formatDateString(window.currentWeekStart)}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        /* --- THEME TOGGLE (DARK/LIGHT MODE) --- */
+        window.toggleTheme = function() {
+            document.documentElement.classList.toggle('dark');
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('bim_theme', isDark ? 'dark' : 'light');
+            updateThemeIcon(isDark);
+            
+            // Cập nhật màu chữ biểu đồ Chart.js
+            Chart.defaults.color = isDark ? '#cbd5e1' : '#64748b';
+            if(sCurveChartInst) sCurveChartInst.update();
+            if(workloadChartInst) workloadChartInst.update();
+            if(dailyProductivityChartInst) dailyProductivityChartInst.update();
+        }
+
+        function updateThemeIcon(isDark) {
+            const btn = document.getElementById('btn-theme-toggle');
+            if(!btn) return;
+            if(isDark) {
+                document.getElementById('icon-theme-dark').classList.add('hidden');
+                document.getElementById('icon-theme-light').classList.remove('hidden');
+                btn.className = "w-9 h-9 flex items-center justify-center rounded-lg bg-slate-800 border border-slate-700 transition shadow-inner hover:bg-slate-700";
+            } else {
+                document.getElementById('icon-theme-dark').classList.remove('hidden');
+                document.getElementById('icon-theme-light').classList.add('hidden');
+                btn.className = "w-9 h-9 flex items-center justify-center rounded-lg bg-gray-100 border border-gray-200 transition shadow-inner text-gray-600 hover:bg-gray-200";
+            }
+        }
+
+        // Khởi tạo Theme khi tải trang
+        if (localStorage.getItem('bim_theme') === 'dark') {
+            document.documentElement.classList.add('dark');
+            setTimeout(() => updateThemeIcon(true), 100);
+            Chart.defaults.color = '#cbd5e1';
+        }
+
+        window.getVisibleTasks = function() {
+            let tasks = window.appState.tasks;
+            const phaseFilter = document.getElementById('filter-phase')?.value;
+            if (phaseFilter && phaseFilter !== 'all') tasks = tasks.filter(t => t.phase === phaseFilter);
+            if (window.currentUserProfile.role === 'modeler') tasks = tasks.filter(t => t.assignee === window.currentUserProfile.name);
+            return tasks;
+        }
+
+        window.renderApp = function() {
+            if (!window.currentUserProfile) return;
+            if (window.currentTab === 'dashboard') renderCharts();
+            else if (window.currentTab === 'wbs') renderWBS();
+            else if (window.currentTab === 'resources') renderResources();
+        }
+
+        function renderWBS() {
+            const tbody = document.getElementById('wbs-tbody');
+            const thead = document.getElementById('wbs-thead-tr');
+            if (!tbody || !thead) return;
+
+            let endDate = new Date(window.currentWeekStart); endDate.setDate(endDate.getDate() + 6);
+            const weekDisplay = document.getElementById('current-week-display');
+            if (weekDisplay) {
+                weekDisplay.innerText = `${window.currentWeekStart.getDate()}/${window.currentWeekStart.getMonth()+1} - ${endDate.getDate()}/${endDate.getMonth()+1}`;
+            }
+
+            const dates = getDatesOfWeek(window.currentWeekStart);
+            const daysMap = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+            
+            let dateHeadersHTML = `<th class="p-3 font-semibold w-10 text-center">Xóa</th><th class="p-3 font-semibold min-w-[300px]">Hạng mục (Task)</th><th class="p-3 font-semibold w-[160px]">Phụ trách</th>`;
+            dates.forEach(d => {
+                const isToday = window.formatDateString(d) === window.formatDateString(new Date());
+                dateHeadersHTML += `<th class="p-3 font-semibold text-center w-14 ${isToday ? 'text-blue-600 bg-blue-50' : ''}">${daysMap[d.getDay()]}<br><span class="text-[10px] opacity-70">${d.getDate()}/${d.getMonth()+1}</span></th>`;
+            });
+            dateHeadersHTML += `<th class="p-3 font-semibold w-24 text-center">Tổng</th>`;
+            thead.innerHTML = dateHeadersHTML;
+
+            const visibleTasks = window.getVisibleTasks();
+            tbody.innerHTML = '';
+            if (visibleTasks.length === 0) { tbody.innerHTML = `<tr><td colspan="12" class="p-8 text-center text-gray-500 italic">Chưa có dữ liệu dự án.</td></tr>`; return; }
+
+            const grouped = {};
+            visibleTasks.forEach(t => { if (!grouped[t.projectName]) grouped[t.projectName] = []; grouped[t.projectName].push(t); });
+
+            let userDailyTotal = {};
+            window.appState.tasks.forEach(t => {
+                if (t.assignee) {
+                    if (!userDailyTotal[t.assignee]) userDailyTotal[t.assignee] = {};
+                    const hoursObj = window.isActualMode ? (t.dailyHours_actual || {}) : (t.dailyHours_planned || {});
+                    for (const [date, hrs] of Object.entries(hoursObj)) userDailyTotal[t.assignee][date] = (userDailyTotal[t.assignee][date] || 0) + (parseFloat(hrs) || 0);
+                }
+            });
+
+            const globalRole = window.currentUserProfile.role;
+
+            for (const [pName, tasks] of Object.entries(grouped)) {
+                let canEditProject = (globalRole === 'admin') || (globalRole === 'pm' && window.currentUserProfile.projects.includes(pName));
+                
+                const projTr = document.createElement('tr');
+                projTr.className = 'bg-slate-800 text-white';
+                projTr.innerHTML = `
+                    <td colspan="12" class="p-2 px-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <i class="fa-solid fa-folder-open text-blue-400"></i>
+                                ${canEditProject ? `
+                                    <span class="font-bold tracking-wide cursor-pointer hover:text-blue-300 transition flex items-center gap-2" onclick="window.renameProject('${pName}')" title="Click để đổi tên dự án">
+                                        ${pName} <i class="fa-solid fa-pen text-[11px] text-gray-400"></i>
+                                    </span>
+                                ` : `<span class="font-bold tracking-wide">${pName}</span>`}
+                                ${canEditProject ? `<button onclick="window.openTaskModal('${pName}')" class="ml-3 text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded transition uppercase tracking-wider font-bold text-white border border-slate-600 shadow-sm">+ Thêm Hạng mục</button>` : ''}
+                            </div>
+                            ${canEditProject ? `
+                                <button onclick="window.deleteProject('${pName}')" class="text-[11px] text-rose-400 hover:text-white hover:bg-rose-600 px-2 py-1 rounded transition font-bold flex items-center gap-1" title="Xóa toàn bộ dự án">
+                                    <i class="fa-solid fa-trash-can"></i> Xóa Dự án
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(projTr);
+
+                tasks.forEach(t => {
+                    const isMyTask = (t.assignee === window.currentUserProfile.name);
+                    const canEditRow = canEditProject;
+
+                    const row = document.createElement('tr');
+                    row.className = 'hover:bg-gray-50 transition border-b border-gray-100 group';
+                    
+                    let rowHTML = `
+                        <td class="p-2 text-center align-middle">
+                            ${canEditRow ? `<button onclick="window.deleteTask('${t.id}')" class="text-rose-500 hover:text-rose-700 hover:bg-rose-100 w-8 h-8 rounded-lg transition inline-flex items-center justify-center font-bold border border-transparent hover:border-rose-200" title="Xóa hạng mục"><i class="fa-solid fa-trash-can text-lg"></i></button>` : ''}
+                        </td>
+                        <td class="p-2 align-middle pl-4">
+                            <div class="border-l-2 pl-2 ${t.phase==='Concept'?'border-yellow-400':t.phase==='TKCS'?'border-blue-400':'border-green-400'}">
+                                ${canEditRow ? `
+                                    <input type="text" class="font-bold text-gray-800 bg-transparent outline-none w-full border-b border-transparent hover:border-gray-300 focus:border-blue-500 transition mb-0.5" value="${t.name}" onchange="window.updateTaskInline('${t.id}', 'name', this.value)">
+                                ` : `<div class="font-bold text-gray-800 mb-0.5">${t.name}</div>`}
+                                
+                                <div class="flex items-center gap-1.5 text-[11px] font-medium mt-1">
+                                    ${canEditRow ? `
+                                        <select onchange="window.updateTaskInline('${t.id}', 'phase', this.value)" class="bg-gray-100 text-gray-600 px-1 py-0.5 rounded border border-gray-200 outline-none cursor-pointer hover:border-blue-400">
+                                            <option value="Concept" ${t.phase==='Concept'?'selected':''}>Concept</option>
+                                            <option value="TKCS" ${t.phase==='TKCS'?'selected':''}>TKCS</option>
+                                            <option value="BVTC" ${t.phase==='BVTC'?'selected':''}>BVTC</option>
+                                        </select>
+                                        <select onchange="window.updateTaskInline('${t.id}', 'lod', this.value)" class="bg-blue-50 text-blue-700 px-1 py-0.5 rounded border border-blue-200 outline-none cursor-pointer hover:border-blue-400">
+                                            <option value="LOD 200" ${t.lod==='LOD 200'?'selected':''}>LOD 200</option>
+                                            <option value="LOD 300" ${t.lod==='LOD 300'?'selected':''}>LOD 300</option>
+                                            <option value="LOD 350" ${t.lod==='LOD 350'?'selected':''}>LOD 350</option>
+                                            <option value="LOD 400" ${t.lod==='LOD 400'?'selected':''}>LOD 400</option>
+                                        </select>
+                                        <div class="flex items-center bg-transparent border-b border-dashed border-gray-300 focus-within:border-blue-500 text-gray-500">
+                                            <i class="fa-solid fa-location-dot mr-1"></i>
+                                            <input type="text" onchange="window.updateTaskInline('${t.id}', 'chainage', this.value)" value="${t.chainage}" class="w-16 bg-transparent outline-none text-[11px]" placeholder="Lý trình">
+                                        </div>
+                                    ` : `
+                                        <span class="bg-gray-100 px-1 py-0.5 rounded border border-gray-200 text-gray-600">${t.phase}</span>
+                                        <span class="bg-blue-50 text-blue-700 px-1 py-0.5 rounded border border-blue-200">${t.lod}</span>
+                                        <span class="text-gray-500"><i class="fa-solid fa-location-dot mr-0.5"></i>${t.chainage}</span>
+                                    `}
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-2 align-middle text-sm">
+                            ${canEditRow ? `
+                                <select class="w-full bg-white border ${!t.assignee ? 'border-red-400 ring-1 ring-red-200 text-red-700 font-bold' : 'border-gray-300 text-gray-700 hover:border-blue-400'} rounded py-1 px-1.5 outline-none text-xs cursor-pointer shadow-sm transition" onchange="window.changeAssignee('${t.id}', this.value)">
+                                    <option value="" class="text-red-500 font-bold">-- Trống --</option>
+                                    ${window.appState.resources.map(r => `<option value="${r.name}" ${r.name === t.assignee ? 'selected' : ''}>${r.name}</option>`).join('')}
+                                </select>
+                            ` : `<div class="font-semibold text-gray-700 text-xs">${!t.assignee ? '<span class="text-red-500">Chờ phân công</span>' : t.assignee}</div>`}
+                        </td>
+                    `;
+
+                    let weekTotal = 0;
+                    dates.forEach(d => {
+                        const dateStr = window.formatDateString(d);
+                        let val = ''; let canEditInput = false; let tooltip = ''; let cellClass = 'bg-white border-gray-200';
+                        
+                        if (window.isActualMode) {
+                            val = (t.dailyHours_actual && t.dailyHours_actual[dateStr]) || '';
+                            if (globalRole === 'modeler') { canEditInput = isMyTask; if(!isMyTask) tooltip = 'Chỉ sửa task của mình'; }
+                            else { canEditInput = canEditRow; }
+                            cellClass = 'bg-orange-50 border-orange-200 focus:ring-orange-400 text-orange-900 font-bold';
+                        } else {
+                            val = (t.dailyHours_planned && t.dailyHours_planned[dateStr]) || '';
+                            if (globalRole === 'modeler') { canEditInput = false; tooltip = 'Modeler không được sửa Kế hoạch'; }
+                            else { canEditInput = canEditRow; }
+                            cellClass = 'bg-blue-50 border-blue-200 focus:ring-blue-400 text-blue-900 font-medium';
+                        }
+                        weekTotal += parseFloat(val) || 0;
+
+                        if (t.assignee && userDailyTotal[t.assignee] && userDailyTotal[t.assignee][dateStr] > 8) {
+                            cellClass = 'bg-red-50 border-red-400 text-red-700 font-bold ring-2 ring-red-200';
+                            tooltip = `Cảnh báo: ${t.assignee} gánh tổng ${userDailyTotal[t.assignee][dateStr]}h!`;
+                        }
+                        if (!canEditInput) cellClass += ' opacity-50 cursor-not-allowed bg-gray-100 border-transparent text-gray-400';
+
+                        rowHTML += `
+                            <td class="p-1 align-middle">
+                                <input type="number" min="0" max="24" step="0.5" class="w-full h-8 text-center rounded border outline-none focus:ring-2 transition text-sm ${cellClass}"
+                                    value="${val}" ${!canEditInput ? 'disabled' : ''} title="${tooltip}" onchange="window.updateDailyHours('${t.id}', '${dateStr}', this.value)">
+                            </td>
+                        `;
+                    });
+
+                    rowHTML += `<td class="p-2 align-middle text-center bg-gray-50 border-l border-gray-200"><span class="font-black text-sm text-gray-800">${weekTotal}h</span></td>`;
+                    row.innerHTML = rowHTML;
+                    tbody.appendChild(row);
+                });
+            }
+        }
+
+        window.updateDailyHours = async function(taskId, dateStr, val) {
+            const num = parseFloat(val) || 0;
+            const currentData = await window.dbOps.get('tasks', taskId);
+            if(currentData) {
+                const targetObj = window.isActualMode ? 'dailyHours_actual' : 'dailyHours_planned';
+                const newDaily = { ...(currentData[targetObj] || {}) };
+                if (num > 0) newDaily[dateStr] = num; else delete newDaily[dateStr];
+                const updatePayload = {}; updatePayload[targetObj] = newDaily;
+                await window.dbOps.update('tasks', taskId, updatePayload);
+            }
+        }
+
+        window.updateTaskInline = async function(taskId, field, val) {
+            const updateObj = {}; updateObj[field] = val;
+            await window.dbOps.update('tasks', taskId, updateObj);
+        }
+        
+        window.changeAssignee = async function(taskId, newAssignee) {
+            await window.dbOps.update('tasks', taskId, { assignee: newAssignee });
+        }
+
+        window.openAddProjectModal = function() {
+            document.getElementById('new-project-name').value = '';
+            document.getElementById('modal-addProject').classList.remove('hidden'); document.getElementById('modal-addProject').classList.add('flex');
+            setTimeout(() => document.getElementById('new-project-name').focus(), 100);
+        }
+        
+        window.addProject = async function() {
+            const pName = document.getElementById('new-project-name').value.trim();
+            if(!pName) return;
+            const taskId = 't_' + Date.now();
+            await window.dbOps.set('tasks', taskId, { id: taskId, projectName: pName, name: 'Hạng mục mẫu', phase: 'Concept', lod: 'LOD 200', chainage: 'Km0', assignee: '', dailyHours_planned: {}, dailyHours_actual: {} });
+            document.getElementById('modal-addProject').classList.add('hidden'); document.getElementById('modal-addProject').classList.remove('flex');
+        }
+
+        window.renameProject = function(oldName) {
+            window.customPrompt(`Đổi tên dự án từ "${oldName}" thành:`, oldName, async (newName) => {
+                if (!newName || newName.trim() === '' || newName === oldName) return;
+                const tasksToUpdate = window.appState.tasks.filter(t => t.projectName === oldName);
+                for (let t of tasksToUpdate) await window.dbOps.update('tasks', t.id, { projectName: newName.trim() });
+                
+                if (window.currentUserProfile.role === 'pm' && window.currentUserProfile.projects) {
+                    const pIndex = window.currentUserProfile.projects.indexOf(oldName);
+                    if (pIndex > -1) window.currentUserProfile.projects[pIndex] = newName.trim();
+                }
+                window.renderApp();
+            });
+        }
+        
+        window.deleteProject = function(pName) {
+            window.customConfirm(`CẢNH BÁO: Bạn chắc chắn muốn xóa TOÀN BỘ dự án "${pName}"? Hành động này sẽ xóa tất cả hạng mục và giờ công bên trong.`, async () => {
+                const tasksToDelete = window.appState.tasks.filter(t => t.projectName === pName);
+                for (let t of tasksToDelete) await window.dbOps.delete('tasks', t.id);
+                window.renderApp();
+            });
+        }
+
+        window.openTaskModal = function(pName) {
+            document.getElementById('newTaskProject').value = pName;
+            document.getElementById('newTaskName').value = ''; document.getElementById('newTaskChainage').value = '';
+            document.getElementById('modal-addTask').classList.remove('hidden'); document.getElementById('modal-addTask').classList.add('flex');
+            setTimeout(() => document.getElementById('newTaskName').focus(), 100);
+        }
+        
+        window.submitNewTask = async function() {
+            const pName = document.getElementById('newTaskProject').value;
+            const tName = document.getElementById('newTaskName').value.trim();
+            if(!tName) { window.customAlert('Vui lòng nhập tên Hạng mục'); return; }
+            const taskId = 't_' + Date.now();
+            await window.dbOps.set('tasks', taskId, { id: taskId, projectName: pName, name: tName, phase: document.getElementById('newTaskPhase').value, lod: document.getElementById('newTaskLOD').value, chainage: document.getElementById('newTaskChainage').value.trim() || 'N/A', assignee: '', dailyHours_planned: {}, dailyHours_actual: {} });
+            document.getElementById('modal-addTask').classList.add('hidden'); document.getElementById('modal-addTask').classList.remove('flex');
+        }
+        
+        window.deleteTask = function(taskId) {
+            const t = window.appState.tasks.find(x => x.id === taskId);
+            if(!t) return;
+            window.customConfirm(`Bạn chắc chắn muốn xóa hạng mục: "${t.name}"?`, async () => {
+                await window.dbOps.delete('tasks', taskId);
+            });
+        }
+
+        window.openAddResourceModal = function() {
+            document.getElementById('newResName').value = ''; document.getElementById('newResRole').value = ''; document.getElementById('newResSkills').value = '';
+            document.getElementById('modal-addResource').classList.remove('hidden'); document.getElementById('modal-addResource').classList.add('flex');
+            setTimeout(() => document.getElementById('newResName').focus(), 100);
+        }
+        
+        window.submitNewResource = async function() {
+            const rName = document.getElementById('newResName').value.trim();
+            if(!rName) { window.customAlert('Vui lòng nhập Tên nhân sự'); return; }
+            const resId = 'r_' + Date.now();
+            await window.dbOps.set('resources', resId, { id: resId, name: rName, role: document.getElementById('newResRole').value.trim() || 'Nhân sự', skills: document.getElementById('newResSkills').value.trim() || 'Cơ bản', workload_future: 0 });
+            document.getElementById('modal-addResource').classList.add('hidden'); document.getElementById('modal-addResource').classList.remove('flex');
+        }
+        
+        window.deleteResource = function(resId, resName) {
+            window.customConfirm(`Xóa nhân sự "${resName}"? Tên người này sẽ bị gỡ khỏi tất cả các hạng mục đang được giao.`, async () => {
+                const tasksToUpdate = window.appState.tasks.filter(t => t.assignee === resName);
+                for(let t of tasksToUpdate) await window.dbOps.update('tasks', t.id, { assignee: '' });
+                await window.dbOps.delete('resources', resId);
+            });
+        }
+
+        window.openEditResourceModal = function(resId) {
+            const r = window.appState.resources.find(x => x.id === resId);
+            if(!r) return;
+            document.getElementById('editResId').value = r.id;
+            document.getElementById('editResOldName').value = r.name;
+            document.getElementById('editResName').value = r.name;
+            document.getElementById('editResRole').value = r.role;
+            document.getElementById('editResSkills').value = r.skills;
+            
+            document.getElementById('modal-editResource').classList.remove('hidden'); 
+            document.getElementById('modal-editResource').classList.add('flex');
+            setTimeout(() => document.getElementById('editResName').focus(), 100);
+        }
+        
+        window.submitEditResource = async function() {
+            const resId = document.getElementById('editResId').value;
+            const oldName = document.getElementById('editResOldName').value;
+            const rName = document.getElementById('editResName').value.trim();
+            if(!rName) { window.customAlert('Vui lòng nhập Tên nhân sự'); return; }
+            
+            const rRole = document.getElementById('editResRole').value.trim() || 'Nhân sự';
+            const rSkills = document.getElementById('editResSkills').value.trim() || 'Cơ bản';
+
+            await window.dbOps.update('resources', resId, { name: rName, role: rRole, skills: rSkills });
+            
+            if (oldName !== rName) {
+                const tasksToUpdate = window.appState.tasks.filter(t => t.assignee === oldName);
+                for(let t of tasksToUpdate) {
+                    await window.dbOps.update('tasks', t.id, { assignee: rName });
+                }
+            }
+
+            document.getElementById('modal-editResource').classList.add('hidden'); 
+            document.getElementById('modal-editResource').classList.remove('flex');
+        }
+
+        function renderResources() {
+            const tbody = document.getElementById('resources-tbody');
+            if (!tbody) return;
+            let canEdit = (window.currentUserProfile.role === 'admin');
+            let isFuture = document.getElementById('filter-forecast')?.value === 'future';
+
+            tbody.innerHTML = window.appState.resources.map(r => {
+                let workload = 0;
+                if(isFuture) { workload = r.workload_future || 0; } 
+                else { window.appState.tasks.forEach(t => { if(t.assignee === r.name) { for(const hrs of Object.values(t.dailyHours_planned||{})) workload += parseFloat(hrs||0); } }); }
+                
+                let statusColor = 'text-emerald-600 bg-emerald-50 border-emerald-200'; let statusText = 'Ổn định';
+                if (workload > 40) { statusColor = 'text-rose-600 bg-rose-50 border-rose-200'; statusText = 'Quá tải'; }
+                else if (workload < 10) { statusColor = 'text-blue-600 bg-blue-50 border-blue-200'; statusText = 'Rảnh rỗi'; }
+
+                return `
+                    <tr class="hover:bg-gray-50 transition border-b border-gray-100 group">
+                        <td class="p-4 align-middle"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 text-white shadow flex items-center justify-center font-bold shrink-0">${r.name.charAt(0)}</div><div class="font-bold text-gray-800">${r.name}</div></div></td>
+                        <td class="p-4 text-gray-600 text-sm font-medium align-middle">${r.role}</td>
+                        <td class="p-4 align-middle"><div class="flex flex-wrap gap-1">${r.skills.split(',').map(s => `<span class="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded border border-slate-200 font-medium">${s.trim()}</span>`).join('')}</div></td>
+                        <td class="p-4 align-middle"><span class="px-3 py-1 rounded-full text-xs font-bold border ${statusColor}">${statusText} (Tổng: ${workload}h)</span></td>
+                        ${canEdit ? `
+                            <td class="p-4 align-middle text-center flex items-center justify-center gap-2">
+                                <button onclick="window.openEditResourceModal('${r.id}')" class="text-amber-500 hover:text-white hover:bg-amber-500 transition px-2 py-1 bg-white rounded shadow-sm border border-gray-200" title="Sửa thông tin"><i class="fa-solid fa-pen"></i></button>
+                                <button onclick="window.deleteResource('${r.id}', '${r.name}')" class="text-rose-400 hover:text-white hover:bg-rose-500 transition px-2 py-1 bg-white rounded shadow-sm border border-gray-200" title="Xóa nhân sự"><i class="fa-solid fa-trash-can"></i></button>
+                            </td>` : ''}
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderCharts() {
+            const visibleTasks = window.getVisibleTasks();
+            const ctxS = document.getElementById('sCurveChart')?.getContext('2d');
+            if (ctxS) {
+                if (sCurveChartInst) sCurveChartInst.destroy();
+                sCurveChartInst = new Chart(ctxS, {
+                    type: 'line', data: { labels: ['T1', 'T2', 'T3', 'T4', 'T5'], datasets: [{ label: 'Kế hoạch', data: [100, 300, 600, 900, 1200], borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.4 }, { label: 'Thực tế', data: [90, 250, 500], borderColor: '#f97316', backgroundColor: 'transparent', borderDash: [5, 5], tension: 0.4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+            }
+
+            const ctxW = document.getElementById('workloadChart')?.getContext('2d');
+            if (ctxW) {
+                if (workloadChartInst) workloadChartInst.destroy();
+                let labels = []; let data = []; let bgColors = [];
+                window.appState.resources.forEach(r => {
+                    labels.push(r.name.split(' ').pop());
+                    let w = 0; visibleTasks.filter(t=>t.assignee===r.name).forEach(t => { for(let h of Object.values(t.dailyHours_planned||{})) w += parseFloat(h||0); });
+                    data.push(w); bgColors.push(w > 40 ? '#ef4444' : w < 10 ? '#3b82f6' : '#10b981');
+                });
+                workloadChartInst = new Chart(ctxW, {
+                    type: 'bar', data: { labels: labels, datasets: [{ label: 'Tổng giờ', data: data, backgroundColor: bgColors, borderRadius: 4 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                });
+            }
+            
+            const ctxP = document.getElementById('dailyProductivityChart')?.getContext('2d');
+            if(ctxP) {
+                if (dailyProductivityChartInst) dailyProductivityChartInst.destroy();
+                let pData = [0,0,0,0,0,0,0]; let aData = [0,0,0,0,0,0,0];
+                const dates = getDatesOfWeek(window.currentWeekStart);
+                visibleTasks.forEach(t => {
+                    dates.forEach((d, i) => {
+                        const dateStr = window.formatDateString(d);
+                        pData[i] += parseFloat((t.dailyHours_planned && t.dailyHours_planned[dateStr]) || 0);
+                        aData[i] += parseFloat((t.dailyHours_actual && t.dailyHours_actual[dateStr]) || 0);
+                    });
+                });
+                dailyProductivityChartInst = new Chart(ctxP, {
+                    type: 'bar', data: { labels: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'], datasets: [{ label: 'Kế hoạch', data: pData, backgroundColor: '#cbd5e1' }, { label: 'Thực tế', data: aData, backgroundColor: '#22c55e' }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+            }
+
+            document.getElementById('stat-projects').innerText = new Set(visibleTasks.map(t=>t.projectName)).size;
+            document.getElementById('stat-tasks').innerText = visibleTasks.length;
+            document.getElementById('stat-resources').innerText = window.appState.resources.length;
+            document.getElementById('stat-overload').innerText = workloadChartInst?.data?.datasets[0]?.data.filter(w=>w>40).length || 0;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,368 @@
+/* ============================================
+   CONTENT CARD (Calendar/List Item)
+   ============================================ */
+.content-card {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border-left: 3px solid;
+  position: relative;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  display: block;
+}
+
+.content-card:hover {
+  transform: translateX(2px);
+  filter: brightness(1.2);
+}
+
+/* Platform variants */
+.content-card--youtube {
+  border-left-color: var(--accent-red);
+  background: rgba(231, 76, 111, 0.15);
+  color: #f0a0b5;
+}
+
+.content-card--facebook {
+  border-left-color: var(--accent-green);
+  background: rgba(46, 204, 113, 0.15);
+  color: #90e0b5;
+}
+
+.content-card--tiktok {
+  border-left-color: var(--accent-yellow);
+  background: rgba(241, 196, 15, 0.15);
+  color: #e8d480;
+}
+
+.content-card--linkedin {
+  border-left-color: var(--accent-blue);
+  background: rgba(52, 152, 219, 0.15);
+  color: #90c5e8;
+}
+
+.content-card--shorts {
+  border-left-color: var(--accent-purple);
+  background: rgba(155, 89, 182, 0.15);
+  color: #c8a0d8;
+}
+
+.content-card--threads {
+  border-left-color: var(--accent-pink);
+  background: rgba(233, 30, 99, 0.15);
+  color: #f0a0c0;
+}
+
+.content-card__platform {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  opacity: 0.7;
+  letter-spacing: 0.5px;
+}
+
+.content-card__title {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+/* ============================================
+   PLATFORM TABS
+   ============================================ */
+.platform-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 0 24px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.platform-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.platform-tab {
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+
+.platform-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-light);
+}
+
+.platform-tab--active {
+  background: rgba(231, 76, 111, 0.15);
+  color: var(--accent-red);
+  border-color: var(--accent-red);
+}
+
+.platform-tab__icon {
+  font-size: 14px;
+}
+
+.platform-tab__count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.platform-tab--active .platform-tab__count {
+  background: rgba(231, 76, 111, 0.2);
+}
+
+/* ============================================
+   TEAM AVATARS
+   ============================================ */
+.team-avatars {
+  display: flex;
+  align-items: center;
+}
+
+.team-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  margin-left: -6px;
+  border: 2px solid var(--bg-card);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  position: relative;
+}
+
+.team-avatar:first-child {
+  margin-left: 0;
+}
+
+.team-avatar:hover {
+  transform: scale(1.2);
+  z-index: 10;
+}
+
+/* ============================================
+   TAG / CHIP
+   ============================================ */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+  cursor: default;
+  transition: all var(--transition-fast);
+}
+
+.tag:hover {
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.tag--removable {
+  cursor: pointer;
+}
+
+.tag__remove {
+  font-size: 12px;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.tag__remove:hover {
+  opacity: 1;
+}
+
+/* ============================================
+   PROGRESS BAR
+   ============================================ */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-input);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent-red), var(--accent-purple));
+  transition: width var(--transition-slow);
+  position: relative;
+}
+
+.progress-bar__fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  animation: shimmer 2s infinite;
+  background-size: 200% 100%;
+}
+
+/* ============================================
+   DROPDOWN
+   ============================================ */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.dropdown__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  min-width: 180px;
+  padding: 6px;
+  box-shadow: var(--shadow-lg);
+  z-index: 500;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: all var(--transition-fast);
+}
+
+.dropdown__menu--open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
+}
+
+.dropdown__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.dropdown__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dropdown__item-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.dropdown__divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+
+/* ============================================
+   SWITCH / TOGGLE
+   ============================================ */
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  display: inline-block;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.switch__slider {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.switch__slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  top: 2px;
+  left: 2px;
+  transition: all var(--transition-fast);
+}
+
+.switch input:checked + .switch__slider {
+  background: var(--accent-purple);
+  border-color: var(--accent-purple);
+}
+
+.switch input:checked + .switch__slider::before {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+/* ============================================
+   NOTIFICATION DOT
+   ============================================ */
+.notification-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  border: 2px solid var(--bg-secondary);
+  animation: pulse 2s infinite;
+}

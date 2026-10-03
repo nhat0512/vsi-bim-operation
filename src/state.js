@@ -603,6 +603,28 @@ export async function loadInitialData() {
           const data = docSnap.data();
           setState('projects', data.projects || [], true);
           setState('personnel', data.personnel || [], true);
+          
+          // --- BẢO ĐẢM USER ĐĂNG NHẬP LUÔN CÓ TRONG NGUỒN LỰC ---
+          const currentUser = getState().currentUserAuth;
+          if (currentUser) {
+             const pList = getState().personnel;
+             if (!pList.find(p => p.email === currentUser.email)) {
+                const updatedPersonnel = [...pList, {
+                   id: `p-${Date.now()}`,
+                   name: currentUser.name,
+                   email: currentUser.email,
+                   avatar: '👤',
+                   role: currentUser.email === 'admin@vsibim.com' ? 'BIM Manager' : 'Member',
+                   level: 'New',
+                   skills: [],
+                   allocation: [],
+                   totalAllocation: 0
+                }];
+                // Cập nhật và lưu ngược lại lên Firestore
+                setState('personnel', updatedPersonnel);
+             }
+          }
+          // ------------------------------------------------------
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);

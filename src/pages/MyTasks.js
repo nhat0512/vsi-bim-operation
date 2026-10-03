@@ -16,12 +16,21 @@ export function render() {
   // Tìm tất cả dự án + task được giao cho người này
   const myAssignments = [];
   (projects || []).forEach(project => {
+    // Các tasks được gán cho người này
     const tasks = (project.tasks || []).filter(t => 
       t.assignee === userName || 
       t.assignee === userEmail ||
       (myRecord && t.assignee === myRecord.name)
     );
-    if (tasks.length > 0) {
+    
+    // Kiểm tra xem người này có nằm trong Đội ngũ dự án (Team) không
+    const isTeamMember = (project.team || []).some(m => 
+      m.name === userName || m.email === userEmail || (myRecord && m.name === myRecord.name)
+    );
+    const isLead = project.teamLead === userName || project.teamLead === userEmail || (myRecord && project.teamLead === myRecord.name);
+
+    // Bổ sung: Nếu có task HOẶC nằm trong team dự án thì đều được tính
+    if (tasks.length > 0 || isTeamMember || isLead) {
       myAssignments.push({ project, tasks });
     }
   });
@@ -94,7 +103,13 @@ export function render() {
                 </tr>
               </thead>
               <tbody>
-                ${tasks.map((task, idx) => {
+                ${tasks.length === 0 ? `
+                  <tr>
+                    <td colspan="5" style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 0.85rem;">
+                      Bạn chưa được gán nhiệm vụ cụ thể nào, nhưng bạn đang có mặt trong Đội ngũ dự án này.
+                    </td>
+                  </tr>
+                ` : tasks.map((task, idx) => {
                   const isOverdue = new Date(task.dueDate) < new Date() && task.progress < 100;
                   const isComplete = task.progress >= 100;
                   return `

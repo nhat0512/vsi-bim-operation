@@ -78,7 +78,7 @@ function syncToFirestore() {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     try {
-      const dataToSave = {
+      const dataToSave = JSON.parse(JSON.stringify({
         projects: state.projects || [],
         personnel: state.personnel || [],
         softwareAssets: state.softwareAssets || [],
@@ -86,7 +86,7 @@ function syncToFirestore() {
         activityLog: state.activityLog || [],
         timesheets: state.timesheets || [],
         lastUpdated: new Date().toISOString()
-      };
+      }));
       await setDoc(doc(db, "app_data", "main"), dataToSave);
       console.log("✅ Đồng bộ Firestore thành công");
     } catch (e) {

@@ -602,6 +602,7 @@ export function init() {
         avatar: project.members?.[idx]?.avatar || null
       });
     });
+    updates.team = newMembers;
     // Extract RFIs
     const rfiCodes = document.querySelectorAll('.edit-rfi-code');
     const rfiTitles = document.querySelectorAll('.edit-rfi-title');

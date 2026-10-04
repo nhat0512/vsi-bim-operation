@@ -78,6 +78,43 @@ function syncToFirestore() {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     try {
+      // TỰ ĐỘNG ĐỒNG BỘ DỮ LIỆU LIÊN KẾT (Single Source of Truth)
+      if (state.projects) {
+        state.projects.forEach(proj => {
+          // 1. Đồng bộ tiến độ dự án từ các tasks
+          if (proj.tasks && proj.tasks.length > 0) {
+             const totalProgress = proj.tasks.reduce((sum, t) => sum + (t.progress || 0), 0);
+             proj.progress = Math.round(totalProgress / proj.tasks.length);
+          }
+        });
+      }
+
+      if (state.projects && state.personnel) {
+        state.personnel.forEach(person => {
+          // 2. Đồng bộ nguồn lực (allocation) từ danh sách thành viên dự án
+          const oldAllocMap = {};
+          (person.allocation || []).forEach(a => oldAllocMap[a.projectId] = a.percentage);
+          
+          const newAllocation = [];
+          state.projects.forEach(proj => {
+            const inTeam = (proj.team || []).some(m => m.name === person.name);
+            const isLead = proj.teamLead === person.name;
+            const inTasks = (proj.tasks || []).some(t => t.assignee === person.name);
+            if (inTeam || isLead || inTasks) {
+               newAllocation.push({
+                 projectId: proj.id,
+                 projectName: proj.name,
+                 percentage: oldAllocMap[proj.id] || 30 // Mặc định 30% nếu mới gán
+               });
+            }
+          });
+          
+          person.allocation = newAllocation;
+          person.totalAllocation = newAllocation.reduce((sum, a) => sum + a.percentage, 0);
+          person.status = person.totalAllocation > 100 ? 'overloaded' : (person.totalAllocation > 0 ? 'active' : 'idle');
+        });
+      }
+
       const dataToSave = JSON.parse(JSON.stringify({
         projects: state.projects || [],
         personnel: state.personnel || [],

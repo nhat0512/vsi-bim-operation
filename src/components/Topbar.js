@@ -7,8 +7,10 @@ import { getState, setState, subscribe, logoutUser } from '../state.js';
 const PAGE_TITLES = {
   'dashboard': { title: 'Dashboard', breadcrumb: 'Tổng quan dự án' },
   'project-detail': { title: 'Chi tiết dự án', breadcrumb: 'Quản lý dự án' },
+  'planning': { title: 'General Planning', breadcrumb: 'Lịch biểu & Tiến độ' },
   'resources': { title: 'Quản lý nguồn lực', breadcrumb: 'Nhân sự & Thiết bị' },
   'quality': { title: 'Chất lượng BIM', breadcrumb: 'QA/QC & Clash Detection' },
+  'my-tasks': { title: 'Công việc của tôi', breadcrumb: 'Tiến độ cá nhân' },
   'analytics': { title: 'Phân tích & Báo cáo', breadcrumb: 'Analytics' },
   'settings': { title: 'Cài đặt hệ thống', breadcrumb: 'Cấu hình' }
 };

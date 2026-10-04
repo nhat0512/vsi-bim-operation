@@ -216,11 +216,39 @@
 }
 
 .data-table tbody tr:hover {
-  background: var(--bg-hover);
+  background: var(--bg-card-hover);
 }
 
 .data-table--striped tbody tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.02);
+}
+
+/* ============================================
+   PLANNING TABLE (GANTT & TIMESHEET)
+   ============================================ */
+.planning-table {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--border-subtle);
+}
+
+.planning-table tbody tr:hover td {
+  background-color: var(--bg-card-hover) !important;
+}
+
+.ts-input {
+  outline: none;
+}
+
+.ts-input:hover {
+  border-color: var(--accent-primary) !important;
+  background: var(--bg-primary) !important;
+}
+
+.ts-input:focus {
+  border-color: var(--accent-primary) !important;
+  box-shadow: 0 0 0 2px var(--accent-primary-glow) !important;
+  background: var(--bg-primary) !important;
 }
 
 /* ============================================

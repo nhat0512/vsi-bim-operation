@@ -117,8 +117,8 @@ export function render() {
             <tr>
               <th style="text-align: left; padding: 12px; border-bottom: 1px solid var(--border-subtle); position: sticky; left: 0; background: var(--bg-secondary); z-index: 10; width: 280px;" rowspan="2">Member / Project / Task</th>
               ${planData.map(w => `
-                <th colspan="8" style="text-align: center; padding: 6px; border-bottom: 1px solid var(--border-subtle); border-left: 2px solid var(--border-subtle); font-weight: bold; color: var(--text-primary); background: rgba(0,0,0,0.2);">
-                  Tuần ${w.weekNo} (${w.days[0].dateLabel} - ${w.days[6].dateLabel})
+                <th colspan="8" style="text-align: center; padding: 10px 6px; border-bottom: 1px solid var(--border-subtle); border-left: 1px solid var(--border-subtle); font-weight: 600; color: var(--text-primary); background: var(--bg-tertiary); font-size: 0.9rem;">
+                  Tuần ${w.weekNo} <span style="font-size:0.75rem; color:var(--text-muted); font-weight:normal;">(${w.days[0].dateLabel} - ${w.days[6].dateLabel})</span>
                 </th>
               `).join('')}
               <th style="text-align: center; padding: 12px; border-bottom: 1px solid var(--border-subtle); border-left: 2px solid var(--border-subtle); font-weight: bold; width: 80px;" rowspan="2">Total<br>h</th>
@@ -140,8 +140,8 @@ export function render() {
             
             <!-- TEAM TOTAL ROW -->
             ${isManager ? `
-            <tr style="background: rgba(255, 171, 0, 0.1); border-bottom: 1px solid var(--border-subtle);">
-              <td style="padding: 12px; position: sticky; left: 0; background: rgba(30, 30, 30, 0.9); z-index: 9; font-weight: bold;">
+            <tr style="background: var(--accent-warning-glow); border-bottom: 1px solid var(--border-subtle);">
+              <td style="padding: 12px; position: sticky; left: 0; background: var(--bg-tertiary); z-index: 9; font-weight: 600; border-right: 1px solid var(--border-subtle);">
                 ▼ TEAM TOTAL <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; margin-left: 8px;">${targetPersonnel.length} members</span>
               </td>
               ${planData.map(w => {
@@ -150,10 +150,10 @@ export function render() {
                   html += `<td style="text-align: center; border-left: ${d.name==='T2'?'2px solid var(--border-subtle)':'none'};"></td>`;
                 });
                 const total = getTeamWeekTotal(w);
-                html += `<td style="text-align: center; padding: 8px; background: rgba(var(--accent-primary-rgb), 0.05);"><div style="color: #ffab00; border: 1px solid #ffab00; border-radius: 4px; padding: 2px 4px; display: inline-block; min-width: 40px; font-weight: bold;">${total}h</div></td>`;
+                html += `<td style="text-align: center; padding: 8px; background: rgba(var(--accent-primary-rgb), 0.05);"><div style="color: var(--accent-warning); border: 1px solid var(--accent-warning); border-radius: 4px; padding: 2px 4px; display: inline-block; min-width: 40px; font-weight: 600;">${total}h</div></td>`;
                 return html;
               }).join('')}
-              <td style="text-align: center; padding: 8px; font-weight: bold; color: #ffab00; border-left: 2px solid var(--border-subtle);">${getTeamTotal()}h</td>
+              <td style="text-align: center; padding: 8px; font-weight: 600; color: var(--accent-warning); border-left: 1px solid var(--border-subtle); background: var(--bg-tertiary);">${getTeamTotal()}h</td>
             </tr>
             ` : ''}
           </thead>
@@ -164,9 +164,9 @@ export function render() {
               // Person Row
               let html = `
                 <tr style="border-bottom: 1px solid var(--border-subtle); background: var(--bg-tertiary);">
-                  <td style="padding: 8px 12px; position: sticky; left: 0; background: var(--bg-tertiary); z-index: 9;">
+                  <td style="padding: 8px 12px; position: sticky; left: 0; background: var(--bg-tertiary); z-index: 9; border-right: 1px solid var(--border-subtle);">
                     <div class="flex items-center gap-sm">
-                      <img src="${h.person.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(h.person.name)}`}" style="width: 24px; height: 24px; border-radius: 50%;">
+                      <img src="${(h.person.avatar && h.person.avatar.length > 5) ? h.person.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(h.person.name)}&background=3b82f6&color=fff&rounded=true`}" style="width: 28px; height: 28px; border-radius: 50%; box-shadow: var(--shadow-sm);">
                       <div style="font-weight: bold; font-size: 0.9rem;">${h.person.name}</div>
                       <button class="btn-icon btn-analytics" data-uid="${personId}" title="Xem biểu đồ thời gian" style="margin-left: auto;">📊</button>
                     </div>
@@ -174,16 +174,16 @@ export function render() {
                   ${planData.map(w => {
                     let wHtml = '';
                     w.days.forEach(d => {
-                      wHtml += `<td style="border-left: ${d.name==='T2'?'2px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(255,0,0,0.02)':'transparent'};"></td>`;
+                    wHtml += `<td style="border-left: ${d.name==='T2'?'1px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(239, 68, 68, 0.05)':'transparent'};"></td>`;
                     });
                     const wTotal = getUserWeekTotal(personId, w);
-                    const color = wTotal > 40 ? 'text-danger' : (wTotal > 0 ? 'text-success' : 'text-muted');
-                    const burnoutBadge = wTotal > 50 ? `<span style="font-size:0.6rem; background:red; color:white; padding:1px 4px; border-radius:4px; margin-left:4px;" title="Burnout Risk!">⚠️</span>` : '';
+                    const color = wTotal > 40 ? 'color: var(--accent-danger)' : (wTotal > 0 ? 'color: var(--accent-secondary)' : 'color: var(--text-muted)');
+                    const burnoutBadge = wTotal > 50 ? `<span style="font-size:0.6rem; background:var(--accent-danger); color:white; padding:1px 4px; border-radius:4px; margin-left:4px;" title="Burnout Risk!">⚠️</span>` : '';
                     
-                    wHtml += `<td style="text-align: center; font-weight: bold; font-size: 0.85rem; background: rgba(var(--accent-primary-rgb), 0.05);" class="${color}">${wTotal > 0 ? wTotal + 'h' : '—'} ${burnoutBadge}</td>`;
+                    wHtml += `<td style="text-align: center; font-weight: 600; font-size: 0.85rem; background: var(--bg-tertiary);" style="${color}">${wTotal > 0 ? wTotal + 'h' : '—'} ${burnoutBadge}</td>`;
                     return wHtml;
                   }).join('')}
-                  <td style="text-align: center; font-weight: bold; font-size: 0.85rem; color: var(--text-primary); border-left: 2px solid var(--border-subtle);">
+                  <td style="text-align: center; font-weight: 600; font-size: 0.85rem; color: var(--text-primary); border-left: 1px solid var(--border-subtle);">
                     ${timesheets.filter(t => t.userId === personId).reduce((s, t) => s + (Number(t.hours)||0), 0)}h
                   </td>
                 </tr>
@@ -195,19 +195,19 @@ export function render() {
                 
                 html += `
                   <tr style="border-bottom: 1px dashed var(--border-subtle); opacity: 0.9;">
-                    <td style="padding: 6px 12px 6px 36px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; color: var(--text-muted);">
+                    <td style="padding: 6px 12px 6px 36px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; color: var(--text-muted); border-right: 1px solid var(--border-subtle);">
                       ▼ ${pObj.project.code} — ${pObj.project.name}
                     </td>
                     ${planData.map(w => {
                       let wHtml = '';
                       w.days.forEach(d => {
-                         wHtml += `<td style="border-left: ${d.name==='T2'?'2px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(255,0,0,0.02)':'transparent'};"></td>`;
+                         wHtml += `<td style="border-left: ${d.name==='T2'?'1px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(239, 68, 68, 0.05)':'transparent'};"></td>`;
                       });
                       const pwTotal = getProjectWeekTotal(personId, pObj.project.id, w);
-                      wHtml += `<td style="text-align: center; font-size: 0.75rem; color: ${pwTotal > 0 ? 'var(--text-primary)' : 'var(--text-muted)'}; background: rgba(var(--accent-primary-rgb), 0.05);">${pwTotal > 0 ? pwTotal + 'h' : '—'}</td>`;
+                      wHtml += `<td style="text-align: center; font-size: 0.75rem; color: ${pwTotal > 0 ? 'var(--text-primary)' : 'var(--text-muted)'}; background: var(--bg-tertiary);">${pwTotal > 0 ? pwTotal + 'h' : '—'}</td>`;
                       return wHtml;
                     }).join('')}
-                    <td style="text-align: center; font-size: 0.75rem; color: var(--text-muted); border-left: 2px solid var(--border-subtle);">${projTotal > 0 ? projTotal + 'h' : '—'}</td>
+                    <td style="text-align: center; font-size: 0.75rem; color: var(--text-muted); border-left: 1px solid var(--border-subtle);">${projTotal > 0 ? projTotal + 'h' : '—'}</td>
                   </tr>
                 `;
                 
@@ -220,7 +220,7 @@ export function render() {
 
                   html += `
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
-                      <td style="padding: 4px 12px 4px 60px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; border-left: 2px solid var(--accent-primary);">
+                      <td style="padding: 4px 12px 4px 60px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; border-left: 3px solid var(--accent-primary); border-right: 1px solid var(--border-subtle);">
                         └ ${task.name}
                       </td>
                       ${planData.map(w => {
@@ -233,11 +233,11 @@ export function render() {
                           
                           let indicator = '';
                           if (isOT || hasComment) {
-                            indicator = `<div style="position:absolute; top:2px; right:2px; width:6px; height:6px; border-radius:50%; background:${isOT ? '#ff3333' : '#ffab00'};" title="${isOT ? 'Làm ngoài giờ (OT)' : 'Có ghi chú'}"></div>`;
+                            indicator = `<div style="position:absolute; top:2px; right:2px; width:6px; height:6px; border-radius:50%; background:${isOT ? 'var(--accent-danger)' : 'var(--accent-warning)'};" title="${isOT ? 'Làm ngoài giờ (OT)' : 'Có ghi chú'}"></div>`;
                           }
                           
                           wHtml += `
-                            <td style="text-align: center; padding: 4px; position:relative; border-left: ${d.name==='T2'?'2px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(255,0,0,0.02)':'transparent'};">
+                            <td style="text-align: center; padding: 4px; position:relative; border-left: ${d.name==='T2'?'1px solid var(--border-subtle)':'none'}; background: ${d.name==='T7'||d.name==='CN'?'rgba(239, 68, 68, 0.05)':'transparent'}; transition: background 0.2s;">
                               ${indicator}
                               <input type="number" class="ts-input" 
                                 data-uid="${personId}" 
@@ -247,7 +247,7 @@ export function render() {
                                 value="${val}" 
                                 min="0" max="24"
                                 title="Double-click để ghi chú/OT"
-                                style="width: 36px; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid var(--border-subtle); border-radius: 3px; color: var(--text-primary); font-size: 0.75rem; padding: 2px;"
+                                style="width: 40px; text-align: center; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-primary); font-size: 0.75rem; padding: 4px; transition: border-color 0.2s, box-shadow 0.2s;"
                               >
                             </td>
                           `;

@@ -53,8 +53,11 @@ export function render() {
     const userProjects = [];
     (state.projects || []).forEach(proj => {
       const userTasks = (proj.tasks || []).filter(t => t.assignee === person.name);
+      const isMember = (proj.team || []).some(m => m.name === person.name) || proj.teamLead === person.name;
       if (userTasks.length > 0) {
         userProjects.push({ project: proj, tasks: userTasks });
+      } else if (isMember) {
+        userProjects.push({ project: proj, tasks: [] });
       }
     });
     return { person, projects: userProjects };
@@ -212,9 +215,10 @@ export function render() {
                 `;
                 
                 // Tasks Rows
-                pObj.tasks.forEach(task => {
-                  const trueIdx = pObj.project.tasks.findIndex(t => t.name === task.name && t.assignee === task.assignee);
-                  const taskId = `t_${trueIdx}`;
+                const tasksToRender = pObj.tasks.length > 0 ? pObj.tasks : [{ name: 'Công việc chung (Chưa phân Task)', isGeneral: true }];
+                tasksToRender.forEach(task => {
+                  const trueIdx = task.isGeneral ? -1 : pObj.project.tasks.findIndex(t => t.name === task.name && t.assignee === task.assignee);
+                  const taskId = task.isGeneral ? 't_general' : `t_${trueIdx}`;
                   
                   const taskTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === taskId).reduce((s, t) => s + (Number(t.hours)||0), 0);
 

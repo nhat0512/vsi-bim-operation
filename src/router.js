@@ -10,7 +10,7 @@ const routes = {
   'resources': () => import('./pages/Resources.js'),
   'quality': () => import('./pages/Quality.js'),
   'my-tasks': () => import('./pages/MyTasks.js'),
-  'drawing-progress': () => import('./pages/DrawingProgress.js'),
+
   'analytics': () => import('./pages/Analytics.js'),
   'settings': () => import('./pages/Settings.js')
 };

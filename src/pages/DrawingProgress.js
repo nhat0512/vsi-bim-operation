@@ -1,33 +1,10 @@
 import { getState, setState } from '../state.js';
 
-const tableData = [
+let tableData = [
   { isHeader: true, stt: 'I', content: 'Km0-km27', sub1: '', sub2: '', payment: '', note: '', km: '' },
   { stt: '1.2', content: 'Km0-km5', sub1: { date: '12/08/2026 (ok)', status: 'yellow' }, sub2: { date: '09/09/2026', status: 'yellow' }, payment: { date: 'ngày 25/09/2026', status: 'orange' }, note: '', km: 5 },
-  { stt: '1.3', content: 'Km5-km10', sub1: { date: '14/07/2026', status: 'yellow' }, sub2: { date: '29/09/2026', status: 'cyan' }, payment: { date: 'ngày 28/09/2026', status: 'orange' }, note: '', km: 5 },
-  { stt: '1.4', content: 'Km10-km16', sub1: { date: '17/08/2026', status: 'yellow' }, sub2: { date: '20/10/2026', status: 'cyan' }, payment: { date: 'ngày 28/08/2026', status: 'green' }, note: '- 2 cầu,\n- 25 cống', km: 6 },
-  { stt: '1.5', content: 'Km16-km21', sub1: null, sub2: null, payment: null, note: '', km: '' },
-  { stt: '1.6', content: 'Km21-km27', sub1: null, sub2: null, payment: null, note: '', km: '' },
-  
-  { isHeader: true, stt: 'II', content: 'Km27-Km40', sub1: '', sub2: '', payment: '', note: '', km: '' },
-  { stt: '2.1', content: 'Km27-Km31', sub1: null, sub2: null, payment: null, note: '', km: '' },
-  { stt: '2.2', content: 'Km31-Km34', sub1: { date: '22/09/2026', status: 'yellow' }, sub2: { date: '08/10/2026', status: 'cyan' }, payment: null, note: '- 0 cầu,\n- 12 cống', km: 3 },
-  { stt: '2.3', content: 'Km34-Km35', sub1: { date: '28/07/2026', status: 'yellow' }, sub2: { date: '05/10/2026', status: 'light-green' }, payment: { date: 'ngày 25/09/2026', status: 'orange' }, note: 'a. Linh bổ xung thang bậc nước, tường TL', km: 1 },
-  { stt: '2.4', content: 'Km35-Km40', sub1: null, sub2: null, payment: null, note: '', km: '' },
-
-  { isHeader: true, stt: 'III', content: 'Km40-Km50', sub1: '', sub2: '', payment: '', note: '', km: '' },
-  { stt: '3.1', content: 'Km40-Km44', sub1: { date: '25/09/2026', status: 'yellow' }, sub2: { date: '12/10/2026', status: 'cyan' }, payment: null, note: '- 1 cầu gần xong đã đi thép a. Linh,\n- 16 cống', km: 4 },
-  { stt: '3.2', content: 'Km44-Km46', sub1: { date: '09/08/2026', status: 'yellow' }, sub2: { date: '19/09/2026', status: 'red' }, payment: { date: 'ngày 25/09/2026', status: 'orange' }, note: 'a. Linh bổ xung thang bậc nước + Tường TL', km: 2 },
-  { stt: '3.3', content: 'Km46-Km47', sub1: { date: '23/09/2026', status: 'yellow' }, sub2: { date: '02/10/2026', status: 'cyan' }, payment: null, note: '- 0 cầu,\n- 6 cống', km: 1 },
-  { stt: '3.4', content: 'Km47-Km49', sub1: { date: '28/09/2026', status: 'yellow' }, sub2: { date: '15/10/2026', status: 'cyan' }, payment: null, note: '- 2 cầu, trong đó 1 cầu 48 đã đi thép\n- 5 cống', km: 2 },
-  { stt: '3.5', content: 'Km49-Km50', sub1: null, sub2: null, payment: null, note: '', km: '' },
-
-  { isHeader: true, stt: 'VI', content: 'Km50-Km62', sub1: '', sub2: '', payment: '', note: '', km: '' },
-  { stt: '4.1', content: 'Km50-Km53', sub1: { date: '24/09/2026', status: 'yellow' }, sub2: { date: '26/10/2026', status: 'cyan' }, payment: null, note: '- 2 cầu ngắn\n- 6 cống', km: 3 },
-  { stt: '4.2', content: 'Km53-Km54', sub1: { date: '26/07/2026', status: 'yellow' }, sub2: { date: '08/10/2026', status: 'light-green' }, payment: { date: 'ngày 25/09/2026', status: 'orange' }, note: 'a. Linh bổ xung thang bậc nước + Tường TL', km: 1 },
-  { stt: '4.3', content: 'Km54-Km62', sub1: null, sub2: null, payment: null, note: '', km: '' },
-
-  { isHeader: true, stt: 'V', content: 'Km62-Km72', sub1: '', sub2: '', payment: '', note: '', km: '' },
-];
+  { stt: '1.3', content: 'Km5-km10', sub1: { date: '14/07/2026', status: 'yellow' }, sub2: { date: '29/09/2026', status: 'cyan' }, payment: { date: 'ngày 28/09/2026', status: 'orange' }, note: '', km: 5 }
+]; // Initial mockup, will be overwritten by sync
 
 function getStatusColor(status) {
   switch(status) {
@@ -51,8 +28,8 @@ export function render() {
         </div>
         
         <div class="flex items-center gap-sm">
+          <button class="btn btn-outline btn-sm text-primary" id="btn-gs-sync" title="Đồng bộ trực tiếp từ Google Sheets">🔄 Đồng bộ Google Sheets</button>
           <button class="btn btn-outline btn-sm" id="btn-export-excel" title="Xuất Excel">📥 Xuất Excel</button>
-          <button class="btn btn-primary btn-sm" id="btn-add-row">➕ Thêm dữ liệu</button>
         </div>
       </div>
       
@@ -135,8 +112,132 @@ export function init() {
     alert('Tính năng xuất Excel đang được phát triển.');
   });
   
-  document.getElementById('btn-add-row')?.addEventListener('click', () => {
-    alert('Tính năng thêm dữ liệu đang được phát triển.');
+  document.getElementById('btn-gs-sync')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-gs-sync');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Đang kéo dữ liệu...';
+    btn.disabled = true;
+
+    try {
+      const { GAS_URL } = await import('../api/googleSheets.js');
+      const res = await fetch(GAS_URL + "?sheet=TimeLine_14D");
+      if (!res.ok) throw new Error('Network error');
+      const data = await res.json();
+      
+      if (data && data.timeline) {
+        const values = data.timeline.values;
+        const colors = data.timeline.colors;
+        
+        const hexToStatus = (hex) => {
+          hex = (hex || '').toLowerCase();
+          if (hex === '#ffff00') return 'yellow';
+          if (hex === '#00ffff') return 'cyan';
+          if (hex === '#00ff00') return 'green';
+          if (hex === '#ff9900' || hex === '#f6b26b') return 'orange';
+          if (hex === '#ff0000') return 'red';
+          if (hex === '#c4d79b') return 'light-green';
+          return '';
+        };
+
+        const parseDate = (str) => {
+          if (!str) return '';
+          const parts = str.toString().split('/');
+          if (parts.length === 3) {
+            return parts[0] + '/' + parts[1] + '/' + parts[2]; // Trả về dd/mm/yyyy
+          }
+          return str.toString(); // Có thể là text như "Đã nộp"
+        };
+
+        const newTableData = [];
+        for (let i = 3; i < values.length; i++) {
+          const rowValues = values[i];
+          const rowColors = colors[i];
+          
+          if (!rowValues[1]) continue; // Bỏ qua nếu cột Nội dung trống
+          
+          // Header nếu cột 1 (STT) có màu tím d9d2e9
+          const isHeader = (rowColors[0] || '').toLowerCase() === '#d9d2e9' || (rowColors[1] || '').toLowerCase() === '#d9d2e9';
+          
+          if (isHeader) {
+            newTableData.push({
+              isHeader: true,
+              stt: rowValues[0] || '',
+              content: rowValues[1] || '',
+              sub1: '', sub2: '', payment: '', note: '', km: ''
+            });
+          } else {
+            const hasSub1 = rowValues[3] || (rowColors[3] && rowColors[3].toLowerCase() !== '#ffffff');
+            const hasSub2 = rowValues[4] || (rowColors[4] && rowColors[4].toLowerCase() !== '#ffffff');
+            const hasPay = rowValues[5] || (rowColors[5] && rowColors[5].toLowerCase() !== '#ffffff');
+            
+            newTableData.push({
+              stt: rowValues[0] || '',
+              content: rowValues[1] || '',
+              sub1: hasSub1 ? { date: parseDate(rowValues[3]), status: hexToStatus(rowColors[3]) } : null,
+              sub2: hasSub2 ? { date: parseDate(rowValues[4]), status: hexToStatus(rowColors[4]) } : null,
+              payment: hasPay ? { date: parseDate(rowValues[5]), status: hexToStatus(rowColors[5]) } : null,
+              note: (rowValues[11] || '').toString(),
+              km: (rowValues[7] || '').toString()
+            });
+          }
+        }
+        
+        tableData = newTableData;
+        
+        // Re-render tbody
+        const tbody = document.querySelector('.drawing-table tbody');
+        if (tbody) {
+          tbody.innerHTML = tableData.map(row => {
+            if (row.isHeader) {
+              return `
+                <tr style="background: rgba(144, 98, 255, 0.15); font-weight: bold;">
+                  <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle);">${row.stt}</td>
+                  <td style="padding: 10px; border: 1px solid var(--border-subtle);">${row.content}</td>
+                  <td style="border: 1px solid var(--border-subtle); background: rgba(144, 98, 255, 0.05);"></td>
+                  <td style="border: 1px solid var(--border-subtle); background: rgba(144, 98, 255, 0.05);"></td>
+                  <td style="border: 1px solid var(--border-subtle); background: rgba(144, 98, 255, 0.05);"></td>
+                  <td style="border: 1px solid var(--border-subtle); background: rgba(144, 98, 255, 0.05);"></td>
+                  <td style="border: 1px solid var(--border-subtle); background: rgba(144, 98, 255, 0.05);"></td>
+                </tr>
+              `;
+            }
+            // window.getStatusColor was private to this module, so we must redefine or make it available. 
+            // Wait, we can just compute it inline or call the existing getStatusColor (which is not exported, but in module scope)
+            const getStatusColor = (status) => {
+              switch(status) {
+                case 'yellow': return 'background-color: #fff000; color: #000;';
+                case 'cyan': return 'background-color: #00ffff; color: #000;';
+                case 'orange': return 'background-color: #f6931d; color: #000;';
+                case 'green': return 'background-color: #00ff00; color: #000;';
+                case 'light-green': return 'background-color: #c4d79b; color: #000;';
+                case 'red': return 'background-color: #ff0000; color: #fff;';
+                default: return '';
+              }
+            };
+            return `
+              <tr style="border-bottom: 1px solid var(--border-subtle); background: var(--bg-tertiary);">
+                <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle);">${row.stt}</td>
+                <td style="padding: 10px; border: 1px solid var(--border-subtle);">${row.content}</td>
+                <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle); ${row.sub1 ? getStatusColor(row.sub1.status) : ''}">${row.sub1 ? row.sub1.date : ''}</td>
+                <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle); ${row.sub2 ? getStatusColor(row.sub2.status) : ''}">${row.sub2 ? row.sub2.date : ''}</td>
+                <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle); ${row.payment ? getStatusColor(row.payment.status) : ''}">${row.payment ? row.payment.date : ''}</td>
+                <td style="padding: 10px; border: 1px solid var(--border-subtle); white-space: pre-line; font-size: 0.85rem;">${row.note}</td>
+                <td style="text-align: center; padding: 10px; border: 1px solid var(--border-subtle);">${row.km}</td>
+              </tr>
+            `;
+          }).join('');
+        }
+        alert('✅ Đồng bộ dữ liệu thành công!');
+      } else {
+        alert('⚠️ Dữ liệu không hợp lệ.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('⚠️ Không thể kết nối tới Google Sheets. Lỗi: ' + e.message);
+    }
+    
+    btn.innerHTML = originalText;
+    btn.disabled = false;
   });
 }
 

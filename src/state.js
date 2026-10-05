@@ -35,7 +35,6 @@ let state = {
   ]
 };
 
-// Khôi phục state từ localStorage nếu có
 const savedState = localStorage.getItem('bimTransPM_State');
 if (savedState) {
   try {
@@ -90,6 +89,23 @@ function syncToFirestore() {
       }
 
       if (state.projects && state.personnel) {
+        // --- AUTO-RECOVER MISSING PERSONNEL ---
+        state.projects.forEach(proj => {
+          if (proj.teamLead && !state.personnel.some(p => p.name === proj.teamLead)) {
+            state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: proj.teamLead, role: 'Team Lead', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
+          }
+          (proj.tasks || []).forEach(t => {
+            if (t.assignee && !state.personnel.some(p => p.name === t.assignee)) {
+              state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: t.assignee, role: 'Member', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
+            }
+          });
+          (proj.team || []).forEach(m => {
+            if (m.name && !state.personnel.some(p => p.name === m.name)) {
+              state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: m.name, role: m.role || 'Member', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
+            }
+          });
+        });
+        
         state.personnel.forEach(person => {
           // 2. Đồng bộ nguồn lực (allocation) từ danh sách thành viên dự án
           const oldAllocMap = {};
@@ -328,6 +344,10 @@ export function getState() {
  */
 export function setState(key, value, fromCloud = false) {
   state[key] = value;
+  
+  if (!fromCloud) {
+    state.lastLocalUpdate = Date.now();
+  }
   
   if (typeof window !== 'undefined' && window.localStorage) {
      try {
@@ -638,8 +658,25 @@ export async function loadInitialData() {
       onSnapshot(doc(db, "app_data", "main"), (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          setState('projects', data.projects || [], true);
-          setState('personnel', data.personnel || [], true);
+          
+          let projectsToLoad = data.projects;
+          // RESTORE DATA BUG FIX: If projects array on Firestore is empty but we have a backup in localStorage, restore it!
+          if ((!projectsToLoad || projectsToLoad.length === 0) && typeof window !== 'undefined' && window.localStorage) {
+             try {
+                const localProjStr = localStorage.getItem('bim_transpm_projects');
+                if (localProjStr) {
+                   const localProj = JSON.parse(localProjStr);
+                   if (localProj && localProj.length > 0) {
+                      console.log("♻️ Đã khôi phục các dự án bị mất từ Local Storage!");
+                      projectsToLoad = localProj;
+                      setTimeout(syncToFirestore, 2000); // Trigger a sync back to cloud
+                   }
+                }
+             } catch(err) {}
+          }
+          
+          setState('projects', projectsToLoad && projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
+          setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
@@ -652,7 +689,7 @@ export async function loadInitialData() {
         } else {
           // Khởi tạo lần đầu
           setState('projects', defaultProjects, true);
-          setState('personnel', [], true);
+          setState('personnel', resourcesMod.personnelItems, true);
           setState('softwareAssets', resourcesMod.softwareAssets, true);
           setState('hardwareAssets', resourcesMod.hardwareAssets, true);
           setState('activityLog', resourcesMod.activityLog, true);
@@ -689,7 +726,7 @@ export async function loadInitialData() {
          }
          // Fallback load data locally so UI doesn't stay empty
          setState('projects', defaultProjects, true);
-         setState('personnel', [], true);
+         setState('personnel', resourcesMod.personnelItems, true);
          setState('softwareAssets', resourcesMod.softwareAssets, true);
          setState('hardwareAssets', resourcesMod.hardwareAssets, true);
          setState('activityLog', resourcesMod.activityLog, true);

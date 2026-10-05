@@ -119,9 +119,13 @@ export function render() {
                   ${isEditing ? `
                     <select id="edit-lead" class="form-select">
                       <option value="">-- Chọn --</option>
-                      ${(project.members || []).map(m => `
-                        <option value="${m.name}" ${project.teamLead === m.name ? 'selected' : ''}>${m.name}</option>
-                      `).join('')}
+                      ${(personnel || []).map(m => {
+                        let label = m.name;
+                        const alloc = m.totalAllocation || 0;
+                        if (alloc >= 100) label += ' [⚠️ Quá tải]';
+                        else label += ` [✅ Rảnh ${100 - alloc}%]`;
+                        return `<option value="${m.name}" ${project.teamLead === m.name ? 'selected' : ''}>${label}</option>`;
+                      }).join('')}
                     </select>
                   ` : project.teamLead || '<span class="text-muted italic">Chưa gán</span>'}
                 </td>
@@ -139,36 +143,9 @@ export function render() {
         </div>
       </div>
 
+
+
       <div class="grid-2 mb-lg">
-        <!-- Segments -->
-        <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">📏 Phân đoạn tuyến</h3>
-          </div>
-          ${project.segments.map((seg, idx) => `
-            <div class="mb-md">
-              <div class="flex justify-between mb-xs">
-                ${isEditing ? `
-                  <input type="text" class="form-input edit-segment-name" data-idx="${idx}" value="${seg.name}" style="padding: 2px 8px; width: 60%;">
-                  <div class="flex items-center gap-xs">
-                    <input type="range" class="edit-segment-progress" data-idx="${idx}" value="${seg.progress}" min="0" max="100" style="width: 80px;">
-                    <span class="text-sm font-bold w-10 text-right">${seg.progress}%</span>
-                    <button class="btn btn-ghost btn-sm text-danger btn-delete-segment" data-idx="${idx}">🗑️</button>
-                  </div>
-                ` : `
-                  <span class="text-sm font-semibold">${seg.name}</span>
-                  <span class="text-sm font-bold">${seg.progress}%</span>
-                `}
-              </div>
-              <div class="progress-bar">
-                <div class="progress-bar-fill ${seg.progress >= 70 ? 'green' : seg.progress >= 40 ? '' : 'orange'}" style="width: ${seg.progress}%;"></div>
-              </div>
-            </div>
-          `).join('')}
-          ${isEditing ? `
-            <button class="btn btn-outline btn-sm w-full mt-sm admin-only" id="btn-add-segment">+ Thêm phân đoạn</button>
-          ` : ''}
-        </div>
 
         <!-- Tasks -->
         <div class="card">
@@ -213,16 +190,20 @@ export function render() {
                         ${isEditing ? `
                           <select class="form-select edit-task-assignee" data-idx="${idx}">
                             <option value="">-- Chọn --</option>
-                            ${(personnel || []).map(m => `
-                              <option value="${m.name}" ${t.assignee === m.name ? 'selected' : ''}>${m.name}</option>
-                            `).join('')}
+                            ${(personnel || []).map(m => {
+                              let label = m.name;
+                              const alloc = m.totalAllocation || 0;
+                              if (alloc >= 100) label += ' [⚠️ Quá tải]';
+                              else label += ` [✅ Rảnh ${100 - alloc}%]`;
+                              return `<option value="${m.name}" ${t.assignee === m.name ? 'selected' : ''}>${label}</option>`;
+                            }).join('')}
                           </select>
                         ` : `
                           <div class="flex items-center gap-xs">
                             ${t.assignee ? (() => {
                               const member = (personnel || []).find(m => m.name === t.assignee);
                               if (member) {
-                                return `<img src="${member.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;"> <span>${t.assignee}</span>`;
+                                return `<img src="${(member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;"> <span>${t.assignee}</span>`;
                               }
                               return `<span>${t.assignee}</span>`;
                             })() : '<span class="text-muted italic">Chưa gán</span>'}
@@ -331,14 +312,18 @@ export function render() {
                       <div class="flex items-center gap-xs">
                         <select class="form-select edit-rfi-assignee inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer; flex: 1;">
                           <option value="">-- Chọn --</option>
-                          ${(getState().personnel || []).map(p => `
-                            <option value="${p.name}" ${rfi.assignee === p.name ? 'selected' : ''}>${p.name}</option>
-                          `).join('')}
+                          ${(getState().personnel || []).map(p => {
+                            let label = p.name;
+                            const alloc = p.totalAllocation || 0;
+                            if (alloc >= 100) label += ' [⚠️ Quá tải]';
+                            else label += ` [✅ Rảnh ${100 - alloc}%]`;
+                            return `<option value="${p.name}" ${rfi.assignee === p.name ? 'selected' : ''}>${label}</option>`;
+                          }).join('')}
                         </select>
                         ${rfi.assignee ? (() => {
                           const person = (getState().personnel || []).find(p => p.name === rfi.assignee);
                           if (person) {
-                            return `<img src="${person.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;" title="${person.role || person.name}">`;
+                            return `<img src="${(person.avatar && person.avatar.length > 5) ? person.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;" title="${person.role || person.name}">`;
                           }
                           return '';
                         })() : ''}
@@ -376,31 +361,30 @@ export function render() {
         </div>
       </div>
       
-      ${project.code === '14D' ? `
-      <!-- 14D Drawing Progress -->
-      <div class="card mb-lg" style="padding: 0; overflow: hidden;">
-        <div class="card-header" style="padding: 16px;">
-          <h3 class="card-title">📐 Bảng Theo Dõi Tiến Độ Bản Vẽ</h3>
-        </div>
-        <div id="drawing-progress-inject" style="padding: 0;">
-          <div style="padding: 16px; text-align: center; color: var(--text-muted);">Đang tải bảng tính...</div>
-        </div>
-      </div>
-      ` : ''}
+
 
       <!-- Team Roster -->
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">👥 Đội ngũ Dự án</h3>
-          <span class="badge active">${(project.members || []).length} thành viên</span>
+          <span class="badge active">${(project.team || project.members || []).length} thành viên</span>
         </div>
         <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-md);">
-          ${(project.members || []).map((m, idx) => `
+          ${(project.team || project.members || []).map((m, idx) => `
             <div style="display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-tertiary); position: relative;">
               <img src="${m.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name)}&background=random`}" alt="${m.name}" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
               <div style="flex: 1; overflow: hidden;">
                 ${isEditing ? `
-                  <input type="text" class="form-input edit-member-name" data-idx="${idx}" value="${m.name}" style="margin-bottom: 4px; font-weight: bold; width: 100%; padding: 4px;">
+                  <select class="form-select edit-member-name" data-idx="${idx}" style="margin-bottom: 4px; font-weight: bold; width: 100%; padding: 4px;">
+                    <option value="">-- Chọn nhân sự --</option>
+                    ${(getState().personnel || []).map(p => {
+                      let label = p.name;
+                      const alloc = p.totalAllocation || 0;
+                      if (alloc >= 100) label += ' [⚠️ Quá tải]';
+                      else label += ` [✅ Rảnh ${100 - alloc}%]`;
+                      return `<option value="${p.name}" ${m.name === p.name ? 'selected' : ''}>${label}</option>`;
+                    }).join('')}
+                  </select>
                   <div class="flex gap-xs mt-xs">
                     <select class="form-select edit-member-role" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; width: 50%;">
                       <option value="BIM Manager" ${m.role === 'BIM Manager' ? 'selected' : ''}>BIM Manager</option>
@@ -433,7 +417,7 @@ export function render() {
             <div style="display: flex; align-items: center; justify-content: center; padding: 12px; border-radius: var(--radius-md); border: 1px dashed var(--border-strong); background: transparent; cursor: pointer; min-height: 80px;" id="btn-add-member" class="admin-only">
               <span class="text-muted font-bold">+ Thêm Nhân Sự</span>
             </div>
-          ` : (project.members || []).length === 0 ? '<div class="text-sm text-muted">Chưa có thành viên nào được gán vào dự án này.</div>' : ''}
+          ` : (project.team || project.members || []).length === 0 ? '<div class="text-sm text-muted">Chưa có thành viên nào được gán vào dự án này.</div>' : ''}
         </div>
       </div>
     </div>
@@ -538,18 +522,7 @@ export function init() {
       startDate: document.getElementById('edit-start').value,
       endDate: document.getElementById('edit-end').value,
     };
-    
-    // Extract Segments
-    const segNames = document.querySelectorAll('.edit-segment-name');
-    const segProgs = document.querySelectorAll('.edit-segment-progress');
-    const newSegments = [];
-    segNames.forEach((el, idx) => {
-      newSegments.push({
-        name: el.value,
-        progress: parseInt(segProgs[idx].value) || 0
-      });
-    });
-    updates.segments = newSegments;
+    // Extract Tasks (Removed Segments Matrix as it's now in DrawingProgress.js)
 
     // Extract Tasks
     const taskNames = document.querySelectorAll('.edit-task-name');
@@ -599,7 +572,7 @@ export function init() {
         name: el.value,
         role: memberRoles[idx].value,
         discipline: memberDisciplines[idx].value,
-        avatar: project.members?.[idx]?.avatar || null
+        avatar: (project.team || project.members)?.[idx]?.avatar || null
       });
     });
     updates.team = newMembers;
@@ -629,30 +602,15 @@ export function init() {
   });
 
   // Range Slider real-time UI update (optional, but good UX)
-  document.querySelectorAll('.edit-segment-progress, .edit-phase-progress').forEach(slider => {
+  document.querySelectorAll('.edit-phase-progress').forEach(slider => {
     slider.addEventListener('input', (e) => {
       e.target.nextElementSibling.textContent = `${e.target.value}%`;
     });
   });
 
-  // Add Segment
-  document.getElementById('btn-add-segment')?.addEventListener('click', () => {
-    project.segments.push({ name: 'Phân đoạn mới', progress: 0 });
-    // Update state to trigger re-render in edit mode
-    updateProject(selectedProjectId, { segments: project.segments });
-    isEditing = true;
-    refreshDetail();
-  });
 
-  // Delete Segment
-  document.querySelectorAll('.btn-delete-segment').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const idx = parseInt(e.currentTarget.dataset.idx);
-      project.segments.splice(idx, 1);
-      updateProject(selectedProjectId, { segments: project.segments });
-      refreshDetail();
-    });
-  });
+
+
 
   // Add Task
   document.getElementById('btn-add-task')?.addEventListener('click', () => {
@@ -679,13 +637,13 @@ export function init() {
 
   // Add Member
   document.getElementById('btn-add-member')?.addEventListener('click', () => {
-    if (!project.members) project.members = [];
-    project.members.push({ 
+    if (!project.team) project.team = project.members || [];
+    project.team.push({ 
       name: 'Thành viên mới', 
       role: 'BIM Modeler', 
       discipline: 'Kiến trúc' 
     });
-    updateProject(selectedProjectId, { members: project.members });
+    updateProject(selectedProjectId, { team: project.team, members: project.team });
     refreshDetail();
   });
 
@@ -693,8 +651,9 @@ export function init() {
   document.querySelectorAll('.btn-delete-member').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const idx = parseInt(e.currentTarget.dataset.idx);
-      project.members.splice(idx, 1);
-      updateProject(selectedProjectId, { members: project.members });
+      if (!project.team) project.team = project.members || [];
+      project.team.splice(idx, 1);
+      updateProject(selectedProjectId, { team: project.team, members: project.team });
       refreshDetail();
     });
   });
@@ -757,19 +716,7 @@ export function init() {
     });
   });
 
-  if (project.code === '14D') {
-    import('./DrawingProgress.js').then(module => {
-      const container = document.getElementById('drawing-progress-inject');
-      if (container) {
-        // Strip out the main container formatting for embedding
-        let html = module.render();
-        // Remove padding, min-height and title header to fit into the card nicely
-        html = html.replace(/<div class="animate-fade-in-up"[\s\S]*?<div class="flex items-center justify-between mb-lg">[\s\S]*?<\/div>/, '<div class="animate-fade-in-up" style="display: flex; flex-direction: column;">');
-        container.innerHTML = html;
-        if (module.init) module.init();
-      }
-    });
-  }
+
 }
 
 async function checkResourceConflict(assigneeName) {

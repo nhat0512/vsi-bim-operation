@@ -185,6 +185,12 @@ export function render() {
                 ${myAssignments.map(({ project }) => `<option value="${project.id}">${project.name}</option>`).join('')}
               </select>
             </div>
+            <div style="flex: 2; min-width: 200px;">
+              <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Công việc</label>
+              <select class="form-select" id="ts-task" disabled>
+                <option value="">-- Vui lòng chọn dự án trước --</option>
+              </select>
+            </div>
             <div style="flex: 1; min-width: 100px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Số giờ</label>
               <input type="number" class="form-input" id="ts-hours" min="0.5" max="12" step="0.5" value="8" style="width: 100%;">
@@ -229,6 +235,7 @@ function renderRecentTimesheets(email, displayName, personnelName) {
           <th>Dự án</th>
           <th>Số giờ</th>
           <th>Ghi chú</th>
+          <th style="width: 40px;"></th>
         </tr>
       </thead>
       <tbody>
@@ -240,6 +247,11 @@ function renderRecentTimesheets(email, displayName, personnelName) {
               <td class="text-sm font-semibold">${proj ? proj.name : ts.projectId}</td>
               <td class="text-sm font-bold">${ts.hours}h</td>
               <td class="text-sm text-muted">${ts.note || '—'}</td>
+              <td class="text-sm">
+                <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="Xóa" style="padding: 2px 6px;">
+                  🗑️
+                </button>
+              </td>
             </tr>
           `;
         }).join('')}
@@ -289,9 +301,42 @@ export function init() {
     });
   });
 
+  // Cập nhật danh sách công việc khi chọn dự án
+  const tsProject = document.getElementById('ts-project');
+  const tsTask = document.getElementById('ts-task');
+  if (tsProject && tsTask) {
+    tsProject.addEventListener('change', (e) => {
+      const projectId = e.target.value;
+      if (!projectId) {
+        tsTask.innerHTML = '<option value="">-- Vui lòng chọn dự án trước --</option>';
+        tsTask.disabled = true;
+        return;
+      }
+      
+      const { projects, currentUserAuth, currentUser, personnel } = getState();
+      const proj = projects.find(p => p.id === projectId);
+      
+      const userEmail = currentUserAuth?.email || '';
+      const person = (personnel || []).find(p => p.email === userEmail);
+      const userName = person ? person.name : (currentUserAuth?.name || currentUser?.name);
+      
+      const userTasks = (proj?.tasks || []).filter(t => t.assignee === userName);
+      
+      let optionsHtml = '<option value="t_general">-- Công việc chung (Không phân Task) --</option>';
+      userTasks.forEach(t => {
+        const trueIdx = proj.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
+        optionsHtml += `<option value="t_${trueIdx}">${t.name}</option>`;
+      });
+      
+      tsTask.innerHTML = optionsHtml;
+      tsTask.disabled = false;
+    });
+  }
+
   // Ghi nhận timesheet
   document.getElementById('btn-log-time')?.addEventListener('click', () => {
     const projectId = document.getElementById('ts-project').value;
+    const taskId = document.getElementById('ts-task').value || 't_general';
     const hours = parseFloat(document.getElementById('ts-hours').value);
     const note = document.getElementById('ts-note').value;
 
@@ -304,15 +349,23 @@ export function init() {
       return;
     }
 
-    const { currentUserAuth, currentUser, timesheets } = getState();
+    const { currentUserAuth, currentUser, timesheets, personnel } = getState();
+    const userEmail = currentUserAuth?.email || '';
+    const person = (personnel || []).find(p => p.email === userEmail);
+    
     const newEntry = {
       id: `ts-${Date.now()}`,
-      email: currentUserAuth?.email || '',
+      userId: person ? person.id : (currentUserAuth?.id || 'unknown'),
+      email: userEmail,
       userName: currentUserAuth?.name || currentUser?.name || '',
       projectId: projectId,
+      taskId: taskId,
+      dateString: new Date().toISOString().split('T')[0],
+      date: new Date().toISOString().split('T')[0],
       hours: hours,
       note: note,
-      date: new Date().toISOString().split('T')[0],
+      comment: note,
+      isActual: true, // Mark as Actual hours
       createdAt: new Date().toISOString()
     };
 
@@ -321,6 +374,20 @@ export function init() {
 
     showToast(`✅ Đã ghi nhận ${hours} giờ!`);
     refreshPage();
+  });
+
+  // Xóa timesheet
+  document.querySelectorAll('.btn-delete-timesheet').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tsId = e.currentTarget.dataset.id;
+      if (confirm('Bạn có chắc chắn muốn xóa bản ghi này? Số giờ ở General Planning cũng sẽ tự động biến mất.')) {
+        const { timesheets } = getState();
+        const updated = (timesheets || []).filter(t => t.id !== tsId);
+        setState('timesheets', updated);
+        showToast('🗑️ Đã xóa bản ghi giờ làm!');
+        refreshPage();
+      }
+    });
   });
 
   // Nút refresh

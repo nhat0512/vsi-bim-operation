@@ -66,35 +66,40 @@ export function render() {
   const timesheets = state.timesheets || [];
   
   const getTsRecord = (userId, taskId, dateStr) => {
-    return timesheets.find(t => t.userId === userId && t.taskId === taskId && t.dateString === dateStr);
+    return timesheets.find(t => t.userId === userId && t.taskId === taskId && t.dateString === dateStr && !t.isActual);
+  };
+  
+  const getActualHours = (userId, taskId, dateStr) => {
+    return timesheets.filter(t => t.userId === userId && t.taskId === taskId && t.dateString === dateStr && t.isActual)
+      .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
   
   const getUserWeekTotal = (userId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && weekDates.includes(t.dateString))
+    return timesheets.filter(t => t.userId === userId && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getTaskWeekTotal = (userId, taskId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && t.taskId === taskId && weekDates.includes(t.dateString))
+    return timesheets.filter(t => t.userId === userId && t.taskId === taskId && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
   
   const getProjectWeekTotal = (userId, projectId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && t.projectId === projectId && weekDates.includes(t.dateString))
+    return timesheets.filter(t => t.userId === userId && t.projectId === projectId && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
   
   const getTeamWeekTotal = (weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => weekDates.includes(t.dateString))
+    return timesheets.filter(t => weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getTeamTotal = () => {
-    return timesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    return timesheets.filter(t => !t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   return `
@@ -187,14 +192,14 @@ export function render() {
                     return wHtml;
                   }).join('')}
                   <td style="text-align: center; font-weight: 600; font-size: 0.85rem; color: var(--text-primary); border-left: 1px solid var(--border-subtle);">
-                    ${timesheets.filter(t => t.userId === personId).reduce((s, t) => s + (Number(t.hours)||0), 0)}h
+                    ${timesheets.filter(t => t.userId === personId && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0)}h
                   </td>
                 </tr>
               `;
               
               // Projects Rows
               h.projects.forEach(pObj => {
-                const projTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id).reduce((s, t) => s + (Number(t.hours)||0), 0);
+                const projTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0);
                 
                 html += `
                   <tr style="border-bottom: 1px dashed var(--border-subtle); opacity: 0.9;">
@@ -215,12 +220,16 @@ export function render() {
                 `;
                 
                 // Tasks Rows
-                const tasksToRender = pObj.tasks.length > 0 ? pObj.tasks : [{ name: 'Công việc chung (Chưa phân Task)', isGeneral: true }];
+                const tasksToRender = [...pObj.tasks];
+                const hasGeneralTs = timesheets.some(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === 't_general');
+                if (tasksToRender.length === 0 || hasGeneralTs) {
+                  tasksToRender.push({ name: 'Công việc chung (Chưa phân Task)', isGeneral: true });
+                }
                 tasksToRender.forEach(task => {
                   const trueIdx = task.isGeneral ? -1 : pObj.project.tasks.findIndex(t => t.name === task.name && t.assignee === task.assignee);
                   const taskId = task.isGeneral ? 't_general' : `t_${trueIdx}`;
                   
-                  const taskTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === taskId).reduce((s, t) => s + (Number(t.hours)||0), 0);
+                  const taskTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === taskId && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0);
 
                   html += `
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
@@ -253,6 +262,13 @@ export function render() {
                                 title="Double-click để ghi chú/OT"
                                 style="width: 40px; text-align: center; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-primary); font-size: 0.75rem; padding: 4px; transition: border-color 0.2s, box-shadow 0.2s;"
                               >
+                              ${(() => {
+                                const actual = getActualHours(personId, taskId, d.dateString);
+                                if (actual > 0) {
+                                  return `<div style="font-size: 0.7rem; color: #10b981; font-weight: 600; margin-top: 2px;">${actual}h</div>`;
+                                }
+                                return '';
+                              })()}
                             </td>
                           `;
                         });

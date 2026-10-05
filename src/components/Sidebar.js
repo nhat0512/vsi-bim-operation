@@ -17,7 +17,7 @@ const NAV_SECTIONS = [
     items: [
       { id: 'projects', label: 'Danh sách dự án', icon: '📁' },
       { id: 'planning', label: 'General Planning', icon: '📅', adminOnly: true },
-      { id: 'drawing-progress', label: 'Tiến độ bản vẽ', icon: '📐' },
+
       { id: 'resources', label: 'Nguồn lực', icon: '👥', adminOnly: true },
       { id: 'quality', label: 'Chất lượng BIM', icon: '✅', adminOnly: true },
       { id: 'analytics', label: 'Phân tích', icon: '📈', adminOnly: true }

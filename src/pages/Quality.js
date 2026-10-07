@@ -1,7 +1,9 @@
 // ============================================
 // QUALITY — BIM Quality Control & Clash Detection
 // ============================================
-import { getState } from '../state.js';
+import { getState, updateProject, setState } from '../state.js';
+
+let clashChartInstance = null;
 
 export function render() {
   const { qualityData } = getState();
@@ -67,6 +69,16 @@ function renderScoreCard(label, score, icon) {
 
 function renderClashTab(q) {
   return `
+    <!-- Clash Trend Chart -->
+    <div class="card mb-lg">
+      <div class="card-header">
+        <h3 class="card-title">📈 Xu hướng giải quyết Clash (4 tuần gần đây)</h3>
+      </div>
+      <div style="height: 250px; position: relative;">
+        <canvas id="clashTrendChart"></canvas>
+      </div>
+    </div>
+
     <!-- Clash Summary per Project -->
     <div class="card mb-lg">
       <div class="card-header">
@@ -127,6 +139,7 @@ function renderClashTab(q) {
             <th>Mức độ</th>
             <th>Phụ trách</th>
             <th>Trạng thái</th>
+            <th>Hành động</th>
           </tr>
         </thead>
         <tbody>
@@ -144,6 +157,9 @@ function renderClashTab(q) {
                 <td><span class="badge ${sevBadge[c.severity]}">${c.severity}</span></td>
                 <td class="text-sm">${c.assignee}</td>
                 <td><span class="badge ${statBadge[c.status]}"><span class="badge-dot"></span>${statLabel[c.status]}</span></td>
+                <td>
+                  ${c.status === 'new' ? `<button class="btn btn-primary btn-sm btn-create-task" data-clash-id="${c.id}" data-project="${c.project}" data-assignee="${c.assignee}" data-desc="${c.description}">Tạo Task</button>` : `<span class="text-muted text-xs">Đã gán</span>`}
+                </td>
               </tr>
             `;
           }).join('')}
@@ -258,12 +274,107 @@ export function init() {
       if (!container || !qualityData) return;
 
       switch (tab.dataset.qtab) {
-        case 'clashes': container.innerHTML = renderClashTab(qualityData); break;
-        case 'lod': container.innerHTML = renderLODTab(qualityData); break;
-        case 'bep': container.innerHTML = renderBEPTab(qualityData); break;
+        case 'clashes': 
+           container.innerHTML = renderClashTab(qualityData); 
+           renderTrendChart();
+           attachTaskButtons();
+           break;
+        case 'lod': 
+           container.innerHTML = renderLODTab(qualityData); 
+           break;
+        case 'bep': 
+           container.innerHTML = renderBEPTab(qualityData); 
+           break;
       }
+    });
+  });
+
+  // Initial render
+  setTimeout(() => {
+     renderTrendChart();
+     attachTaskButtons();
+  }, 100);
+}
+
+function renderTrendChart() {
+  const canvas = document.getElementById('clashTrendChart');
+  if (!canvas || !window.Chart) return;
+  if (clashChartInstance) clashChartInstance.destroy();
+  
+  const ctx = canvas.getContext('2d');
+  clashChartInstance = new window.Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: ['Tuần 1', 'Tuần 2', 'Tuần 3', 'Tuần 4'],
+      datasets: [
+        {
+          label: 'Phát hiện mới',
+          data: [120, 85, 45, 15],
+          borderColor: 'rgb(239, 68, 68)',
+          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          tension: 0.3,
+          fill: true
+        },
+        {
+          label: 'Đã giải quyết',
+          data: [40, 95, 160, 210],
+          borderColor: 'rgb(34, 197, 94)',
+          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+          tension: 0.3,
+          fill: true
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+         legend: { position: 'bottom' }
+      }
+    }
+  });
+}
+
+function attachTaskButtons() {
+  document.querySelectorAll('.btn-create-task').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const { projects, qualityData } = getState();
+      const projName = e.target.dataset.project;
+      const proj = projects.find(p => p.name === projName);
+      
+      if (!proj) {
+        alert('Không tìm thấy dự án tương ứng trong hệ thống để tạo Task!');
+        return;
+      }
+      
+      const newTask = {
+        id: `T${Date.now()}`,
+        name: `Sửa lỗi Clash: ${e.target.dataset.desc}`,
+        assignee: e.target.dataset.assignee,
+        status: 'active',
+        progress: 0,
+        dueDate: new Date(Date.now() + 3*24*60*60*1000).toISOString().split('T')[0]
+      };
+      
+      const updatedTasks = [...(proj.tasks || []), newTask];
+      updateProject(proj.id, { tasks: updatedTasks });
+      
+      const clashId = e.target.dataset.clashId;
+      const clash = qualityData.recentClashes.find(c => c.id === clashId);
+      if (clash) {
+         clash.status = 'in-progress';
+         setState('qualityData', qualityData);
+      }
+      
+      e.target.outerHTML = '<span class="text-muted text-xs">Đã tạo Task</span>';
+      alert('Đã tạo Task giao việc thành công bên bảng General Planning!');
     });
   });
 }
 
-export function destroy() {}
+export function destroy() {
+  if (clashChartInstance) {
+    clashChartInstance.destroy();
+    clashChartInstance = null;
+  }
+}

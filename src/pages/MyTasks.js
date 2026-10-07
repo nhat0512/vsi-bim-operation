@@ -2,16 +2,18 @@
 // MY TASKS — Trang báo cáo tiến độ cá nhân
 // ============================================
 import { getState, setState, subscribe, updateProject } from '../state.js';
+import { showItemDetailModal } from '../components/ItemDetailModal.js';
+import { formatDisplayName } from '../utils/formatters.js';
 
 let unsubscribe = null;
 
 export function render() {
   const { currentUser, currentUserAuth, projects, personnel } = getState();
   const userEmail = currentUserAuth?.email || currentUser?.email || '';
-  const userName = currentUserAuth?.name || currentUser?.name || 'Nhân viên';
 
   // Tìm hồ sơ nhân sự của người đăng nhập
-  const myRecord = (personnel || []).find(p => p.email === userEmail);
+  const myRecord = (personnel || []).find(p => p.email === userEmail) || currentUser?.personnelRecord;
+  const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
 
   // Tìm tất cả dự án + task được giao cho người này
   const myAssignments = [];
@@ -23,15 +25,22 @@ export function render() {
       (myRecord && t.assignee === myRecord.name)
     );
     
+    // Các RFIs được gán cho người này
+    const rfis = (project.rfis || []).filter(r => 
+      r.assignee === userName || 
+      r.assignee === userEmail ||
+      (myRecord && r.assignee === myRecord.name)
+    );
+
     // Kiểm tra xem người này có nằm trong Đội ngũ dự án (Team) không
     const isTeamMember = (project.team || []).some(m => 
       m.name === userName || m.email === userEmail || (myRecord && m.name === myRecord.name)
     );
     const isLead = project.teamLead === userName || project.teamLead === userEmail || (myRecord && project.teamLead === myRecord.name);
 
-    // Bổ sung: Nếu có task HOẶC nằm trong team dự án thì đều được tính
-    if (tasks.length > 0 || isTeamMember || isLead) {
-      myAssignments.push({ project, tasks });
+    // Bổ sung: Nếu có task HOẶC RFI HOẶC nằm trong team dự án thì đều được tính
+    if (tasks.length > 0 || (rfis && rfis.length > 0) || isTeamMember || isLead) {
+      myAssignments.push({ project, tasks, rfis });
     }
   });
 
@@ -50,7 +59,7 @@ export function render() {
       <!-- Header -->
       <div class="flex items-center justify-between mb-lg">
         <div>
-          <h1 class="section-title">👋 Xin chào, ${userName}</h1>
+          <h1 class="section-title">👋 Xin chào, ${formatDisplayName(userName)}</h1>
           <div class="text-sm text-muted">${myRecord?.role || 'Nhân viên'} · ${userEmail}</div>
         </div>
         <div class="flex gap-sm">
@@ -86,12 +95,54 @@ export function render() {
         </div>
       ` : `
         <!-- Danh sách công việc theo dự án -->
-        ${myAssignments.map(({ project, tasks }) => `
+        ${myAssignments.map(({ project, tasks, rfis }) => `
           <div class="card mb-lg">
             <div class="card-header" style="border-bottom: 1px solid var(--border-default);">
               <h3 class="card-title">📁 ${project.name}</h3>
-              <span class="badge active">${tasks.length} việc</span>
+              <div class="flex gap-sm">
+                <span class="badge active">${tasks.length} việc</span>
+                ${rfis && rfis.length > 0 ? `<span class="badge overdue">${rfis.length} RFI</span>` : ''}
+              </div>
             </div>
+            
+            ${rfis && rfis.length > 0 ? `
+            <div style="padding: 16px; border-bottom: 1px solid var(--border-default); background: var(--bg-tertiary);">
+              <h4 style="font-size: 0.85rem; margin-bottom: 8px; color: var(--text-secondary);">❓ RFI (Yêu cầu cung cấp thông tin) cần xử lý</h4>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width: 50%;">Tiêu đề RFI</th>
+                    <th style="width: 20%;">Trạng thái</th>
+                    <th style="width: 15%;">Hạn chót</th>
+                    <th style="width: 15%;">Hành động</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rfis.map(rfi => {
+                    const trueIdx = project.rfis.indexOf(rfi);
+                    const isOverdue = new Date(rfi.dueDate) < new Date() && rfi.status !== 'Closed' && rfi.status !== 'Answered';
+                    return `
+                    <tr>
+                      <td class="font-semibold">${rfi.title}</td>
+                      <td>
+                        <select class="form-select rfi-status-update" data-project-id="${project.id}" data-rfi-idx="${trueIdx}" style="font-size: 0.75rem; padding: 4px; font-weight: bold; color: ${rfi.status === 'Open' ? 'var(--text-danger)' : rfi.status === 'Answered' ? 'var(--text-success)' : 'var(--text-muted)'};">
+                          <option value="Open" style="color: var(--text-danger);" ${rfi.status === 'Open' ? 'selected' : ''}>Mở (Open)</option>
+                          <option value="Answered" style="color: var(--text-success);" ${rfi.status === 'Answered' ? 'selected' : ''}>Đã trả lời</option>
+                          <option value="Closed" style="color: var(--text-muted);" ${rfi.status === 'Closed' ? 'selected' : ''}>Đóng (Closed)</option>
+                        </select>
+                      </td>
+                      <td>
+                        <span class="text-xs ${isOverdue ? 'text-danger font-bold' : 'text-muted'}">${formatDate(rfi.dueDate)}${isOverdue ? ' ⚠️' : ''}</span>
+                      </td>
+                      <td>
+                        <button class="btn btn-outline btn-sm btn-view-rfi-detail" data-project-id="${project.id}" data-rfi-idx="${trueIdx}" style="font-size: 0.75rem; padding: 4px 8px;">Chi tiết</button>
+                      </td>
+                    </tr>
+                    `}).join('')}
+                </tbody>
+              </table>
+            </div>
+            ` : ''}
             <table class="data-table">
               <thead>
                 <tr>
@@ -119,6 +170,11 @@ export function render() {
                         ${task.segmentIdx !== undefined && project.segments?.[task.segmentIdx] ? `
                           <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
                             🏷️ ${project.segments[task.segmentIdx].name}
+                          </span>
+                        ` : ''}
+                        ${task.milestoneIdx !== undefined && project.milestones?.[task.milestoneIdx] ? `
+                          <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
+                            🎯 ${project.milestones[task.milestoneIdx].name}
                           </span>
                         ` : ''}
                       </td>
@@ -152,14 +208,22 @@ export function render() {
                         </span>
                       </td>
                       <td>
-                        ${isComplete ? '' : `
-                          <button class="btn btn-primary btn-sm btn-save-progress" 
+                        <div class="flex gap-xs">
+                          <button class="btn btn-outline btn-sm btn-view-task-detail" 
                             data-project-id="${project.id}" 
                             data-task-idx="${project.tasks.indexOf(task)}"
-                            style="font-size: 0.75rem; padding: 4px 12px;">
-                            💾 Lưu
+                            style="font-size: 0.75rem; padding: 4px 8px;">
+                            Chi tiết
                           </button>
-                        `}
+                          ${isComplete ? '' : `
+                            <button class="btn btn-primary btn-sm btn-save-progress" 
+                              data-project-id="${project.id}" 
+                              data-task-idx="${project.tasks.indexOf(task)}"
+                              style="font-size: 0.75rem; padding: 4px 8px;">
+                              Lưu
+                            </button>
+                          `}
+                        </div>
                       </td>
                     </tr>
                   `;
@@ -173,11 +237,14 @@ export function render() {
       <!-- Timesheet nhanh -->
       <div class="card mb-lg">
         <div class="card-header">
-          <h3 class="card-title">⏱️ Ghi nhận giờ làm hôm nay</h3>
-          <span class="text-sm text-muted">${new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+          <h3 class="card-title">⏱️ Ghi nhận giờ làm việc</h3>
         </div>
         <div style="padding: 16px;">
           <div class="flex gap-md items-end flex-wrap">
+            <div style="flex: 1; min-width: 130px;">
+              <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Ngày</label>
+              <input type="date" class="form-input" id="ts-date" value="${new Date().toISOString().split('T')[0]}" style="width: 100%;">
+            </div>
             <div style="flex: 2; min-width: 200px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Dự án</label>
               <select class="form-select" id="ts-project">
@@ -191,13 +258,13 @@ export function render() {
                 <option value="">-- Vui lòng chọn dự án trước --</option>
               </select>
             </div>
-            <div style="flex: 1; min-width: 100px;">
+            <div style="flex: 1; min-width: 80px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Số giờ</label>
               <input type="number" class="form-input" id="ts-hours" min="0.5" max="12" step="0.5" value="8" style="width: 100%;">
             </div>
-            <div style="flex: 3; min-width: 200px;">
+            <div style="flex: 2; min-width: 150px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Ghi chú (tùy chọn)</label>
-              <input type="text" class="form-input" id="ts-note" placeholder="VD: Hoàn thiện model cầu Km18..." style="width: 100%;">
+              <input type="text" class="form-input" id="ts-note" placeholder="VD: Hoàn thiện..." style="width: 100%;">
             </div>
             <button class="btn btn-primary" id="btn-log-time" style="white-space: nowrap;">
               ➕ Ghi nhận
@@ -244,7 +311,23 @@ function renderRecentTimesheets(email, displayName, personnelName) {
           return `
             <tr>
               <td class="text-sm">${formatDate(ts.date)}</td>
-              <td class="text-sm font-semibold">${proj ? proj.name : ts.projectId}</td>
+              <td class="text-sm font-semibold">
+                ${proj ? proj.name : ts.projectId}
+                ${(() => {
+                  if (!proj) return '';
+                  if (ts.taskId && ts.taskId.startsWith('rfi_')) {
+                    const idx = parseInt(ts.taskId.split('_')[1]);
+                    const rfi = proj.rfis?.[idx];
+                    if (rfi) return `<div style="font-size: 0.7rem; color: var(--text-warning); margin-top: 2px;">↳ Xử lý RFI: ${rfi.title}</div>`;
+                  }
+                  if (ts.taskId && ts.taskId.startsWith('t_') && ts.taskId !== 't_general') {
+                    const idx = parseInt(ts.taskId.split('_')[1]);
+                    const task = proj.tasks?.[idx];
+                    if (task) return `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">↳ Task: ${task.name}</div>`;
+                  }
+                  return '';
+                })()}
+              </td>
               <td class="text-sm font-bold">${ts.hours}h</td>
               <td class="text-sm text-muted">${ts.note || '—'}</td>
               <td class="text-sm">
@@ -301,6 +384,52 @@ export function init() {
     });
   });
 
+  // Cập nhật trạng thái RFI
+  document.querySelectorAll('.rfi-status-update').forEach(select => {
+    select.addEventListener('change', (e) => {
+      const projectId = e.target.dataset.projectId;
+      const rfiIdx = parseInt(e.target.dataset.rfiIdx);
+      const newStatus = e.target.value;
+      
+      const { projects } = getState();
+      const project = projects.find(p => p.id === projectId);
+      if (project && project.rfis) {
+         const rfi = project.rfis[rfiIdx];
+         if (rfi) {
+            rfi.status = newStatus;
+            updateProject(projectId, { rfis: project.rfis });
+            showToast(`✅ Đã cập nhật RFI thành "${newStatus}"`);
+            refreshPage();
+         }
+      }
+    });
+  });
+
+  // Xem chi tiết RFI
+  document.querySelectorAll('.btn-view-rfi-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const projectId = e.target.dataset.projectId;
+      const rfiIdx = parseInt(e.target.dataset.rfiIdx);
+      const { projects } = getState();
+      const project = projects.find(p => p.id === projectId);
+      if (project && project.rfis && project.rfis[rfiIdx]) {
+         showItemDetailModal(project.rfis[rfiIdx], rfiIdx, 'rfi', project, refreshPage);
+      }
+    });
+  });
+
+  // Xem chi tiết Task
+  document.querySelectorAll('.btn-view-task-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const projectId = e.target.dataset.projectId;
+      const taskIdx = parseInt(e.target.dataset.taskIdx);
+      const { projects } = getState();
+      const project = projects.find(p => p.id === projectId);
+      if (project && project.tasks && project.tasks[taskIdx]) {
+         showItemDetailModal(project.tasks[taskIdx], taskIdx, 'task', project, refreshPage);
+      }
+    });
+  });
   // Cập nhật danh sách công việc khi chọn dự án
   const tsProject = document.getElementById('ts-project');
   const tsTask = document.getElementById('ts-task');
@@ -323,10 +452,25 @@ export function init() {
       const userTasks = (proj?.tasks || []).filter(t => t.assignee === userName);
       
       let optionsHtml = '<option value="t_general">-- Công việc chung (Không phân Task) --</option>';
-      userTasks.forEach(t => {
-        const trueIdx = proj.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
-        optionsHtml += `<option value="t_${trueIdx}">${t.name}</option>`;
-      });
+      
+      if (userTasks.length > 0) {
+        optionsHtml += '<optgroup label="Công việc (Tasks)">';
+        userTasks.forEach(t => {
+          const trueIdx = proj.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
+          optionsHtml += `<option value="t_${trueIdx}">${t.name}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+      }
+      
+      const userRfis = (proj?.rfis || []).filter(r => r.assignee === userName || r.assignee === userEmail || (person && r.assignee === person.name));
+      if (userRfis.length > 0) {
+        optionsHtml += '<optgroup label="Xử lý RFI (Request For Information)">';
+        userRfis.forEach(r => {
+          const trueIdx = proj.rfis.indexOf(r);
+          optionsHtml += `<option value="rfi_${trueIdx}">[RFI] ${r.code ? r.code + ' - ' : ''}${r.title}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+      }
       
       tsTask.innerHTML = optionsHtml;
       tsTask.disabled = false;
@@ -335,6 +479,8 @@ export function init() {
 
   // Ghi nhận timesheet
   document.getElementById('btn-log-time')?.addEventListener('click', () => {
+    const tsDateEl = document.getElementById('ts-date');
+    const selectedDate = tsDateEl ? tsDateEl.value : new Date().toISOString().split('T')[0];
     const projectId = document.getElementById('ts-project').value;
     const taskId = document.getElementById('ts-task').value || 't_general';
     const hours = parseFloat(document.getElementById('ts-hours').value);
@@ -346,6 +492,10 @@ export function init() {
     }
     if (!hours || hours <= 0) {
       showToast('⚠️ Số giờ không hợp lệ!', 'warning');
+      return;
+    }
+    if (!selectedDate) {
+      showToast('⚠️ Vui lòng chọn ngày!', 'warning');
       return;
     }
 
@@ -360,8 +510,8 @@ export function init() {
       userName: currentUserAuth?.name || currentUser?.name || '',
       projectId: projectId,
       taskId: taskId,
-      dateString: new Date().toISOString().split('T')[0],
-      date: new Date().toISOString().split('T')[0],
+      dateString: selectedDate,
+      date: selectedDate,
       hours: hours,
       note: note,
       comment: note,

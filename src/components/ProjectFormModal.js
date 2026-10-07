@@ -41,6 +41,53 @@ export function openProjectForm(mode = 'add', project = null, onComplete = null)
   setTimeout(() => initProjectFormEvents(mode, project, onComplete), 50);
 }
 
+// Predefined Templates
+const PROJECT_TEMPLATES = {
+  'road': {
+    segments: [
+      { id: 'S1', name: 'Thiết kế cơ sở', progress: 0 },
+      { id: 'S2', name: 'Thiết kế kỹ thuật', progress: 0 },
+      { id: 'S3', name: 'Bản vẽ thi công', progress: 0 }
+    ],
+    milestones: [
+      { id: 'M1', name: 'Nộp 30%', dateOffsetDays: 30 },
+      { id: 'M2', name: 'Nộp 60%', dateOffsetDays: 60 },
+      { id: 'M3', name: 'Nộp 90%', dateOffsetDays: 90 },
+      { id: 'M4', name: 'Nộp Final', dateOffsetDays: 120 }
+    ],
+    tasks: [
+      { name: 'Setup Base File & VN2000', assignee: '', progress: 0, status: 'active', segmentIdx: 0, milestoneIdx: 0, description: 'Thiết lập file chuẩn, hệ tọa độ', cloudLinks: '' },
+      { name: 'Lập BIM Execution Plan (BEP)', assignee: '', progress: 0, status: 'active', segmentIdx: 0, milestoneIdx: 0, description: 'Lập kế hoạch thực thi BIM', cloudLinks: '' },
+      { name: 'Phân chia phân đoạn tuyến', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 1, description: '', cloudLinks: '' },
+      { name: 'Mô hình bề mặt hiện trạng', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 1, description: '', cloudLinks: '' },
+      { name: 'Mô hình cầu/nút giao', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 2, description: '', cloudLinks: '' },
+      { name: 'Xử lý va chạm Clash Detection', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 2, description: '', cloudLinks: '' },
+      { name: 'Xuất khối lượng (QTO)', assignee: '', progress: 0, status: 'active', segmentIdx: 2, milestoneIdx: 3, description: '', cloudLinks: '' }
+    ]
+  },
+  'bridge': {
+    segments: [
+      { id: 'S1', name: 'Thiết kế cơ sở', progress: 0 },
+      { id: 'S2', name: 'Thiết kế kỹ thuật', progress: 0 },
+      { id: 'S3', name: 'Bản vẽ thi công', progress: 0 }
+    ],
+    milestones: [
+      { id: 'M1', name: 'Nộp 30%', dateOffsetDays: 30 },
+      { id: 'M2', name: 'Nộp 60%', dateOffsetDays: 60 },
+      { id: 'M3', name: 'Nộp 90%', dateOffsetDays: 90 },
+      { id: 'M4', name: 'Nộp Final', dateOffsetDays: 120 }
+    ],
+    tasks: [
+      { name: 'Setup Base File & VN2000', assignee: '', progress: 0, status: 'active', segmentIdx: 0, milestoneIdx: 0, description: 'Thiết lập tọa độ hệ thống', cloudLinks: '' },
+      { name: 'Mô hình kết cấu nhịp', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 1, description: 'Mô hình chi tiết dầm, bản mặt cầu', cloudLinks: '' },
+      { name: 'Mô hình kết cấu mố trụ', assignee: '', progress: 0, status: 'active', segmentIdx: 1, milestoneIdx: 1, description: 'Mô hình xà mũ, thân trụ, cọc khoan nhồi', cloudLinks: '' },
+      { name: 'Mô hình cốt thép', assignee: '', progress: 0, status: 'active', segmentIdx: 2, milestoneIdx: 2, description: 'Chi tiết thép (Rebar)', cloudLinks: '' },
+      { name: 'Xử lý va chạm', assignee: '', progress: 0, status: 'active', segmentIdx: 2, milestoneIdx: 2, description: 'Xung đột thép và cáp dự ứng lực', cloudLinks: '' },
+      { name: 'Xuất bản vẽ 2D từ mô hình', assignee: '', progress: 0, status: 'active', segmentIdx: 2, milestoneIdx: 3, description: '', cloudLinks: '' }
+    ]
+  }
+};
+
 /**
  * Render the project form HTML
  */
@@ -51,6 +98,18 @@ function renderProjectForm(mode, project) {
 
   return `
     <form id="project-form" autocomplete="off">
+      ${mode === 'add' ? `
+        <div class="form-section-title">✨ Mẫu dự án (Project Template)</div>
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label class="form-label">Chọn bộ khung chuẩn <span style="color: var(--text-muted); font-weight: normal;">(Hệ thống tự tạo Phân đoạn, Cột mốc & Task chuẩn)</span></label>
+          <select class="form-select" id="pf-template" style="border: 2px solid var(--accent-primary); background: rgba(var(--accent-primary-rgb), 0.05); font-weight: bold;">
+            <option value="none">-- Tạo dự án trống (Tự thiết lập sau) --</option>
+            <option value="road">🛣️ Mẫu Dự án Đường bộ (7 Tasks chuẩn, 4 Milestones)</option>
+            <option value="bridge">🌉 Mẫu Dự án Cầu (6 Tasks chuẩn, 4 Milestones)</option>
+          </select>
+        </div>
+      ` : ''}
+
       <!-- Section 1: Thông tin cơ bản -->
       <div class="form-section-title">📋 Thông tin cơ bản</div>
       <div class="form-group">
@@ -284,6 +343,34 @@ function handleFormSubmit(mode, project, onComplete) {
   };
 
   if (mode === 'add') {
+    const templateId = document.getElementById('pf-template')?.value;
+    if (templateId && PROJECT_TEMPLATES[templateId]) {
+      const tpl = PROJECT_TEMPLATES[templateId];
+      projectData.segments = JSON.parse(JSON.stringify(tpl.segments));
+      
+      const stDate = new Date(startDate);
+      projectData.milestones = tpl.milestones.map((m, i) => {
+        const mDate = new Date(stDate);
+        mDate.setDate(stDate.getDate() + m.dateOffsetDays);
+        return {
+          id: `M${Date.now()}_${i}`,
+          name: m.name,
+          date: mDate.toISOString().split('T')[0]
+        };
+      });
+
+      projectData.tasks = tpl.tasks.map(t => {
+        let taskDueDate = endDate;
+        if (t.milestoneIdx !== undefined && projectData.milestones[t.milestoneIdx]) {
+          taskDueDate = projectData.milestones[t.milestoneIdx].date;
+        }
+        return {
+          ...t,
+          dueDate: taskDueDate
+        };
+      });
+    }
+
     addProject(projectData);
     showToast(`Đã tạo dự án "${name}" thành công!`);
   } else {

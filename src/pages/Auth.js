@@ -35,12 +35,12 @@ export function render() {
 
           <div class="form-group" style="margin-bottom: 20px;">
             <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Email</label>
-            <input type="email" id="login-email" class="form-input" placeholder="admin@vsibim.com" style="width: 100%; padding: 12px 16px; border-radius: 8px;" value="admin@vsibim.com">
+            <input type="email" id="login-email" class="form-input" placeholder="Nhập email của bạn" style="width: 100%; padding: 12px 16px; border-radius: 8px;" value="">
           </div>
           
           <div class="form-group" style="margin-bottom: 24px;">
             <label style="display: block; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px;">Mật khẩu</label>
-            <input type="password" id="login-password" class="form-input" placeholder="••••••••" style="width: 100%; padding: 12px 16px; border-radius: 8px;" value="123456">
+            <input type="password" id="login-password" class="form-input" placeholder="••••••••" style="width: 100%; padding: 12px 16px; border-radius: 8px;" value="">
           </div>
           
           <button id="btn-submit-login" class="btn btn-primary" style="width: 100%; padding: 14px; font-size: 1rem; font-weight: 600; border-radius: 8px; justify-content: center; margin-bottom: 24px;">Đăng nhập hệ thống</button>

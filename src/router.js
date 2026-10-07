@@ -37,7 +37,7 @@ async function handleRoute() {
   // Phân quyền: Member chỉ được xem một số trang nhất định
   const { currentUser } = getState();
   const role = currentUser?.role || 'Member';
-  const adminOnlyPages = ['dashboard', 'planning', 'resources', 'quality', 'analytics', 'settings'];
+  const adminOnlyPages = ['dashboard', 'projects', 'project-detail', 'planning', 'resources', 'quality', 'analytics', 'settings'];
   
   let targetPage = page;
   if (role !== 'BIM Manager' && role !== 'Project Manager' && adminOnlyPages.includes(page)) {

@@ -53,11 +53,12 @@ export function render() {
     const userProjects = [];
     (state.projects || []).forEach(proj => {
       const userTasks = (proj.tasks || []).filter(t => t.assignee === person.name);
+      const userRfis = (proj.rfis || []).filter(r => r.assignee === person.name);
       const isMember = (proj.team || []).some(m => m.name === person.name) || proj.teamLead === person.name;
-      if (userTasks.length > 0) {
-        userProjects.push({ project: proj, tasks: userTasks });
-      } else if (isMember) {
-        userProjects.push({ project: proj, tasks: [] });
+      const loggedTaskIds = [...new Set((state.timesheets || []).filter(ts => ts.userId === person.id && ts.projectId === proj.id).map(ts => ts.taskId))];
+      
+      if (userTasks.length > 0 || userRfis.length > 0 || loggedTaskIds.length > 0 || isMember) {
+        userProjects.push({ project: proj, tasks: userTasks, rfis: userRfis, loggedTaskIds });
       }
     });
     return { person, projects: userProjects };
@@ -219,22 +220,64 @@ export function render() {
                   </tr>
                 `;
                 
-                // Tasks Rows
-                const tasksToRender = [...pObj.tasks];
+                // Compile tasks and rfis to render based on assignment or timesheets
+                const itemsToRender = [];
                 const hasGeneralTs = timesheets.some(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === 't_general');
-                if (tasksToRender.length === 0 || hasGeneralTs) {
-                  tasksToRender.push({ name: 'Công việc chung (Chưa phân Task)', isGeneral: true });
+                
+                if (pObj.tasks.length === 0 && (pObj.rfis || []).length === 0 && pObj.loggedTaskIds.length === 0 && !hasGeneralTs) {
+                  itemsToRender.push({ id: 't_general', name: 'Công việc chung (Chưa phân Task)', type: 'general' });
+                } else if (hasGeneralTs) {
+                  itemsToRender.push({ id: 't_general', name: 'Công việc chung (Chưa phân Task)', type: 'general' });
                 }
-                tasksToRender.forEach(task => {
-                  const trueIdx = task.isGeneral ? -1 : pObj.project.tasks.findIndex(t => t.name === task.name && t.assignee === task.assignee);
-                  const taskId = task.isGeneral ? 't_general' : `t_${trueIdx}`;
-                  
+                
+                // Add assigned tasks
+                pObj.tasks.forEach(t => {
+                   const trueIdx = pObj.project.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
+                   if (!itemsToRender.find(x => x.id === `t_${trueIdx}`)) {
+                      itemsToRender.push({ id: `t_${trueIdx}`, name: t.name, type: 'task' });
+                   }
+                });
+                
+                // Add assigned rfis
+                (pObj.rfis || []).forEach(r => {
+                   const trueIdx = pObj.project.rfis.indexOf(r);
+                   if (!itemsToRender.find(x => x.id === `rfi_${trueIdx}`)) {
+                      itemsToRender.push({ id: `rfi_${trueIdx}`, name: r.title, type: 'rfi' });
+                   }
+                });
+
+                // Add ANY OTHER item that has timesheets but is no longer assigned to them
+                (pObj.loggedTaskIds || []).forEach(tid => {
+                   if (tid === 't_general' || !tid) return;
+                   if (itemsToRender.find(x => x.id === tid)) return;
+                   if (tid.startsWith('t_')) {
+                      const idx = parseInt(tid.split('_')[1]);
+                      const task = pObj.project.tasks?.[idx];
+                      if (task) itemsToRender.push({ id: tid, name: task.name, type: 'task' });
+                   } else if (tid.startsWith('rfi_')) {
+                      const idx = parseInt(tid.split('_')[1]);
+                      const rfi = pObj.project.rfis?.[idx];
+                      if (rfi) itemsToRender.push({ id: tid, name: rfi.title, type: 'rfi' });
+                   }
+                });
+
+                itemsToRender.forEach(item => {
+                  const taskId = item.id;
                   const taskTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === taskId && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0);
+
+                  let rowPrefix = '└ ';
+                  let rowStyle = 'border-left: 3px solid var(--accent-primary);';
+                  if (item.type === 'rfi') {
+                     rowPrefix = '❓ [RFI] ';
+                     rowStyle = 'border-left: 3px solid var(--accent-warning); color: var(--text-warning);';
+                  }
 
                   html += `
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
-                      <td style="padding: 4px 12px 4px 60px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; border-left: 3px solid var(--accent-primary); border-right: 1px solid var(--border-subtle);">
-                        └ ${task.name}
+                      <td style="padding: 4px 12px 4px 60px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 8; font-size: 0.8rem; ${rowStyle} border-right: 1px solid var(--border-subtle);" title="${item.name}">
+                        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px;">
+                          ${rowPrefix}${item.name}
+                        </div>
                       </td>
                       ${planData.map(w => {
                         let wHtml = '';
@@ -405,6 +448,11 @@ export function init() {
             const tIdx = parseInt(r.taskId.replace('t_', ''), 10);
             if (project.tasks && project.tasks[tIdx]) {
               tName = project.tasks[tIdx].name;
+            }
+          } else if (project && r.taskId.startsWith('rfi_')) {
+            const rIdx = parseInt(r.taskId.replace('rfi_', ''), 10);
+            if (project.rfis && project.rfis[rIdx]) {
+              tName = '[RFI] ' + project.rfis[rIdx].title;
             }
           }
           

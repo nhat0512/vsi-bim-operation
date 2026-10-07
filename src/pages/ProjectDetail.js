@@ -3,12 +3,17 @@
 // ============================================
 import { getState, updateProject } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
+import { showItemDetailModal } from '../components/ItemDetailModal.js';
+import { formatDisplayName } from '../utils/formatters.js';
 
-let isEditing = false;
+function getIsEditing() {
+  return ['BIM Manager', 'Project Manager'].includes(getState().currentUserRole);
+}
 
 export function render() {
   const { projects, selectedProjectId, personnel } = getState();
   const project = projects.find(p => p.id === selectedProjectId);
+  const isEditing = getIsEditing();
 
   if (!project) {
     return `
@@ -32,9 +37,9 @@ export function render() {
         <a href="#dashboard" class="btn btn-ghost btn-sm">← Quay lại</a>
         <div style="flex: 1;">
           ${isEditing ? `
-            <input type="text" id="edit-name" class="form-input" style="font-size: 1.5rem; font-weight: 700; max-width: 400px; margin-bottom: 4px;" value="${project.name}">
+            <input type="text" id="edit-name" class="form-input" style="font-size: 1.5rem; font-weight: 700; width: 100%; margin-bottom: 4px;" value="${project.name}" title="Tên dự án">
             <div class="flex gap-sm">
-              <input type="text" id="edit-code" class="form-input" style="width: 100px; padding: 4px 8px;" value="${project.code}">
+              <input type="text" id="edit-code" class="form-input" style="width: 150px; padding: 4px 8px;" value="${project.code}" title="Mã dự án">
             </div>
           ` : `
             <h1 class="section-title">${typeInfo.icon || ''} ${project.name}</h1>
@@ -46,8 +51,6 @@ export function render() {
           <select id="edit-status" class="form-select" style="width: 150px; margin-right: 12px;">
             ${Object.entries(PROJECT_STATUSES).map(([k, v]) => `<option value="${k}" ${k === project.status ? 'selected' : ''}>${v.label}</option>`).join('')}
           </select>
-          <button class="btn btn-primary" id="btn-save-project">✅ Lưu</button>
-          <button class="btn btn-ghost" id="btn-cancel-edit">Hủy</button>
         ` : `
           <span class="badge ${statusInfo.class}" style="font-size: var(--font-sm); padding: 6px 16px; margin-right: 12px;">
             <span class="badge-dot"></span>
@@ -56,6 +59,16 @@ export function render() {
           ${['BIM Manager', 'Project Manager'].includes(getState().currentUserRole) ? `<button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>` : ''}
         `}
       </div>
+
+      <!-- Sticky Edit Action Bar -->
+      ${isEditing ? `
+        <div style="position: fixed; bottom: 20px; right: 20px; z-index: 1000;">
+          <div id="auto-save-indicator" style="display: none; background: var(--bg-primary); padding: 8px 16px; border-radius: 50px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); border: 1px solid var(--border-default); align-items: center; gap: 8px;">
+            <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+            <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">Đang lưu...</span>
+          </div>
+        </div>
+      ` : ''}
 
       <!-- Project KPIs -->
       <div class="kpi-grid stagger-children mb-lg" style="grid-template-columns: repeat(6, 1fr);">
@@ -143,7 +156,126 @@ export function render() {
         </div>
       </div>
 
-
+      <!-- Ma trận Tiến độ (Segments x Milestones) -->
+      <div class="card mb-lg">
+        <div class="card-header">
+          <h3 class="card-title">📍 Ma trận Tiến độ (Segments x Milestones)</h3>
+          <span class="badge active">${project.segments.length} phân đoạn</span>
+        </div>
+        ${isEditing ? `
+          <div style="overflow-x: auto;">
+            <table class="data-table" style="min-width: 800px; border-collapse: separate; border-spacing: 0;">
+              <thead>
+                <tr>
+                  <th style="min-width: 250px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 2; border-right: 1px solid var(--border-default);">
+                    Phân đoạn (Segments)
+                  </th>
+                  ${(project.milestones || []).map((m, mIdx) => `
+                    <th style="min-width: 180px; text-align: center; border-right: 1px solid var(--border-subtle); padding: 8px;">
+                      <div class="flex items-center gap-xs justify-between" style="width: 100%;">
+                        <input type="text" class="form-input edit-milestone-name inline-edit" value="${m.name}" title="${m.name}" style="font-weight: bold; padding: 4px 8px; font-size: 0.85rem; flex: 1; text-align: center; min-width: 0;">
+                        <button class="btn btn-ghost btn-sm text-danger btn-delete-milestone" data-idx="${mIdx}" style="padding: 4px; flex-shrink: 0;" title="Xóa mốc này">🗑️</button>
+                      </div>
+                      <input type="date" class="form-input edit-milestone-date inline-edit" value="${m.date.split('T')[0]}" style="font-size: 0.75rem; padding: 4px 8px; margin-top: 6px; text-align: center; width: 100%;">
+                    </th>
+                  `).join('')}
+                  <th style="width: 100px; text-align: center;">
+                    <button class="btn btn-outline btn-sm" id="btn-add-milestone">+ Mốc</button>
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="edit-segments-list">
+                ${project.segments.map((s, sIdx) => {
+                  if (!s.progresses) s.progresses = [];
+                  if (!s.subSegments) s.subSegments = [];
+                  const hasSub = s.subSegments.length > 0;
+                  
+                  let html = `
+                  <tr>
+                    <td style="position: sticky; left: 0; background: var(--bg-primary); z-index: 1; border-right: 1px solid var(--border-default);">
+                      <div class="flex items-center gap-xs">
+                        <button class="btn btn-ghost btn-sm btn-toggle-sub" data-sidx="${sIdx}" style="padding: 2px;">${hasSub ? '▼' : '▶'}</button>
+                        <input type="text" class="form-input edit-segment-name inline-edit" value="${s.name}" style="width: 100%; font-weight: bold;">
+                        <button class="btn btn-ghost btn-sm text-primary btn-add-subsegment" data-sidx="${sIdx}" title="Thêm phân đoạn nhỏ" style="padding: 2px;">➕</button>
+                        <button class="btn btn-ghost btn-sm text-danger btn-delete-segment" data-idx="${sIdx}" style="padding: 2px;">🗑️</button>
+                      </div>
+                    </td>
+                    ${(project.milestones || []).map((m, mIdx) => {
+                      if (s.progresses[mIdx] === undefined) {
+                        s.progresses[mIdx] = (mIdx === 0 && s.progress !== undefined) ? s.progress : 0;
+                      }
+                      
+                      let pValue = s.progresses[mIdx];
+                      if (hasSub) {
+                        const sum = s.subSegments.reduce((acc, sub) => acc + (sub.progresses?.[mIdx] || 0), 0);
+                        pValue = Math.round(sum / s.subSegments.length);
+                      }
+                      
+                      return `
+                        <td style="border-right: 1px solid var(--border-subtle); text-align: center; padding: 4px;">
+                          ${hasSub ? `
+                            <div class="flex items-center gap-xs justify-center">
+                              <div class="progress-bar" style="width: 70px; height: 6px;">
+                                <div class="progress-bar-fill parent-progress-fill-${sIdx}-${mIdx} ${pValue >= 100 ? 'green' : ''}" style="width: ${pValue}%;"></div>
+                              </div>
+                              <span class="text-xs font-bold text-muted parent-progress-text-${sIdx}-${mIdx}" style="width: 35px; text-align: right;">${pValue}%</span>
+                              <input type="hidden" class="edit-segment-matrix-progress" id="parent-hidden-${sIdx}-${mIdx}" data-sidx="${sIdx}" data-midx="${mIdx}" value="${pValue}">
+                            </div>
+                          ` : `
+                            <div class="flex items-center gap-xs justify-center">
+                              <input type="range" class="edit-segment-matrix-progress inline-edit" data-sidx="${sIdx}" data-midx="${mIdx}" value="${pValue}" min="0" max="100" style="width: 70px;">
+                              <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'};">${pValue}%</span>
+                            </div>
+                            <input type="date" class="form-input edit-segment-matrix-date inline-edit" data-sidx="${sIdx}" data-midx="${mIdx}" value="${s.deadlines?.[mIdx] || m.date.split('T')[0]}" style="font-size: 0.65rem; padding: 1px 4px; border: 1px solid var(--border-subtle); border-radius: 4px; width: 95px; color: var(--text-secondary); margin-top: 4px; text-align: center;" title="Hạn chót của phân đoạn này cho mốc này">
+                          `}
+                        </td>
+                      `;
+                    }).join('')}
+                    <td></td>
+                  </tr>
+                  `;
+                  
+                  if (hasSub) {
+                    s.subSegments.forEach((sub, subIdx) => {
+                      if (!sub.progresses) sub.progresses = [];
+                      html += `
+                        <tr class="sub-segment-row sub-of-${sIdx}">
+                          <td style="position: sticky; left: 0; background: var(--bg-primary); z-index: 1; border-right: 1px solid var(--border-default); padding-left: 32px;">
+                            <div class="flex items-center gap-xs">
+                              <span style="color: var(--text-muted);">↳</span>
+                              <input type="text" class="form-input edit-subsegment-name inline-edit" data-sidx="${sIdx}" data-subidx="${subIdx}" value="${sub.name}" style="width: 100%; font-size: 0.85rem;">
+                              <button class="btn btn-ghost btn-sm text-danger btn-delete-subsegment" data-sidx="${sIdx}" data-subidx="${subIdx}" style="padding: 2px;">🗑️</button>
+                            </div>
+                          </td>
+                          ${(project.milestones || []).map((m, mIdx) => {
+                            const pValue = sub.progresses[mIdx] || 0;
+                            return `
+                              <td style="border-right: 1px solid var(--border-subtle); text-align: center; background: rgba(0,0,0,0.02); padding: 4px;">
+                                <div class="flex items-center gap-xs justify-center">
+                                  <input type="range" class="edit-subsegment-matrix-progress inline-edit" data-sidx="${sIdx}" data-subidx="${subIdx}" data-midx="${mIdx}" value="${pValue}" min="0" max="100" style="width: 70px; accent-color: var(--accent-secondary);">
+                                  <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'};">${pValue}%</span>
+                                </div>
+                                <input type="date" class="form-input edit-subsegment-matrix-date inline-edit" data-sidx="${sIdx}" data-subidx="${subIdx}" data-midx="${mIdx}" value="${sub.deadlines?.[mIdx] || m.date.split('T')[0]}" style="font-size: 0.65rem; padding: 1px 4px; border: 1px solid var(--border-subtle); border-radius: 4px; width: 95px; color: var(--text-secondary); margin-top: 4px; text-align: center;" title="Hạn chót của phân đoạn nhỏ này cho mốc này">
+                              </td>
+                            `;
+                          }).join('')}
+                          <td></td>
+                        </tr>
+                      `;
+                    });
+                  }
+                  return html;
+                }).join('')}
+                <tr>
+                  <td colspan="${(project.milestones || []).length + 2}" style="padding: 12px; position: sticky; left: 0; background: var(--bg-primary);">
+                    <button class="btn btn-outline btn-sm w-full" id="btn-add-segment">+ Thêm phân đoạn (Segment)</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ` : ''}
+      </div>
 
       <div class="grid-2 mb-lg">
 
@@ -171,19 +303,46 @@ export function render() {
                       <td>
                         ${isEditing ? `
                           <input type="text" class="form-input edit-task-name" data-idx="${idx}" value="${t.name}" style="margin-bottom: 4px;">
-                          <select class="form-select edit-task-segment" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 8px;">
-                            <option value="-1">-- Không thuộc phân đoạn --</option>
-                            ${project.segments.map((s, sIdx) => `
-                              <option value="${sIdx}" ${t.segmentIdx === sIdx ? 'selected' : ''}>${s.name}</option>
-                            `).join('')}
-                          </select>
+                          <div class="flex items-center gap-xs" style="flex-wrap: wrap; margin-top: 4px;">
+                            <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+                              <span style="font-size: 0.65rem; margin-right: 4px;">🏷️</span>
+                              <select class="edit-task-segment" data-idx="${idx}" style="font-size: 0.7rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                                <option value="-1">-- Phân đoạn --</option>
+                                ${project.segments.map((s, sIdx) => {
+                                  let html = `<option value="${sIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx == null ? 'selected' : ''}>▶ ${s.name}</option>`;
+                                  if (s.subSegments && s.subSegments.length > 0) {
+                                    s.subSegments.forEach((sub, subIdx) => {
+                                      html += `<option value="${sIdx}_${subIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx === subIdx ? 'selected' : ''}>&nbsp;&nbsp;↳ ${sub.name}</option>`;
+                                    });
+                                  }
+                                  return html;
+                                }).join('')}
+                              </select>
+                            </div>
+                            <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+                              <span style="font-size: 0.65rem; margin-right: 4px;">🎯</span>
+                              <select class="edit-task-milestone" data-idx="${idx}" style="font-size: 0.7rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                                <option value="-1">-- Cột mốc --</option>
+                                ${(project.milestones || []).map((m, mIdx) => `
+                                  <option value="${mIdx}" ${t.milestoneIdx === mIdx ? 'selected' : ''}>${m.name}</option>
+                                `).join('')}
+                              </select>
+                            </div>
+                          </div>
+                          <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-idx="${idx}" style="margin-top: 8px; padding: 2px 8px; font-size: 0.7rem; border: 1px solid var(--accent-primary);">🔍 Chi tiết</button>
                         ` : `
                           <div class="font-semibold">${t.name}</div>
-                          ${t.segmentIdx !== undefined && project.segments[t.segmentIdx] ? `
+                          ${t.segmentIdx !== null && t.segmentIdx !== undefined && project.segments[t.segmentIdx] ? `
                             <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
-                              🏷️ ${project.segments[t.segmentIdx].name}
+                              🏷️ ${project.segments[t.segmentIdx].name}${t.subSegmentIdx != null && project.segments[t.segmentIdx].subSegments?.[t.subSegmentIdx] ? ` / ${project.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}` : ''}
                             </span>
                           ` : ''}
+                          ${t.milestoneIdx !== null && t.milestoneIdx !== undefined && (project.milestones || [])[t.milestoneIdx] ? `
+                            <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
+                              🎯 ${(project.milestones || [])[t.milestoneIdx].name}
+                            </span>
+                          ` : ''}
+                          <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-idx="${idx}" style="margin-top: 4px; padding: 2px 8px; font-size: 0.7rem; border: 1px solid var(--accent-primary);">🔍 Chi tiết</button>
                         `}
                       </td>
                       <td class="text-sm">
@@ -191,7 +350,7 @@ export function render() {
                           <select class="form-select edit-task-assignee" data-idx="${idx}">
                             <option value="">-- Chọn --</option>
                             ${(personnel || []).map(m => {
-                              let label = m.name;
+                              let label = formatDisplayName(m.name);
                               const alloc = m.totalAllocation || 0;
                               if (alloc >= 100) label += ' [⚠️ Quá tải]';
                               else label += ` [✅ Rảnh ${100 - alloc}%]`;
@@ -203,9 +362,9 @@ export function render() {
                             ${t.assignee ? (() => {
                               const member = (personnel || []).find(m => m.name === t.assignee);
                               if (member) {
-                                return `<img src="${(member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;"> <span>${t.assignee}</span>`;
+                                return `<img src="${(member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(formatDisplayName(member.name))}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;"> <span>${formatDisplayName(t.assignee)}</span>`;
                               }
-                              return `<span>${t.assignee}</span>`;
+                              return `<span>${formatDisplayName(t.assignee)}</span>`;
                             })() : '<span class="text-muted italic">Chưa gán</span>'}
                           </div>
                         `}
@@ -292,6 +451,46 @@ export function render() {
                     </td>
                     <td>
                       <input type="text" class="form-input edit-rfi-title inline-edit" data-idx="${idx}" value="${rfi.title}" style="width: 100%; font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer;">
+                      ${isEditing ? `
+                        <div class="flex items-center gap-xs" style="flex-wrap: wrap; margin-top: 4px;">
+                          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+                            <span style="font-size: 0.65rem; margin-right: 4px;">🏷️</span>
+                            <select class="edit-rfi-segment inline-edit" data-idx="${idx}" style="font-size: 0.7rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                              <option value="-1">-- Phân đoạn --</option>
+                              ${project.segments.map((s, sIdx) => {
+                                let html = `<option value="${sIdx}" ${rfi.segmentIdx === sIdx && rfi.subSegmentIdx == null ? 'selected' : ''}>▶ ${s.name}</option>`;
+                                if (s.subSegments && s.subSegments.length > 0) {
+                                  s.subSegments.forEach((sub, subIdx) => {
+                                    html += `<option value="${sIdx}_${subIdx}" ${rfi.segmentIdx === sIdx && rfi.subSegmentIdx === subIdx ? 'selected' : ''}>&nbsp;&nbsp;↳ ${sub.name}</option>`;
+                                  });
+                                }
+                                return html;
+                              }).join('')}
+                            </select>
+                          </div>
+                          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+                            <span style="font-size: 0.65rem; margin-right: 4px;">🎯</span>
+                            <select class="edit-rfi-milestone inline-edit" data-idx="${idx}" style="font-size: 0.7rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                              <option value="-1">-- Cột mốc --</option>
+                              ${(project.milestones || []).map((m, mIdx) => `
+                                <option value="${mIdx}" ${rfi.milestoneIdx === mIdx ? 'selected' : ''}>${m.name}</option>
+                              `).join('')}
+                            </select>
+                          </div>
+                        </div>
+                      ` : `
+                        ${rfi.segmentIdx !== null && rfi.segmentIdx !== undefined && project.segments[rfi.segmentIdx] ? `
+                          <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
+                            🏷️ ${project.segments[rfi.segmentIdx].name}${rfi.subSegmentIdx != null && project.segments[rfi.segmentIdx].subSegments?.[rfi.subSegmentIdx] ? ` / ${project.segments[rfi.segmentIdx].subSegments[rfi.subSegmentIdx].name}` : ''}
+                          </span>
+                        ` : ''}
+                        ${rfi.milestoneIdx !== null && rfi.milestoneIdx !== undefined && (project.milestones || [])[rfi.milestoneIdx] ? `
+                          <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
+                            🎯 ${(project.milestones || [])[rfi.milestoneIdx].name}
+                          </span>
+                        ` : ''}
+                      `}
+                      <button class="btn btn-ghost btn-sm text-primary btn-rfi-detail" data-idx="${idx}" style="margin-top: 4px; padding: 2px 8px; font-size: 0.7rem; border: 1px solid var(--accent-primary);">🔍 Chi tiết</button>
                     </td>
                     <td class="text-sm">
                       <select class="form-select edit-rfi-priority inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer;">
@@ -301,11 +500,11 @@ export function render() {
                       </select>
                     </td>
                     <td class="text-sm">
-                      <select class="form-select edit-rfi-status inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer; color: ${rfi.status === 'Overdue' ? 'var(--text-danger)' : rfi.status === 'Closed' ? 'var(--text-success)' : rfi.status === 'Answered' ? 'var(--text-info)' : 'var(--text-warning)'}; font-weight: bold;">
-                        <option value="Open" ${rfi.status === 'Open' ? 'selected' : ''}>Mở (Open)</option>
-                        <option value="Answered" ${rfi.status === 'Answered' ? 'selected' : ''}>Đã trả lời</option>
-                        <option value="Closed" ${rfi.status === 'Closed' ? 'selected' : ''}>Đã đóng</option>
-                        <option value="Overdue" ${rfi.status === 'Overdue' ? 'selected' : ''}>Trễ hạn ⚠️</option>
+                      <select class="form-select edit-rfi-status inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer; color: ${rfi.status === 'Open' ? 'var(--text-danger)' : rfi.status === 'Answered' ? 'var(--text-success)' : 'var(--text-muted)'}; font-weight: bold;">
+                        <option value="Open" style="color: var(--text-danger);" ${rfi.status === 'Open' ? 'selected' : ''}>Mở (Open)</option>
+                        <option value="Answered" style="color: var(--text-success);" ${rfi.status === 'Answered' ? 'selected' : ''}>Đã trả lời</option>
+                        <option value="Closed" style="color: var(--text-muted);" ${rfi.status === 'Closed' ? 'selected' : ''}>Đã đóng</option>
+                        <option value="Overdue" style="color: var(--text-danger);" ${rfi.status === 'Overdue' ? 'selected' : ''}>Trễ hạn ⚠️</option>
                       </select>
                     </td>
                     <td class="text-sm">
@@ -313,7 +512,7 @@ export function render() {
                         <select class="form-select edit-rfi-assignee inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer; flex: 1;">
                           <option value="">-- Chọn --</option>
                           ${(getState().personnel || []).map(p => {
-                            let label = p.name;
+                            let label = formatDisplayName(p.name);
                             const alloc = p.totalAllocation || 0;
                             if (alloc >= 100) label += ' [⚠️ Quá tải]';
                             else label += ` [✅ Rảnh ${100 - alloc}%]`;
@@ -323,7 +522,7 @@ export function render() {
                         ${rfi.assignee ? (() => {
                           const person = (getState().personnel || []).find(p => p.name === rfi.assignee);
                           if (person) {
-                            return `<img src="${(person.avatar && person.avatar.length > 5) ? person.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;" title="${person.role || person.name}">`;
+                            return `<img src="${(person.avatar && person.avatar.length > 5) ? person.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(formatDisplayName(person.name))}&background=random`}" style="width: 24px; height: 24px; border-radius: 50%;" title="${person.role ? person.role + ' - ' : ''}${formatDisplayName(person.name)}">`;
                           }
                           return '';
                         })() : ''}
@@ -363,68 +562,13 @@ export function render() {
       
 
 
-      <!-- Team Roster -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">👥 Đội ngũ Dự án</h3>
-          <span class="badge active">${(project.team || project.members || []).length} thành viên</span>
-        </div>
-        <div class="grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-md);">
-          ${(project.team || project.members || []).map((m, idx) => `
-            <div style="display: flex; align-items: center; gap: 16px; padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-tertiary); position: relative;">
-              <img src="${m.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(m.name)}&background=random`}" alt="${m.name}" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
-              <div style="flex: 1; overflow: hidden;">
-                ${isEditing ? `
-                  <select class="form-select edit-member-name" data-idx="${idx}" style="margin-bottom: 4px; font-weight: bold; width: 100%; padding: 4px;">
-                    <option value="">-- Chọn nhân sự --</option>
-                    ${(getState().personnel || []).map(p => {
-                      let label = p.name;
-                      const alloc = p.totalAllocation || 0;
-                      if (alloc >= 100) label += ' [⚠️ Quá tải]';
-                      else label += ` [✅ Rảnh ${100 - alloc}%]`;
-                      return `<option value="${p.name}" ${m.name === p.name ? 'selected' : ''}>${label}</option>`;
-                    }).join('')}
-                  </select>
-                  <div class="flex gap-xs mt-xs">
-                    <select class="form-select edit-member-role" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; width: 50%;">
-                      <option value="BIM Manager" ${m.role === 'BIM Manager' ? 'selected' : ''}>BIM Manager</option>
-                      <option value="BIM Coordinator" ${m.role === 'BIM Coordinator' ? 'selected' : ''}>Coordinator</option>
-                      <option value="BIM Modeler" ${m.role === 'BIM Modeler' ? 'selected' : ''}>Modeler</option>
-                      <option value="Project Manager" ${m.role === 'Project Manager' ? 'selected' : ''}>PM</option>
-                    </select>
-                    <select class="form-select edit-member-discipline" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; width: 50%;">
-                      <option value="Kiến trúc" ${m.discipline === 'Kiến trúc' ? 'selected' : ''}>Kiến trúc</option>
-                      <option value="Kết cấu" ${m.discipline === 'Kết cấu' ? 'selected' : ''}>Kết cấu</option>
-                      <option value="MEP" ${m.discipline === 'MEP' ? 'selected' : ''}>MEP</option>
-                      <option value="Hạ tầng" ${m.discipline === 'Hạ tầng' ? 'selected' : ''}>Hạ tầng</option>
-                      <option value="Cầu đường" ${m.discipline === 'Cầu đường' ? 'selected' : ''}>Cầu đường</option>
-                    </select>
-                  </div>
-                ` : `
-                  <div class="font-bold text-md" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${m.name}</div>
-                  <div class="flex gap-xs mt-xs">
-                    <span class="badge blue" style="font-size: 0.65rem; padding: 2px 6px;">${m.role}</span>
-                    <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-secondary); border: 1px solid var(--border-subtle);">${m.discipline}</span>
-                  </div>
-                `}
-              </div>
-              ${isEditing ? `
-                <button class="btn btn-ghost btn-sm text-danger btn-delete-member" data-idx="${idx}" style="position: absolute; top: 8px; right: 8px; padding: 4px;">🗑️</button>
-              ` : ''}
-            </div>
-          `).join('')}
-          ${isEditing ? `
-            <div style="display: flex; align-items: center; justify-content: center; padding: 12px; border-radius: var(--radius-md); border: 1px dashed var(--border-strong); background: transparent; cursor: pointer; min-height: 80px;" id="btn-add-member" class="admin-only">
-              <span class="text-muted font-bold">+ Thêm Nhân Sự</span>
-            </div>
-          ` : (project.team || project.members || []).length === 0 ? '<div class="text-sm text-muted">Chưa có thành viên nào được gán vào dự án này.</div>' : ''}
-        </div>
-      </div>
+
     </div>
   `;
 }
 
 function renderPhases(project) {
+  const isEditing = getIsEditing();
   return `
     <div class="flex flex-col gap-sm">
       ${project.phases.map((phase, idx) => {
@@ -496,18 +640,17 @@ export function init() {
   const { projects, selectedProjectId } = getState();
   const project = projects.find(p => p.id === selectedProjectId);
   if (!project) return;
+  
+  const isEditing = getIsEditing();
 
-  document.getElementById('btn-edit-project')?.addEventListener('click', () => {
-    isEditing = true;
-    refreshDetail();
-  });
+  const performSilentSave = () => {
+    // Lấy state mới nhất để tránh lỗi stale closure khi thêm phần tử mới (mốc, đoạn, task)
+    const currentProject = getState().projects.find(p => p.id === selectedProjectId);
+    if (!currentProject) return;
 
-  document.getElementById('btn-cancel-edit')?.addEventListener('click', () => {
-    isEditing = false;
-    refreshDetail();
-  });
+    const indicator = document.getElementById('auto-save-indicator');
+    if (indicator) indicator.style.display = 'flex';
 
-  document.getElementById('btn-save-project')?.addEventListener('click', () => {
     const updates = {
       name: document.getElementById('edit-name').value,
       code: document.getElementById('edit-code').value,
@@ -522,7 +665,74 @@ export function init() {
       startDate: document.getElementById('edit-start').value,
       endDate: document.getElementById('edit-end').value,
     };
-    // Extract Tasks (Removed Segments Matrix as it's now in DrawingProgress.js)
+    // Extract Milestones FIRST
+    const milestoneNames = document.querySelectorAll('.edit-milestone-name');
+    const milestoneDates = document.querySelectorAll('.edit-milestone-date');
+    const newMilestones = [];
+    milestoneNames.forEach((el, idx) => {
+      newMilestones.push({
+        id: (currentProject.milestones || [])[idx]?.id || `M${Date.now()}_${idx}`,
+        name: el.value,
+        date: milestoneDates[idx].value
+      });
+    });
+    updates.milestones = newMilestones;
+
+    // Extract Segments, SubSegments and Matrix Progress
+    const segmentNames = document.querySelectorAll('.edit-segment-name');
+    const newSegments = [];
+    segmentNames.forEach((el, sIdx) => {
+      const segName = el.value;
+      const progresses = [];
+      const deadlines = [];
+      newMilestones.forEach((m, mIdx) => {
+        const slider = document.querySelector(`.edit-segment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+        progresses.push(slider ? parseInt(slider.value) : 0);
+        
+        const dateInput = document.querySelector(`.edit-segment-matrix-date[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+        deadlines.push(dateInput ? dateInput.value : '');
+      });
+      
+      const subSegments = [];
+      const subNameInputs = document.querySelectorAll(`.edit-subsegment-name[data-sidx="${sIdx}"]`);
+      subNameInputs.forEach((subEl, subIdx) => {
+        const subProgresses = [];
+        const subDeadlines = [];
+        newMilestones.forEach((m, mIdx) => {
+          const subSlider = document.querySelector(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+          subProgresses.push(subSlider ? parseInt(subSlider.value) : 0);
+          
+          const subDateInput = document.querySelector(`.edit-subsegment-matrix-date[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+          subDeadlines.push(subDateInput ? subDateInput.value : '');
+        });
+        subSegments.push({
+          id: currentProject.segments[sIdx]?.subSegments?.[subIdx]?.id || `Sub_${Date.now()}_${sIdx}_${subIdx}`,
+          name: subEl.value,
+          progresses: subProgresses,
+          deadlines: subDeadlines
+        });
+      });
+      
+      // If has subsegments, override parent progresses with average
+      if (subSegments.length > 0) {
+        newMilestones.forEach((m, mIdx) => {
+          const sum = subSegments.reduce((acc, sub) => acc + (sub.progresses[mIdx] || 0), 0);
+          progresses[mIdx] = Math.round(sum / subSegments.length);
+        });
+      }
+      
+      const avgProgress = progresses.length ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length) : 0;
+      
+      newSegments.push({
+        id: currentProject.segments[sIdx]?.id || `S${Date.now()}_${sIdx}`,
+        name: segName,
+        progress: avgProgress, // backward compatibility
+        progresses: progresses,
+        deadlines: deadlines,
+        subSegments: subSegments
+      });
+    });
+    updates.segments = newSegments;
 
     // Extract Tasks
     const taskNames = document.querySelectorAll('.edit-task-name');
@@ -530,16 +740,31 @@ export function init() {
     const taskProgresses = document.querySelectorAll('.edit-task-progress');
     const taskDues = document.querySelectorAll('.edit-task-due');
     const taskSegments = document.querySelectorAll('.edit-task-segment');
+    const taskMilestones = document.querySelectorAll('.edit-task-milestone');
     const newTasks = [];
     taskNames.forEach((el, idx) => {
-      const segVal = parseInt(taskSegments[idx]?.value);
+      const segValStr = taskSegments[idx]?.value || "-1";
+      const mlVal = parseInt(taskMilestones[idx]?.value);
+      
+      let sIdx = null;
+      let subIdx = null;
+      if (segValStr !== "-1") {
+        const parts = segValStr.split('_');
+        sIdx = parseInt(parts[0]);
+        if (parts.length > 1) subIdx = parseInt(parts[1]);
+      }
+      
       newTasks.push({
         name: el.value,
         assignee: taskAssignees[idx].value,
         progress: parseInt(taskProgresses[idx].value) || 0,
         dueDate: taskDues[idx].value,
         status: parseInt(taskProgresses[idx].value) === 100 ? 'completed' : 'active',
-        segmentIdx: segVal >= 0 ? segVal : null
+        segmentIdx: sIdx,
+        subSegmentIdx: subIdx,
+        milestoneIdx: mlVal >= 0 ? mlVal : null,
+        description: currentProject.tasks[idx]?.description || '',
+        cloudLinks: currentProject.tasks[idx]?.cloudLinks || ''
       });
     });
     updates.tasks = newTasks;
@@ -552,7 +777,7 @@ export function init() {
     const newPhases = [];
     phaseStarts.forEach((el, idx) => {
       newPhases.push({
-        id: project.phases[idx].id,
+        id: currentProject.phases[idx].id,
         startDate: el.value,
         endDate: phaseEnds[idx].value,
         status: phaseStatuses[idx].value,
@@ -562,20 +787,7 @@ export function init() {
     if (newPhases.length > 0) {
       updates.phases = newPhases;
     }
-    // Extract Members
-    const memberNames = document.querySelectorAll('.edit-member-name');
-    const memberRoles = document.querySelectorAll('.edit-member-role');
-    const memberDisciplines = document.querySelectorAll('.edit-member-discipline');
-    const newMembers = [];
-    memberNames.forEach((el, idx) => {
-      newMembers.push({
-        name: el.value,
-        role: memberRoles[idx].value,
-        discipline: memberDisciplines[idx].value,
-        avatar: (project.team || project.members)?.[idx]?.avatar || null
-      });
-    });
-    updates.team = newMembers;
+
     // Extract RFIs
     const rfiCodes = document.querySelectorAll('.edit-rfi-code');
     const rfiTitles = document.querySelectorAll('.edit-rfi-title');
@@ -583,23 +795,79 @@ export function init() {
     const rfiStatuses = document.querySelectorAll('.edit-rfi-status');
     const rfiAssignees = document.querySelectorAll('.edit-rfi-assignee');
     const rfiDues = document.querySelectorAll('.edit-rfi-due');
+    const rfiSegments = document.querySelectorAll('.edit-rfi-segment');
+    const rfiMilestones = document.querySelectorAll('.edit-rfi-milestone');
     const newRfis = [];
     rfiCodes.forEach((el, idx) => {
+      let sIdx = null, subIdx = null;
+      if (rfiSegments[idx]) {
+        const segValStr = rfiSegments[idx].value;
+        if (segValStr !== "-1") {
+          const parts = segValStr.split('_');
+          sIdx = parseInt(parts[0]);
+          if (parts.length > 1) subIdx = parseInt(parts[1]);
+        }
+      }
+      
+      let mIdx = null;
+      if (rfiMilestones[idx]) {
+        const mlVal = parseInt(rfiMilestones[idx].value);
+        if (mlVal >= 0) mIdx = mlVal;
+      }
+
       newRfis.push({
+        id: (currentProject.rfis || [])[idx]?.id || `rfi-${Date.now()}-${idx}`,
         code: el.value,
         title: rfiTitles[idx].value,
         priority: rfiPriorities[idx].value,
         status: rfiStatuses[idx].value,
         assignee: rfiAssignees[idx].value,
-        dueDate: rfiDues[idx].value
+        dueDate: rfiDues[idx].value,
+        segmentIdx: sIdx,
+        subSegmentIdx: subIdx,
+        milestoneIdx: mIdx,
+        description: (currentProject.rfis || [])[idx]?.description || '',
+        cloudLinks: (currentProject.rfis || [])[idx]?.cloudLinks || ''
       });
     });
     updates.rfis = newRfis;
 
     updateProject(selectedProjectId, updates);
-    isEditing = false;
-    refreshDetail();
-  });
+    
+    setTimeout(() => {
+      const indicator = document.getElementById('auto-save-indicator');
+      if (indicator) {
+        indicator.innerHTML = '<span style="font-size: 0.8rem; font-weight: bold; color: var(--text-success);">✅ Đã lưu</span>';
+        setTimeout(() => {
+          indicator.style.display = 'none';
+          indicator.innerHTML = `
+            <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+            <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">Đang lưu...</span>
+          `;
+        }, 2000);
+      }
+    }, 500); // UI feel
+  };
+
+  if (isEditing) {
+    const container = document.getElementById('page-content');
+    if (container && !container.dataset.hasSaveListener) {
+      container.dataset.hasSaveListener = "true";
+      let autoSaveTimeout;
+      container.addEventListener('change', (e) => {
+        // Ignore buttons/etc
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') return;
+        if (e.target.classList.contains('edit-rfi-assignee') || e.target.classList.contains('edit-task-assignee')) {
+          checkResourceConflict(e.target.value);
+        }
+        
+        clearTimeout(autoSaveTimeout);
+        autoSaveTimeout = setTimeout(() => {
+          performSilentSave(false);
+        }, 500);
+      });
+    }
+  }
 
   // Range Slider real-time UI update (optional, but good UX)
   document.querySelectorAll('.edit-phase-progress').forEach(slider => {
@@ -608,61 +876,174 @@ export function init() {
     });
   });
 
+  document.querySelectorAll('.edit-segment-matrix-progress, .edit-subsegment-matrix-progress').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      // It is either a slider or a hidden input. If hidden input, it doesn't fire input event anyway.
+      if (e.target.type !== 'range') return;
+      
+      const val = parseInt(e.target.value);
+      e.target.nextElementSibling.textContent = `${val}%`;
+      if (val >= 100) {
+        e.target.nextElementSibling.style.color = 'var(--text-success)';
+      } else {
+        e.target.nextElementSibling.style.color = 'inherit';
+      }
+      
+      // Update parent immediately if this is a subsegment slider
+      if (e.target.classList.contains('edit-subsegment-matrix-progress')) {
+        const sIdx = e.target.dataset.sidx;
+        const mIdx = e.target.dataset.midx;
+        
+        const subSliders = document.querySelectorAll(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+        let sum = 0;
+        subSliders.forEach(s => sum += parseInt(s.value) || 0);
+        const avg = subSliders.length > 0 ? Math.round(sum / subSliders.length) : 0;
+        
+        const pFill = document.querySelector(`.parent-progress-fill-${sIdx}-${mIdx}`);
+        const pText = document.querySelector(`.parent-progress-text-${sIdx}-${mIdx}`);
+        const pHidden = document.getElementById(`parent-hidden-${sIdx}-${mIdx}`);
+        
+        if (pFill) {
+          pFill.style.width = `${avg}%`;
+          if (avg >= 100) pFill.classList.add('green');
+          else pFill.classList.remove('green');
+        }
+        if (pText) pText.textContent = `${avg}%`;
+        if (pHidden) pHidden.value = avg;
+      }
+    });
+  });
+
+  // Toggle Sub-segments visibility
+  document.querySelectorAll('.btn-toggle-sub').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const sIdx = e.currentTarget.dataset.sidx;
+      const rows = document.querySelectorAll(`.sub-of-${sIdx}`);
+      if (!rows.length) return;
+      const isHidden = rows[0].style.display === 'none';
+      rows.forEach(r => r.style.display = isHidden ? '' : 'none');
+      e.currentTarget.textContent = isHidden ? '▼' : '▶';
+    });
+  });
+
+  // Add Sub-segment
+  document.querySelectorAll('.btn-add-subsegment').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      performSilentSave(); // Save any pending text
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      const sIdx = parseInt(e.currentTarget.dataset.sidx);
+      if (!currentProj.segments[sIdx].subSegments) currentProj.segments[sIdx].subSegments = [];
+      currentProj.segments[sIdx].subSegments.push({
+        name: 'Đoạn nhỏ mới',
+        progresses: []
+      });
+      updateProject(selectedProjectId, { segments: currentProj.segments });
+      refreshDetail();
+    });
+  });
+
+  // Delete Sub-segment
+  document.querySelectorAll('.btn-delete-subsegment').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      performSilentSave();
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      const sIdx = parseInt(e.currentTarget.dataset.sidx);
+      const subIdx = parseInt(e.currentTarget.dataset.subidx);
+      currentProj.segments[sIdx].subSegments.splice(subIdx, 1);
+      updateProject(selectedProjectId, { segments: currentProj.segments });
+      refreshDetail();
+    });
+  });
 
 
+  // Add Segment
+  document.getElementById('btn-add-segment')?.addEventListener('click', () => {
+    performSilentSave();
+    const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+    currentProj.segments.push({ 
+      id: `S${Date.now()}`,
+      name: 'Phân đoạn mới', 
+      progress: 0 
+    });
+    updateProject(selectedProjectId, { segments: currentProj.segments });
+    refreshDetail();
+  });
 
+  // Delete Segment
+  document.querySelectorAll('.btn-delete-segment').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      performSilentSave();
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      const idx = parseInt(e.currentTarget.dataset.idx);
+      currentProj.segments.splice(idx, 1);
+      updateProject(selectedProjectId, { segments: currentProj.segments });
+      refreshDetail();
+    });
+  });
+
+  // Add Milestone
+  document.getElementById('btn-add-milestone')?.addEventListener('click', () => {
+    performSilentSave();
+    const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+    if (!currentProj.milestones) currentProj.milestones = [];
+    currentProj.milestones.push({ 
+      id: `M${Date.now()}`,
+      name: 'Mốc giao nộp mới', 
+      date: new Date().toISOString().split('T')[0]
+    });
+    updateProject(selectedProjectId, { milestones: currentProj.milestones });
+    refreshDetail();
+  });
+
+  // Delete Milestone
+  document.querySelectorAll('.btn-delete-milestone').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      performSilentSave();
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      const idx = parseInt(e.currentTarget.dataset.idx);
+      currentProj.milestones.splice(idx, 1);
+      updateProject(selectedProjectId, { milestones: currentProj.milestones });
+      refreshDetail();
+    });
+  });
 
   // Add Task
   document.getElementById('btn-add-task')?.addEventListener('click', () => {
-    project.tasks.push({ 
+    performSilentSave();
+    const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+    currentProj.tasks.push({ 
       name: 'Công việc mới', 
-      assignee: project.teamLead, 
+      assignee: currentProj.teamLead, 
       progress: 0, 
       dueDate: new Date().toISOString().split('T')[0],
       status: 'active'
     });
-    updateProject(selectedProjectId, { tasks: project.tasks });
+    updateProject(selectedProjectId, { tasks: currentProj.tasks });
     refreshDetail();
   });
 
   // Delete Task
   document.querySelectorAll('.btn-delete-task').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      performSilentSave();
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
       const idx = parseInt(e.currentTarget.dataset.idx);
-      project.tasks.splice(idx, 1);
-      updateProject(selectedProjectId, { tasks: project.tasks });
+      currentProj.tasks.splice(idx, 1);
+      updateProject(selectedProjectId, { tasks: currentProj.tasks });
       refreshDetail();
     });
   });
 
-  // Add Member
-  document.getElementById('btn-add-member')?.addEventListener('click', () => {
-    if (!project.team) project.team = project.members || [];
-    project.team.push({ 
-      name: 'Thành viên mới', 
-      role: 'BIM Modeler', 
-      discipline: 'Kiến trúc' 
-    });
-    updateProject(selectedProjectId, { team: project.team, members: project.team });
-    refreshDetail();
-  });
 
-  // Delete Member
-  document.querySelectorAll('.btn-delete-member').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const idx = parseInt(e.currentTarget.dataset.idx);
-      if (!project.team) project.team = project.members || [];
-      project.team.splice(idx, 1);
-      updateProject(selectedProjectId, { team: project.team, members: project.team });
-      refreshDetail();
-    });
-  });
 
   // Add RFI
   document.getElementById('btn-add-rfi')?.addEventListener('click', () => {
-    if (!project.rfis) project.rfis = [];
-    const newCode = `RFI-${String(project.rfis.length + 1).padStart(3, '0')}`;
-    project.rfis.push({ 
+    performSilentSave();
+    const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+    if (!currentProj.rfis) currentProj.rfis = [];
+    const newCode = `RFI-${String(currentProj.rfis.length + 1).padStart(3, '0')}`;
+    currentProj.rfis.push({ 
+      id: `rfi-${Date.now()}`,
       code: newCode,
       title: 'Yêu cầu thông tin mới', 
       priority: 'Medium', 
@@ -670,51 +1051,38 @@ export function init() {
       assignee: '',
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] // +7 days
     });
-    updateProject(selectedProjectId, { rfis: project.rfis });
+    updateProject(selectedProjectId, { rfis: currentProj.rfis });
     refreshDetail();
+  });
+
+  // Details Modal Triggers
+  document.querySelectorAll('.btn-task-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.currentTarget.dataset.idx);
+      showItemDetailModal(project.tasks[idx], idx, 'task', project, refreshDetail);
+    });
+  });
+
+  document.querySelectorAll('.btn-rfi-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const idx = parseInt(e.currentTarget.dataset.idx);
+      showItemDetailModal(project.rfis[idx], idx, 'rfi', project, refreshDetail);
+    });
   });
 
   // Delete RFI
   document.querySelectorAll('.btn-delete-rfi').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      performSilentSave();
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
       const idx = parseInt(e.currentTarget.dataset.idx);
-      project.rfis.splice(idx, 1);
-      updateProject(selectedProjectId, { rfis: project.rfis });
+      currentProj.rfis.splice(idx, 1);
+      updateProject(selectedProjectId, { rfis: currentProj.rfis });
       refreshDetail();
     });
   });
 
-  // Auto-save RFI inline edits
-  document.querySelectorAll('.inline-edit').forEach(input => {
-    input.addEventListener('change', (e) => {
-      // Extract all RFIs
-      const rfiCodes = document.querySelectorAll('.edit-rfi-code');
-      const rfiTitles = document.querySelectorAll('.edit-rfi-title');
-      const rfiPriorities = document.querySelectorAll('.edit-rfi-priority');
-      const rfiStatuses = document.querySelectorAll('.edit-rfi-status');
-      const rfiAssignees = document.querySelectorAll('.edit-rfi-assignee');
-      const rfiDues = document.querySelectorAll('.edit-rfi-due');
-      
-      const newRfis = [];
-      rfiCodes.forEach((el, idx) => {
-        newRfis.push({
-          code: el.value,
-          title: rfiTitles[idx].value,
-          priority: rfiPriorities[idx].value,
-          status: rfiStatuses[idx].value,
-          assignee: rfiAssignees[idx].value,
-          dueDate: rfiDues[idx].value
-        });
-      });
-      
-      if (e.target.classList.contains('edit-rfi-assignee')) {
-        checkResourceConflict(e.target.value);
-      }
-      
-      updateProject(selectedProjectId, { rfis: newRfis });
-      refreshDetail();
-    });
-  });
+
 
 
 }
@@ -732,5 +1100,5 @@ async function checkResourceConflict(assigneeName) {
 }
 
 export function destroy() {
-  isEditing = false;
+  // Cleanup logic if needed
 }

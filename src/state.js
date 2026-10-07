@@ -89,23 +89,7 @@ function syncToFirestore() {
       }
 
       if (state.projects && state.personnel) {
-        // --- AUTO-RECOVER MISSING PERSONNEL ---
-        state.projects.forEach(proj => {
-          if (proj.teamLead && !state.personnel.some(p => p.name === proj.teamLead)) {
-            state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: proj.teamLead, role: 'Team Lead', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
-          }
-          (proj.tasks || []).forEach(t => {
-            if (t.assignee && !state.personnel.some(p => p.name === t.assignee)) {
-              state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: t.assignee, role: 'Member', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
-            }
-          });
-          (proj.team || []).forEach(m => {
-            if (m.name && !state.personnel.some(p => p.name === m.name)) {
-              state.personnel.push({ id: `p-${Date.now()}-${Math.random().toString(36).substr(2,5)}`, name: m.name, role: m.role || 'Member', email: '', skills: [], allocation: [], totalAllocation: 0, avatar: '👤' });
-            }
-          });
-        });
-        
+
         state.personnel.forEach(person => {
           // 2. Đồng bộ nguồn lực (allocation) từ danh sách thành viên dự án
           const oldAllocMap = {};
@@ -181,7 +165,7 @@ export function recalculateUserRole() {
     
     // Apply UI Restrictions
     if (typeof document !== 'undefined') {
-      if (role !== 'BIM Manager') {
+      if (role !== 'BIM Manager' && role !== 'Project Manager') {
         document.body.classList.add('restricted-mode');
       } else {
         document.body.classList.remove('restricted-mode');
@@ -684,7 +668,14 @@ export async function loadInitialData() {
           console.log("🔄 Dữ liệu Firestore đã cập nhật real-time");
           
           if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('hashchange'));
+            // Prevent jumping UI: Don't force re-render if we triggered the write locally
+            // or if the user is actively typing in an input.
+            const isLocalWrite = docSnap.metadata && docSnap.metadata.hasPendingWrites;
+            const isEditing = document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+            
+            if (!isLocalWrite && !isEditing) {
+              window.dispatchEvent(new Event('hashchange'));
+            }
           }
         } else {
           // Khởi tạo lần đầu

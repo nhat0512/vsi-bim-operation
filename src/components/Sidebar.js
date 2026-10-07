@@ -15,7 +15,7 @@ const NAV_SECTIONS = [
   {
     label: 'Quản lý dự án',
     items: [
-      { id: 'projects', label: 'Danh sách dự án', icon: '📁' },
+      { id: 'projects', label: 'Danh sách dự án', icon: '📁', adminOnly: true },
       { id: 'planning', label: 'General Planning', icon: '📅', adminOnly: true },
 
       { id: 'resources', label: 'Nguồn lực', icon: '👥', adminOnly: true },
@@ -31,12 +31,15 @@ const NAV_SECTIONS = [
   }
 ];
 
+import { formatDisplayName } from '../utils/formatters.js';
+
 export function renderSidebar() {
   const state = getState();
   const currentPage = getCurrentPage();
   const { selectedProjectId, currentUser } = state;
 
-  const name = currentUser ? currentUser.name : 'Người dùng';
+  const rawName = currentUser?.personnelRecord?.name || currentUser?.name || 'Người dùng';
+  const name = formatDisplayName(rawName);
   const role = currentUser ? currentUser.role : 'Guest';
   const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 

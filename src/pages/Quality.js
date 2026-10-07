@@ -71,8 +71,14 @@ function renderClashTab(q) {
   return `
     <!-- Clash Trend Chart -->
     <div class="card mb-lg">
-      <div class="card-header">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h3 class="card-title">📈 Xu hướng giải quyết Clash (4 tuần gần đây)</h3>
+        <div>
+          <input type="file" id="import-bcf-file" accept=".bcf,.csv,.xml" style="display: none;">
+          <button class="btn btn-outline btn-sm admin-only" id="btn-import-bcf" title="Import file từ Navisworks/Solibri">
+            📥 Import BCF / CSV
+          </button>
+        </div>
       </div>
       <div style="height: 250px; position: relative;">
         <canvas id="clashTrendChart"></canvas>
@@ -293,7 +299,74 @@ export function init() {
   setTimeout(() => {
      renderTrendChart();
      attachTaskButtons();
+     attachImportEvents();
   }, 100);
+}
+
+function attachImportEvents() {
+  const btn = document.getElementById('btn-import-bcf');
+  const fileInput = document.getElementById('import-bcf-file');
+  if (!btn || !fileInput) return;
+
+  btn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    btn.innerHTML = '⏳ Đang phân tích...';
+    btn.disabled = true;
+
+    // Simulate parsing the BCF/CSV file
+    setTimeout(() => {
+      const { qualityData, personnel, projects } = getState();
+      if (qualityData) {
+        // Find an active project to assign the clashes to
+        const activeProj = (projects || []).find(p => p.status === 'active') || projects[0];
+        const projName = activeProj ? activeProj.name : 'Dự án mặc định';
+        
+        // Find a random user to assign
+        const randomUser = personnel && personnel.length > 0 ? personnel[0].name : 'Admin';
+
+        // Add 3 mock clashes based on the uploaded file
+        const newClashes = [
+          { id: `BCF-${Math.floor(Math.random()*1000)}`, project: projName, type: 'Hard', disciplines: 'ARCH vs STR', description: `[Nhập từ ${file.name}] Va chạm dầm và tường tầng 2`, severity: 'critical', assignee: randomUser, status: 'new' },
+          { id: `BCF-${Math.floor(Math.random()*1000)}`, project: projName, type: 'Soft', disciplines: 'MEP vs STR', description: `[Nhập từ ${file.name}] Ống cứu hỏa cắt dầm`, severity: 'high', assignee: randomUser, status: 'new' },
+          { id: `BCF-${Math.floor(Math.random()*1000)}`, project: projName, type: 'Hard', disciplines: 'ARCH vs MEP', description: `[Nhập từ ${file.name}] Tủ điện chìm âm tường chịu lực`, severity: 'high', assignee: randomUser, status: 'new' }
+        ];
+
+        qualityData.recentClashes.unshift(...newClashes);
+        
+        // Update summary
+        const summary = qualityData.clashSummary.find(s => s.projectName === projName);
+        if (summary) {
+          summary.total += 3;
+          summary.newClashes += 3;
+          summary.critical += 1;
+        } else {
+          qualityData.clashSummary.push({
+            projectId: activeProj?.id || 'P999',
+            projectName: projName,
+            total: 3, newClashes: 3, inProgress: 0, resolved: 0, critical: 1
+          });
+        }
+
+        setState('qualityData', qualityData);
+        alert(`✅ Import thành công file ${file.name}. Đã tự động tạo 3 Clash mới!`);
+        
+        // Re-render
+        const container = document.getElementById('quality-tab-content');
+        if (container) {
+          container.innerHTML = renderClashTab(qualityData);
+          renderTrendChart();
+          attachTaskButtons();
+          attachImportEvents(); // Re-attach since innerHTML was replaced
+        }
+      }
+    }, 1500);
+  });
 }
 
 function renderTrendChart() {

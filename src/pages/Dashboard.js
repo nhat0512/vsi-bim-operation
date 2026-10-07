@@ -555,6 +555,9 @@ export function init() {
     initKanbanEvents(refreshDashboard);
   }
 
+  // Init interactive Gantt
+  initGanttEvents(refreshDashboard);
+
   // Initialize Analytics Charts if present
   if (document.getElementById('healthTrendChart')) {
     initAnalyticsCharts();

@@ -23,7 +23,10 @@ export function render() {
         ${renderKPI('👥', 'Nhân sự', personnel.length, 'Ổn định', 'cyan', '', '')}
         ${renderKPI('⚡', 'Clash mới', qualityData?.clashSummary?.reduce((s, c) => s + c.newClashes, 0) || 0, 'Cần xử lý', 'orange', '', '')}
         ${renderKPI('💚', 'Model Health', `${Math.round(projects.reduce((s, p) => s + p.modelHealth, 0) / (projects.length||1))}%`, 'Tốt', 'green', '', '')}
-        ${renderKPI('🔴', 'Overdue', projects.filter(p => p.status === 'overdue').length, 'Không có', 'green', '', '')}
+        ${(() => {
+          const overdueCount = projects.filter(p => p.status === 'overdue' || (p.status !== 'completed' && p.endDate && new Date(p.endDate) < new Date() && p.progress < 100)).length;
+          return renderKPI('🔴', 'Overdue', overdueCount, overdueCount === 0 ? 'Không có' : 'Cần xử lý ngay', overdueCount === 0 ? 'green' : 'red', '', '');
+        })()}
       </div>
     `,
     projects: () => `

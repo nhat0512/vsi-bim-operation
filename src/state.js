@@ -432,9 +432,11 @@ export function addProject(projectData) {
     disciplines: projectData.disciplines || ['road'],
     teamSize: parseInt(projectData.teamSize, 10) || 5,
     teamLead: projectData.teamLead || '',
-    segments: [],
-    phases: generateDefaultPhases(projectData.startDate, projectData.endDate),
-    tasks: []
+    segments: projectData.segments || [],
+    phases: projectData.phases || generateDefaultPhases(projectData.startDate, projectData.endDate),
+    tasks: projectData.tasks || [],
+    milestones: projectData.milestones || [],
+    rfis: projectData.rfis || []
   };
 
   const projects = [...state.projects, newProject];

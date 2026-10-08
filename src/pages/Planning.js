@@ -232,9 +232,16 @@ export function render() {
                 
                 // Add assigned tasks
                 pObj.tasks.forEach(t => {
-                   const trueIdx = pObj.project.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
+                   const trueIdx = pObj.project.tasks.indexOf(t);
                    if (!itemsToRender.find(x => x.id === `t_${trueIdx}`)) {
-                      itemsToRender.push({ id: `t_${trueIdx}`, name: t.name, type: 'task' });
+                      let displayName = t.name;
+                      if (t.segmentIdx !== undefined && t.segmentIdx !== null && pObj.project.segments?.[t.segmentIdx]) {
+                        displayName += ` - ${pObj.project.segments[t.segmentIdx].name}`;
+                        if (t.subSegmentIdx !== undefined && t.subSegmentIdx !== null && pObj.project.segments[t.segmentIdx].subSegments?.[t.subSegmentIdx]) {
+                          displayName += ` / ${pObj.project.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}`;
+                        }
+                      }
+                      itemsToRender.push({ id: `t_${trueIdx}`, name: displayName, type: 'task' });
                    }
                 });
                 
@@ -253,7 +260,16 @@ export function render() {
                    if (tid.startsWith('t_')) {
                       const idx = parseInt(tid.split('_')[1]);
                       const task = pObj.project.tasks?.[idx];
-                      if (task) itemsToRender.push({ id: tid, name: task.name, type: 'task' });
+                      if (task) {
+                        let displayName = task.name;
+                        if (task.segmentIdx !== undefined && task.segmentIdx !== null && pObj.project.segments?.[task.segmentIdx]) {
+                          displayName += ` - ${pObj.project.segments[task.segmentIdx].name}`;
+                          if (task.subSegmentIdx !== undefined && task.subSegmentIdx !== null && pObj.project.segments[task.segmentIdx].subSegments?.[task.subSegmentIdx]) {
+                            displayName += ` / ${pObj.project.segments[task.segmentIdx].subSegments[task.subSegmentIdx].name}`;
+                          }
+                        }
+                        itemsToRender.push({ id: tid, name: displayName, type: 'task' });
+                      }
                    } else if (tid.startsWith('rfi_')) {
                       const idx = parseInt(tid.split('_')[1]);
                       const rfi = pObj.project.rfis?.[idx];

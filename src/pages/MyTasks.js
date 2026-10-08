@@ -167,9 +167,9 @@ export function render() {
                     <tr style="transition: background 0.2s;" ${isComplete ? 'class="completed-row"' : ''}>
                       <td>
                         <div class="font-semibold ${isComplete ? 'text-muted' : ''}">${isComplete ? '✅ ' : ''}${task.name}</div>
-                        ${task.segmentIdx !== undefined && project.segments?.[task.segmentIdx] ? `
+                        ${task.segmentIdx !== undefined && task.segmentIdx !== null && project.segments?.[task.segmentIdx] ? `
                           <span class="badge" style="font-size: 0.65rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle); margin-top: 4px; display: inline-block;">
-                            🏷️ ${project.segments[task.segmentIdx].name}
+                            🏷️ ${project.segments[task.segmentIdx].name}${task.subSegmentIdx !== undefined && task.subSegmentIdx !== null && project.segments[task.segmentIdx].subSegments?.[task.subSegmentIdx] ? ` / ${project.segments[task.segmentIdx].subSegments[task.subSegmentIdx].name}` : ''}
                           </span>
                         ` : ''}
                         ${task.milestoneIdx !== undefined && project.milestones?.[task.milestoneIdx] ? `
@@ -456,8 +456,15 @@ export function init() {
       if (userTasks.length > 0) {
         optionsHtml += '<optgroup label="Công việc (Tasks)">';
         userTasks.forEach(t => {
-          const trueIdx = proj.tasks.findIndex(pt => pt.name === t.name && pt.assignee === t.assignee);
-          optionsHtml += `<option value="t_${trueIdx}">${t.name}</option>`;
+          const trueIdx = proj.tasks.indexOf(t);
+          let extraInfo = '';
+          if (t.segmentIdx !== undefined && t.segmentIdx !== null && proj.segments?.[t.segmentIdx]) {
+            extraInfo = ` - ${proj.segments[t.segmentIdx].name}`;
+            if (t.subSegmentIdx !== undefined && t.subSegmentIdx !== null && proj.segments[t.segmentIdx].subSegments?.[t.subSegmentIdx]) {
+              extraInfo += ` / ${proj.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}`;
+            }
+          }
+          optionsHtml += `<option value="t_${trueIdx}">${t.name}${extraInfo}</option>`;
         });
         optionsHtml += '</optgroup>';
       }

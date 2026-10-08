@@ -48,13 +48,35 @@ export function render() {
 
   const timesheets = getState().timesheets || [];
   const projectTimesheets = timesheets.filter(t => t.projectId === project.id);
-  const totalHours = projectTimesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
-  const laborCost = totalHours * 150000; 
-  let AC = laborCost + (BAC * 0.4 * (project.progress / 100));
+  
+  let totalHours = 0;
+  let laborCost = 0;
+  const rateMap = {
+    'BIM Manager': 350000,
+    'Project Manager': 350000,
+    'BIM Coordinator': 250000,
+    'BIM Engineer': 200000,
+    'BIM Modeler': 150000
+  };
+
+  projectTimesheets.forEach(t => {
+     const hrs = Number(t.hours) || 0;
+     totalHours += hrs;
+     const person = personnel.find(p => p.id === t.userId || p.email === t.email || p.name === t.userName);
+     const role = person ? person.role : 'BIM Modeler';
+     const rate = rateMap[role] || 150000;
+     laborCost += hrs * rate;
+  });
+
+  let AC = laborCost + (BAC * 0.4 * (project.progress / 100)); // Labor + 40% BAC assumption for materials
   if (AC === 0 && EV > 0) AC = EV * 0.95; 
   
   const SPI = PV > 0 ? (EV / PV) : 1;
   const CPI = AC > 0 ? (EV / AC) : 1;
+  
+  // Predict EAC (Estimate At Completion) & ETC (Estimate To Complete)
+  const EAC = CPI > 0 ? (BAC / CPI) : BAC;
+  const ETC = Math.max(0, EAC - AC);
   
   const formatCurrency = (val) => {
      if (val >= 1000000000) return (val / 1000000000).toFixed(2) + ' Tỷ';
@@ -138,8 +160,8 @@ export function render() {
           </div>
           
           <!-- EVM Indicators -->
-          <div style="display: flex; gap: 24px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
-            <div style="flex: 1;">
+          <div style="display: flex; flex-wrap: wrap; gap: 24px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
+            <div style="flex: 1; min-width: 250px;">
               <div class="flex justify-between items-center mb-xs">
                 <span class="text-sm font-semibold">Hiệu suất Tiến độ (SPI)</span>
                 <span class="badge" style="background: ${SPI >= 1 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color: ${SPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'}; border: 1px solid ${SPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};">${SPI.toFixed(2)}</span>
@@ -150,7 +172,7 @@ export function render() {
               <div class="text-xs text-muted mt-xs">${SPI >= 1 ? '✅ Nhanh hơn kế hoạch' : '⚠️ Chậm tiến độ (Cần tăng tốc)'}</div>
             </div>
             
-            <div style="flex: 1;">
+            <div style="flex: 1; min-width: 250px;">
               <div class="flex justify-between items-center mb-xs">
                 <span class="text-sm font-semibold">Hiệu suất Chi phí (CPI)</span>
                 <span class="badge" style="background: ${CPI >= 1 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color: ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'}; border: 1px solid ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};">${CPI.toFixed(2)}</span>
@@ -159,6 +181,17 @@ export function render() {
                 <div class="progress-bar-fill" style="width: ${Math.min(CPI * 50, 100)}%; background: ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};"></div>
               </div>
               <div class="text-xs text-muted mt-xs">${CPI >= 1 ? '✅ Trong ngân sách (Lãi)' : '⚠️ Vượt ngân sách (Lỗ)'}</div>
+            </div>
+            
+            <div style="flex: 1; min-width: 250px;">
+              <div class="flex justify-between items-center mb-xs">
+                <span class="text-sm font-semibold">Dự báo Tổng chi phí (EAC)</span>
+                <span class="text-sm font-bold" style="color: ${EAC > BAC ? 'var(--text-danger)' : 'var(--text-success)'}">${formatCurrency(EAC)}</span>
+              </div>
+              <div class="text-xs text-muted mt-xs" style="line-height: 1.5;">
+                <span style="font-weight: 600;">Cần thêm (ETC):</span> <span style="color: var(--accent-primary); font-weight: bold;">${formatCurrency(ETC)}</span> để hoàn thành.<br>
+                ${EAC > BAC ? `⚠️ Dự kiến sẽ <strong style="color:var(--text-danger)">vượt ngân sách ${formatCurrency(EAC - BAC)}</strong>.` : `✅ Dự kiến <strong style="color:var(--text-success)">tiết kiệm được ${formatCurrency(BAC - EAC)}</strong>.`}
+              </div>
             </div>
           </div>
         </div>

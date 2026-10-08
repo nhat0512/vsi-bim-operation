@@ -1,5 +1,5 @@
 import { openModal, closeModal } from './Modal.js';
-import { updateProject } from '../state.js';
+import { updateProject, getState } from '../state.js';
 
 function parseMarkdown(text) {
   if (!text) return '<span class="text-muted italic">Chưa có mô tả</span>';
@@ -92,9 +92,14 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
           <div>
             <div class="text-sm text-muted">${isRfi ? 'Mã RFI: ' + itemCode : 'Loại: Công việc (Task)'}</div>
             <h2 style="font-size: 1.25rem; font-weight: bold; margin: 4px 0;">${itemName}</h2>
-            <div class="flex gap-sm" style="margin-top: 8px;">
+            <div class="flex flex-wrap gap-sm" style="margin-top: 8px;">
               <span class="badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); color: var(--text-primary);">👤 ${currentItem.assignee || 'Chưa gán'}</span>
               <span class="badge" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); color: var(--text-primary);">⏳ Hạn: ${currentItem.dueDate ? new Date(currentItem.dueDate).toLocaleDateString('vi-VN') : 'N/A'}</span>
+              ${currentItem.segmentIdx !== undefined && currentItem.segmentIdx !== null && project?.segments?.[currentItem.segmentIdx] ? `
+                <span class="badge" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); color: #3b82f6;">
+                  🏷️ Phân đoạn: ${project.segments[currentItem.segmentIdx].name}${currentItem.subSegmentIdx !== undefined && currentItem.subSegmentIdx !== null && project.segments[currentItem.segmentIdx].subSegments?.[currentItem.subSegmentIdx] ? ` / ${project.segments[currentItem.segmentIdx].subSegments[currentItem.subSegmentIdx].name}` : ''}
+                </span>
+              ` : ''}
             </div>
           </div>
           <button class="btn btn-primary btn-sm" id="modal-btn-edit">✏️ Chỉnh sửa</button>
@@ -108,6 +113,34 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
         <div>
           <h4 style="font-size: 1rem; margin-bottom: 8px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 4px;">☁️ Tài liệu đính kèm (Cloud)</h4>
           ${parseCloudLinks(currentItem.cloudLinks)}
+        </div>
+
+        <div style="margin-top: 8px; padding-top: 16px; border-top: 1px dashed var(--border-subtle);">
+          <div style="font-weight: bold; margin-bottom: 12px; font-size: 1.1rem;">💬 Thảo luận & Hoạt động (Tính năng nâng cao)</div>
+          
+          <div class="flex flex-col gap-sm" id="modal-comments-list" style="max-height: 250px; overflow-y: auto; padding-right: 4px;">
+            ${(currentItem.comments && currentItem.comments.length > 0) ? currentItem.comments.map(c => `
+              <div style="display: flex; gap: 12px; margin-bottom: 8px;">
+                <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--accent-primary); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem; flex-shrink: 0;">${(c.user || 'U').substring(0,2).toUpperCase()}</div>
+                <div style="background: var(--bg-tertiary); padding: 10px; border-radius: 0 8px 8px 8px; border: 1px solid var(--border-subtle); width: 100%;">
+                  <div class="flex justify-between" style="margin-bottom: 4px;">
+                    <span style="font-size: 0.8rem; font-weight: 600;">${c.user}</span>
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">${new Date(c.timestamp).toLocaleString('vi-VN')}</span>
+                  </div>
+                  <div style="font-size: 0.85rem;">${c.text}</div>
+                </div>
+              </div>
+            `).join('') : '<div class="text-sm text-muted italic">Chưa có hoạt động nào. Hãy bắt đầu thảo luận!</div>'}
+          </div>
+
+          <!-- Input area -->
+          <div style="display: flex; gap: 12px; margin-top: 12px;">
+            <div style="width: 32px; height: 32px; border-radius: 50%; background: #94a3b8; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.8rem; flex-shrink: 0;">👤</div>
+            <div style="width: 100%; position: relative;">
+              <input type="text" id="modal-comment-input" class="form-input w-full" placeholder="Nhập bình luận hoặc gõ @ để nhắc tên (Gợi ý)..." style="padding-right: 40px; font-size: 0.85rem;">
+              <button class="btn-icon" id="modal-btn-send-comment" style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%);">✈️</button>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -158,6 +191,43 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
         item = { ...currentItem };
         updateModal();
         if (onSaveCb) onSaveCb();
+      });
+    }
+
+    const btnSend = document.getElementById('modal-btn-send-comment');
+    const inputComment = document.getElementById('modal-comment-input');
+    if (btnSend && inputComment) {
+      btnSend.addEventListener('click', () => {
+        const text = inputComment.value.trim();
+        if (!text) return;
+
+        const state = getState();
+        const userName = state.currentUserAuth?.name || state.currentUser?.name || 'User';
+
+        if (!currentItem.comments) currentItem.comments = [];
+        currentItem.comments.push({
+          id: Date.now().toString(),
+          user: userName,
+          text: text,
+          timestamp: new Date().toISOString()
+        });
+
+        if (type === 'rfi') {
+           project.rfis[itemIdx] = currentItem;
+           updateProject(project.id, { rfis: project.rfis });
+        } else {
+           project.tasks[itemIdx] = currentItem;
+           updateProject(project.id, { tasks: project.tasks });
+        }
+        
+        item = { ...currentItem };
+        updateModal();
+      });
+
+      inputComment.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+          btnSend.click();
+        }
       });
     }
   }

@@ -139,6 +139,12 @@ body {
   height: 100vh;
 }
 
+/* Fix option color in dark theme */
+select option, select optgroup {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 /* ---------- App Shell ---------- */
 #app {
   display: flex;

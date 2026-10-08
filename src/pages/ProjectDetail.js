@@ -30,6 +30,38 @@ export function render() {
   const statusInfo = PROJECT_STATUSES[project.status] || {};
   const clashResRate = project.clashesTotal > 0 ? Math.round((project.clashesResolved / project.clashesTotal) * 100) : 0;
 
+  // EVM Calculations
+  const budgetStr = String(project.budget || '0');
+  let BAC = parseFloat(budgetStr.replace(/[^\d.-]/g, ''));
+  if (budgetStr.toLowerCase().includes('tỷ')) BAC *= 1000000000;
+  else if (budgetStr.toLowerCase().includes('triệu')) BAC *= 1000000;
+  if (isNaN(BAC) || BAC === 0) BAC = 5000000000; // Mock 5 Tỷ if 0 or empty
+
+  const EV = BAC * (project.progress / 100);
+  const today = new Date().getTime();
+  const start = new Date(project.startDate).getTime();
+  const end = new Date(project.endDate).getTime();
+  let timeProgress = 0;
+  if (today >= end) timeProgress = 1;
+  else if (today > start) timeProgress = (today - start) / (end - start);
+  const PV = BAC * timeProgress;
+
+  const timesheets = getState().timesheets || [];
+  const projectTimesheets = timesheets.filter(t => t.projectId === project.id);
+  const totalHours = projectTimesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+  const laborCost = totalHours * 150000; 
+  let AC = laborCost + (BAC * 0.4 * (project.progress / 100));
+  if (AC === 0 && EV > 0) AC = EV * 0.95; 
+  
+  const SPI = PV > 0 ? (EV / PV) : 1;
+  const CPI = AC > 0 ? (EV / AC) : 1;
+  
+  const formatCurrency = (val) => {
+     if (val >= 1000000000) return (val / 1000000000).toFixed(2) + ' Tỷ';
+     if (val >= 1000000) return (val / 1000000).toFixed(0) + ' Tr';
+     return Math.round(val).toLocaleString('vi-VN') + ' ₫';
+  };
+
   return `
     <div class="animate-fade-in-up">
       <!-- Back button + Project Header -->
@@ -78,6 +110,58 @@ export function render() {
         <div class="kpi-card cyan"><div class="kpi-card-value">${project.teamSize}</div><div class="kpi-card-label">Thành viên</div></div>
         <div class="kpi-card orange"><div class="kpi-card-value">${project.clashesTotal - project.clashesResolved}</div><div class="kpi-card-label">Clash chưa xử lý</div></div>
         <div class="kpi-card ${clashResRate >= 70 ? 'green' : 'red'}"><div class="kpi-card-value">${clashResRate}%</div><div class="kpi-card-label">Clash resolved</div></div>
+      </div>
+
+      <!-- 5D BIM & EVM Section -->
+      <div class="card mb-lg" style="background: linear-gradient(145deg, var(--bg-secondary) 0%, rgba(59, 130, 246, 0.05) 100%); border-left: 4px solid var(--accent-primary);">
+        <div class="card-header" style="border-bottom: 1px dashed var(--border-subtle);">
+          <h3 class="card-title">💰 Quản trị Chi phí (5D BIM & EVM)</h3>
+          <span class="badge" style="background: var(--bg-primary);">Ngân sách (BAC): ${formatCurrency(BAC)}</span>
+        </div>
+        <div style="padding: 20px;">
+          <div class="grid-3 gap-lg mb-md">
+            <div>
+              <div class="text-sm text-muted mb-xs font-semibold">Giá trị Kế hoạch (PV)</div>
+              <div style="font-size: 1.5rem; font-weight: bold; color: var(--text-primary);">${formatCurrency(PV)}</div>
+              <div class="text-xs text-muted mt-xs">Kỳ vọng theo lịch trình</div>
+            </div>
+            <div>
+              <div class="text-sm text-muted mb-xs font-semibold">Giá trị Đạt được (EV)</div>
+              <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-primary);">${formatCurrency(EV)}</div>
+              <div class="text-xs text-muted mt-xs">Khối lượng thực tế x Đơn giá</div>
+            </div>
+            <div>
+              <div class="text-sm text-muted mb-xs font-semibold">Chi phí Thực tế (AC)</div>
+              <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-warning);">${formatCurrency(AC)}</div>
+              <div class="text-xs text-muted mt-xs">Giờ làm (${totalHours}h) + Khác</div>
+            </div>
+          </div>
+          
+          <!-- EVM Indicators -->
+          <div style="display: flex; gap: 24px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
+            <div style="flex: 1;">
+              <div class="flex justify-between items-center mb-xs">
+                <span class="text-sm font-semibold">Hiệu suất Tiến độ (SPI)</span>
+                <span class="badge" style="background: ${SPI >= 1 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color: ${SPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'}; border: 1px solid ${SPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};">${SPI.toFixed(2)}</span>
+              </div>
+              <div class="progress-bar" style="height: 6px; border-radius: 3px;">
+                <div class="progress-bar-fill" style="width: ${Math.min(SPI * 50, 100)}%; background: ${SPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};"></div>
+              </div>
+              <div class="text-xs text-muted mt-xs">${SPI >= 1 ? '✅ Nhanh hơn kế hoạch' : '⚠️ Chậm tiến độ (Cần tăng tốc)'}</div>
+            </div>
+            
+            <div style="flex: 1;">
+              <div class="flex justify-between items-center mb-xs">
+                <span class="text-sm font-semibold">Hiệu suất Chi phí (CPI)</span>
+                <span class="badge" style="background: ${CPI >= 1 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)'}; color: ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'}; border: 1px solid ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};">${CPI.toFixed(2)}</span>
+              </div>
+              <div class="progress-bar" style="height: 6px; border-radius: 3px;">
+                <div class="progress-bar-fill" style="width: ${Math.min(CPI * 50, 100)}%; background: ${CPI >= 1 ? 'var(--accent-success)' : 'var(--accent-danger)'};"></div>
+              </div>
+              <div class="text-xs text-muted mt-xs">${CPI >= 1 ? '✅ Trong ngân sách (Lãi)' : '⚠️ Vượt ngân sách (Lỗ)'}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="grid-2 mb-lg" style="grid-template-columns: 3fr 2fr;">

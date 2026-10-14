@@ -645,9 +645,10 @@ export async function loadInitialData() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           
-          let projectsToLoad = data.projects;
-          // RESTORE DATA BUG FIX: If projects array on Firestore is empty but we have a backup in localStorage, restore it!
-          if ((!projectsToLoad || projectsToLoad.length === 0) && typeof window !== 'undefined' && window.localStorage) {
+          let projectsToLoad = data.projects || [];
+
+          // RESTORE DATA BUG FIX (1): Nếu Firestore trả về mảng rỗng, khôi phục từ localStorage
+          if (projectsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
              try {
                 const localProjStr = localStorage.getItem('bim_transpm_projects');
                 if (localProjStr) {
@@ -655,13 +656,31 @@ export async function loadInitialData() {
                    if (localProj && localProj.length > 0) {
                       console.log("♻️ Đã khôi phục các dự án bị mất từ Local Storage!");
                       projectsToLoad = localProj;
-                      setTimeout(syncToFirestore, 2000); // Trigger a sync back to cloud
+                      setTimeout(syncToFirestore, 2000);
                    }
                 }
              } catch(err) {}
           }
-          
-          setState('projects', projectsToLoad && projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
+
+          // RESTORE DATA BUG FIX (2): Merge lại các dự án mặc định bị mất khỏi Firestore
+          // (VD: bug ghi đè khiến một số project không còn trong cloud)
+          const cloudIds = new Set(projectsToLoad.map(p => p.id));
+          const missingDefaults = defaultProjects.filter(p => !cloudIds.has(p.id));
+          if (missingDefaults.length > 0) {
+            console.warn(`⚠️ Phát hiện ${missingDefaults.length} dự án bị mất, đang khôi phục:`, missingDefaults.map(p => p.name));
+            projectsToLoad = [...projectsToLoad, ...missingDefaults];
+            setTimeout(syncToFirestore, 2000); // Đồng bộ bản phục hồi lên cloud
+          }
+
+          // Xoá duplicate (trùng id) nếu có
+          const seenIds = new Set();
+          projectsToLoad = projectsToLoad.filter(p => {
+            if (seenIds.has(p.id)) return false;
+            seenIds.add(p.id);
+            return true;
+          });
+
+          setState('projects', projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
           setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);

@@ -389,9 +389,87 @@ export function render() {
                   </td>
                 </tr>
               </tbody>
+        ` : `
+          <div style="overflow-x: auto;">
+            <table class="data-table" style="min-width: 800px; border-collapse: separate; border-spacing: 0;">
+              <thead>
+                <tr>
+                  <th style="min-width: 250px; position: sticky; left: 0; background: var(--bg-secondary); z-index: 2; border-right: 1px solid var(--border-default);">
+                    Phân đoạn (Segments)
+                  </th>
+                  ${(project.milestones || []).map(m => `
+                    <th style="min-width: 160px; text-align: center; border-right: 1px solid var(--border-subtle); padding: 8px;">
+                      <div class="font-bold text-sm text-accent">${m.name}</div>
+                      <div class="text-xs text-muted" style="margin-top: 4px;">📅 ${new Date(m.date).toLocaleDateString('vi-VN')}</div>
+                    </th>
+                  `).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                ${project.segments.map((s, sIdx) => {
+                  const hasSub = s.subSegments && s.subSegments.length > 0;
+                  let html = `
+                    <tr style="background: var(--bg-primary);">
+                      <td style="position: sticky; left: 0; background: var(--bg-primary); z-index: 1; border-right: 1px solid var(--border-default); font-weight: bold;">
+                        <div class="flex items-center gap-xs">
+                          ${hasSub ? `<button class="btn btn-ghost btn-sm btn-toggle-sub" data-sidx="${sIdx}" style="padding: 2px;">▶</button>` : ''}
+                          <span>${s.name}</span>
+                        </div>
+                      </td>
+                      ${(project.milestones || []).map((m, mIdx) => {
+                        let pValue = s.progresses?.[mIdx] !== undefined ? s.progresses[mIdx] : (mIdx === 0 ? s.progress : 0);
+                        if (hasSub) {
+                          const sum = s.subSegments.reduce((acc, sub) => acc + (sub.progresses?.[mIdx] || 0), 0);
+                          pValue = Math.round(sum / s.subSegments.length);
+                        }
+                        const deadline = s.deadlines?.[mIdx] ? new Date(s.deadlines[mIdx]).toLocaleDateString('vi-VN') : '';
+                        return `
+                          <td style="border-right: 1px solid var(--border-subtle); text-align: center; padding: 6px;">
+                            <div class="flex items-center gap-xs justify-center">
+                              <div class="progress-bar" style="width: 70px; height: 6px;">
+                                <div class="progress-bar-fill ${pValue >= 100 ? 'green' : pValue >= 50 ? '' : 'orange'}" style="width: ${pValue}%;"></div>
+                              </div>
+                              <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'};">${pValue}%</span>
+                            </div>
+                            ${deadline ? `<div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px;">📅 ${deadline}</div>` : ''}
+                          </td>
+                        `;
+                      }).join('')}
+                    </tr>
+                  `;
+                  if (hasSub) {
+                    s.subSegments.forEach(sub => {
+                      html += `
+                        <tr class="sub-segment-row sub-of-${sIdx}" style="display: none; background: var(--bg-secondary);">
+                          <td style="position: sticky; left: 0; background: var(--bg-secondary); z-index: 1; border-right: 1px solid var(--border-default); padding-left: 32px;">
+                            <span class="text-sm">↳ ${sub.name}</span>
+                            ${sub.note ? `<div class="text-xs text-warning" style="margin-top: 2px;">💬 ${sub.note}</div>` : ''}
+                          </td>
+                          ${(project.milestones || []).map((m, mIdx) => {
+                            const pValue = sub.progresses?.[mIdx] || 0;
+                            const deadline = sub.deadlines?.[mIdx] ? new Date(sub.deadlines[mIdx]).toLocaleDateString('vi-VN') : '';
+                            return `
+                              <td style="border-right: 1px solid var(--border-subtle); text-align: center; padding: 6px;">
+                                <div class="flex items-center gap-xs justify-center">
+                                  <div class="progress-bar" style="width: 70px; height: 6px;">
+                                    <div class="progress-bar-fill ${pValue >= 100 ? 'green' : pValue >= 50 ? '' : 'orange'}" style="width: ${pValue}%;"></div>
+                                  </div>
+                                  <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'};">${pValue}%</span>
+                                </div>
+                                ${deadline ? `<div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 4px;">📅 ${deadline}</div>` : ''}
+                              </td>
+                            `;
+                          }).join('')}
+                        </tr>
+                      `;
+                    });
+                  }
+                  return html;
+                }).join('')}
+              </tbody>
             </table>
           </div>
-        ` : ''}
+        `}
       </div>
 
       <div class="grid-2 mb-lg">
@@ -871,7 +949,9 @@ export function init() {
         if (parts.length > 1) subIdx = parseInt(parts[1]);
       }
       
+      const prevTask = currentProject.tasks?.[idx] || {};
       newTasks.push({
+        id: prevTask.id || `t_${Date.now()}_${idx}`,
         name: el.value,
         assignee: taskAssignees[idx].value,
         progress: parseInt(taskProgresses[idx].value) || 0,
@@ -880,8 +960,13 @@ export function init() {
         segmentIdx: sIdx,
         subSegmentIdx: subIdx,
         milestoneIdx: mlVal >= 0 ? mlVal : null,
-        description: currentProject.tasks[idx]?.description || '',
-        cloudLinks: currentProject.tasks[idx]?.cloudLinks || ''
+        phase: prevTask.phase || 'BVTC',
+        lod: prevTask.lod || 'LOD 300',
+        chainage: prevTask.chainage || '',
+        dailyHours_planned: prevTask.dailyHours_planned || {},
+        dailyHours_actual: prevTask.dailyHours_actual || {},
+        description: prevTask.description || '',
+        cloudLinks: prevTask.cloudLinks || ''
       });
     });
     updates.tasks = newTasks;
@@ -1129,11 +1214,14 @@ export function init() {
     performSilentSave();
     const currentProj = getState().projects.find(p => p.id === selectedProjectId);
     currentProj.tasks.push({ 
+      id: `t_${Date.now()}`,
       name: 'Công việc mới', 
       assignee: currentProj.teamLead, 
       progress: 0, 
       dueDate: new Date().toISOString().split('T')[0],
-      status: 'active'
+      status: 'active',
+      phase: 'BVTC',
+      lod: 'LOD 300'
     });
     updateProject(selectedProjectId, { tasks: currentProj.tasks });
     refreshDetail();

@@ -231,66 +231,81 @@ export async function restoreFromGoogleSheets() {
     // 3. Phục hồi Dự án 14D và nhiệm vụ (Tasks)
     let projects = [...(state.projects || [])];
     let p14d = projects.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
+    
+    // Nạp mẫu chi tiết đầy đủ của 14D từ projects.js
+    const projectsMod = await import('./data/projects.js');
+    const default14D = projectsMod.projectItems.find(p => p.id === 'P007') || {};
+
     if (!p14d) {
-      p14d = {
-        id: 'P007',
-        code: '14D',
-        name: 'Theo dõi tiến độ bản vẽ 14D',
-        type: 'road',
-        status: 'active',
-        priority: 'high',
-        client: 'Dự án 14D',
-        location: 'Tuyến 14D',
-        length: '72 km',
-        budget: 'Chưa cập nhật',
-        progress: 45,
-        startDate: '2026-07-01',
-        endDate: '2026-12-31',
-        bepVersion: 'v1.0',
-        currentPhase: 'detailed',
-        modelHealth: 100,
-        lodTarget: 300,
-        lodCurrent: 300,
-        disciplines: ['road', 'bridge', 'drainage'],
-        teamSize: 10,
-        teamLead: 'Trần Minh Khoa',
-        tasks: [],
-        segments: [],
-        phases: []
-      };
+      p14d = JSON.parse(JSON.stringify(default14D));
       projects.push(p14d);
     } else {
       p14d.code = '14D';
       p14d.name = 'Theo dõi tiến độ bản vẽ 14D';
       p14d.client = 'Dự án 14D';
       p14d.location = 'Tuyến 14D';
+      
+      // Nếu thiếu milestones hoặc segments chi tiết, khôi phục từ default14D
+      if (!p14d.milestones || p14d.milestones.length === 0) {
+        p14d.milestones = JSON.parse(JSON.stringify(default14D.milestones || []));
+      }
+      if (!p14d.segments || p14d.segments.length === 0 || !p14d.segments[0].subSegments || p14d.segments[0].subSegments.length === 0) {
+        p14d.segments = JSON.parse(JSON.stringify(default14D.segments || []));
+      }
     }
 
-    // Merge tasks từ Google Sheets vào p14d.tasks
-    p14d.tasks = p14d.tasks || [];
+    // Merge tasks từ default14D và Google Sheets vào p14d.tasks
+    if (!p14d.tasks || p14d.tasks.length <= 2) {
+      p14d.tasks = JSON.parse(JSON.stringify(default14D.tasks || []));
+    } else {
+      const existingIds = new Set(p14d.tasks.map(t => t.id || t.name));
+      (default14D.tasks || []).forEach(dt => {
+        if (!existingIds.has(dt.id) && !existingIds.has(dt.name)) {
+          p14d.tasks.push(JSON.parse(JSON.stringify(dt)));
+          existingIds.add(dt.id);
+        }
+      });
+    }
+
     rawTasks.forEach(gTask => {
       const existingTask = p14d.tasks.find(t => t.id === gTask.id || (t.name === gTask.name && t.chainage === gTask.chainage));
       if (!existingTask) {
-        p14d.tasks.push({
+        let segIdx = 0, subIdx = 0, mlIdx = 0;
+        if (gTask.chainage === 'Km34-35') {
+          segIdx = 1; subIdx = 2; mlIdx = 1;
+        }
+        p14d.tasks.unshift({
           id: gTask.id || `t_${Date.now()}`,
-          name: gTask.name || 'Hạng mục 14D',
+          name: gTask.name ? `${gTask.name} (${gTask.chainage || ''})` : 'Hạng mục 14D',
           phase: gTask.phase || 'BVTC',
           lod: gTask.lod || 'LOD 300',
           chainage: gTask.chainage || 'Km0-5',
           assignee: gTask.assignee || 'Nguyễn Quốc Triệu',
-          progress: 50,
+          progress: 75,
           status: 'active',
           dueDate: '2026-10-30',
+          segmentIdx: segIdx,
+          subSegmentIdx: subIdx,
+          milestoneIdx: mlIdx,
           dailyHours_planned: gTask.dailyHours_planned || {},
           dailyHours_actual: gTask.dailyHours_actual || {}
         });
+      } else {
+        if (gTask.dailyHours_planned) existingTask.dailyHours_planned = { ...existingTask.dailyHours_planned, ...gTask.dailyHours_planned };
+        if (gTask.dailyHours_actual) existingTask.dailyHours_actual = { ...existingTask.dailyHours_actual, ...gTask.dailyHours_actual };
       }
     });
 
     // Đảm bảo team của 14D có Nguyễn Quốc Triệu
     p14d.team = p14d.team || [];
     if (!p14d.team.some(m => m.name === 'Nguyễn Quốc Triệu')) {
-      p14d.team.push({ name: 'Nguyễn Quốc Triệu', role: 'Modeler' });
+      p14d.team.unshift({ name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' });
+    }
+    if (!p14d.team.some(m => m.name === 'Trần Minh Khoa')) {
+      p14d.team.push({ name: 'Trần Minh Khoa', role: 'BIM Coordinator' });
+    }
+    if (!p14d.team.some(m => m.name === 'Nguyễn Văn An')) {
+      p14d.team.push({ name: 'Nguyễn Văn An', role: 'BIM Manager' });
     }
 
     // 4. Phục hồi Timesheets (Giờ làm kỹ sư đã nhập) từ dailyHours_planned và dailyHours_actual
@@ -298,7 +313,7 @@ export async function restoreFromGoogleSheets() {
     const trieuPerson = personnel.find(p => p.name === 'Nguyễn Quốc Triệu');
     const trieuId = trieuPerson ? trieuPerson.id : 'r_1789368276534';
 
-    rawTasks.forEach(gTask => {
+    (p14d.tasks || []).forEach(gTask => {
       const taskId = gTask.id;
       const taskAssignee = gTask.assignee || 'Nguyễn Quốc Triệu';
       const personObj = personnel.find(p => p.name === taskAssignee);
@@ -365,6 +380,7 @@ export async function restoreFromGoogleSheets() {
     setState('projects', projects);
     setState('personnel', personnel);
     setState('timesheets', timesheets);
+    syncToFirestore();
 
     console.log(`✅ Khôi phục thành công từ Google Sheets! Tasks: ${rawTasks.length}, Timesheets: ${timesheets.length}`);
     return {
@@ -991,13 +1007,43 @@ export async function loadInitialData() {
           // Sắp xếp theo ID
           projectsToLoad.sort((a, b) => a.id.localeCompare(b.id));
 
+          // Bảo đảm dự án 14D luôn có đầy đủ ma trận tiến độ (Milestones & Phân đoạn chi tiết), Team & Tasks
+          const p14dIdx = projectsToLoad.findIndex(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
+          const default14D = defaultProjects.find(p => p.id === 'P007');
+          if (p14dIdx >= 0 && default14D) {
+            const cur = projectsToLoad[p14dIdx];
+            if (!cur.milestones || cur.milestones.length === 0) {
+              cur.milestones = JSON.parse(JSON.stringify(default14D.milestones || []));
+            }
+            if (!cur.segments || cur.segments.length === 0 || !cur.segments[0].subSegments || cur.segments[0].subSegments.length === 0) {
+              cur.segments = JSON.parse(JSON.stringify(default14D.segments || []));
+            }
+            if (!cur.team || cur.team.length === 0) {
+              cur.team = JSON.parse(JSON.stringify(default14D.team || []));
+            } else if (!cur.team.some(m => m.name === 'Nguyễn Quốc Triệu')) {
+              cur.team.unshift({ name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' });
+            }
+            // Khôi phục danh sách tasks đầy đủ cho 14D nếu chỉ có mock tasks cũ (<= 2)
+            if (!cur.tasks || cur.tasks.length <= 2) {
+              cur.tasks = JSON.parse(JSON.stringify(default14D.tasks || []));
+            } else {
+              const existingIds = new Set(cur.tasks.map(t => t.id || t.name));
+              (default14D.tasks || []).forEach(dt => {
+                if (!existingIds.has(dt.id) && !existingIds.has(dt.name)) {
+                  cur.tasks.push(JSON.parse(JSON.stringify(dt)));
+                  existingIds.add(dt.id);
+                }
+              });
+            }
+          }
+
           setState('projects', projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
           setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
 
-          // ─── PHỤC HỒI (4): Timesheets — lấy từ Firestore hoặc localStorage ───
+          // ─── PHỤC HỒI (4): Timesheets — lấy từ Firestore, localStorage hoặc sinh từ planned/actual ───
           let timesheetsToLoad = data.timesheets || [];
           if (timesheetsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
             try {
@@ -1010,15 +1056,73 @@ export async function loadInitialData() {
               }
             } catch(err) {}
           }
+
+          // Tự động bổ sung giờ làm của Modeler từ tasks nếu timesheetsToLoad đang thiếu
+          if (default14D && default14D.tasks) {
+            default14D.tasks.forEach(task => {
+              const taskId = task.id;
+              const taskAssignee = task.assignee || 'Nguyễn Quốc Triệu';
+              const uid = 'r_1789368276534';
+              
+              if (task.dailyHours_planned && typeof task.dailyHours_planned === 'object') {
+                Object.entries(task.dailyHours_planned).forEach(([dStr, hrs]) => {
+                  const hNum = Number(hrs);
+                  if (hNum > 0 && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && !ts.isActual)) {
+                    timesheetsToLoad.push({
+                      id: `ts-plan-${taskId}-${dStr}`,
+                      userId: uid,
+                      userName: taskAssignee,
+                      email: 'trieu.nguyen@vsibim.com',
+                      projectId: 'P007',
+                      projectName: default14D.name,
+                      taskId: taskId,
+                      taskName: task.name,
+                      dateString: dStr,
+                      date: dStr,
+                      hours: hNum,
+                      isActual: false,
+                      isOT: false,
+                      comment: `Kế hoạch ${task.name}`
+                    });
+                  }
+                });
+              }
+
+              if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
+                Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
+                  const hNum = Number(hrs);
+                  if (hNum > 0 && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && ts.isActual)) {
+                    timesheetsToLoad.push({
+                      id: `ts-act-${taskId}-${dStr}`,
+                      userId: uid,
+                      userName: taskAssignee,
+                      email: 'trieu.nguyen@vsibim.com',
+                      projectId: 'P007',
+                      projectName: default14D.name,
+                      taskId: taskId,
+                      taskName: task.name,
+                      dateString: dStr,
+                      date: dStr,
+                      hours: hNum,
+                      isActual: true,
+                      isOT: false,
+                      comment: `Thực tế ${task.name}`
+                    });
+                  }
+                });
+              }
+            });
+          }
+
           setState('timesheets', timesheetsToLoad, true);
           console.log("🔄 Dữ liệu Firestore đã kết nối real-time");
 
-          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets nếu phát hiện thiếu 14D hoặc thiếu timesheet ───
+          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets nếu phát hiện thiếu 14D hoặc thiếu modeler tasks ───
           const p14d = projectsToLoad.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
-          const has14DTasks = p14d && p14d.tasks && p14d.tasks.length > 0;
-          const hasTimesheets = timesheetsToLoad && timesheetsToLoad.length > 0;
+          const has14DTasks = p14d && p14d.tasks && p14d.tasks.length > 5;
+          const hasModelerTs = timesheetsToLoad && timesheetsToLoad.some(ts => ts.userName === 'Nguyễn Quốc Triệu' || ts.userId === 'r_1789368276534');
 
-          if (!has14DTasks || !hasTimesheets) {
+          if (!has14DTasks || !hasModelerTs) {
             console.log("ℹ️ Đang tự động kéo dữ liệu dự án 14D & timesheets từ Google Sheets...");
             restoreFromGoogleSheets().then(res => {
               if (res && res.success) {

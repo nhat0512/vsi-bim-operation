@@ -285,12 +285,202 @@ export const projectItems = [
     disciplines: ['road', 'bridge', 'drainage'],
     teamSize: 10,
     teamLead: 'Trần Minh Khoa',
+    milestones: [
+      { id: 'M1', name: 'Nộp thẩm tra lần 1', date: '2026-09-25' },
+      { id: 'M2', name: 'Nộp thẩm tra lần 2', date: '2026-10-20' },
+      { id: 'M3', name: 'Hoàn thiện hồ sơ thanh toán', date: '2026-10-29' }
+    ],
     segments: [
-      { id: 'S1', name: 'Km0-Km27', progress: 80 },
-      { id: 'S2', name: 'Km27-Km40', progress: 50 },
-      { id: 'S3', name: 'Km40-Km50', progress: 40 },
-      { id: 'S4', name: 'Km50-Km62', progress: 60 },
-      { id: 'S5', name: 'Km62-Km72', progress: 0 }
+      {
+        id: 'S1',
+        name: 'Km0-Km27',
+        progress: 80,
+        progresses: [100, 100, 60],
+        deadlines: ['2026-09-17', '2026-10-15', '2026-10-29'],
+        subSegments: [
+          {
+            id: 'Sub_S1_1',
+            name: 'Km0-km5 (5 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-08-12', '2026-10-15', '2026-10-29'],
+            note: 'Còn đang so sánh Khối lượng (Chưa có ngày cụ thể xong)'
+          },
+          {
+            id: 'Sub_S1_2',
+            name: 'Km5-km10 (5 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-07-14', '2026-10-15', '2026-10-29'],
+            note: ''
+          },
+          {
+            id: 'Sub_S1_3',
+            name: 'Km10-km16 (6 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-17', '2026-10-15', '2026-10-29'],
+            note: '- 2 cầu, - 25 cống'
+          },
+          {
+            id: 'Sub_S1_4',
+            name: 'Km16-km21 (5 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          },
+          {
+            id: 'Sub_S1_5',
+            name: 'Km21-km27 (6 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          }
+        ]
+      },
+      {
+        id: 'S2',
+        name: 'Km27-Km40',
+        progress: 50,
+        progresses: [60, 50, 40],
+        deadlines: ['2026-09-22', '2026-10-10', '2026-10-29'],
+        subSegments: [
+          {
+            id: 'Sub_S2_1',
+            name: 'Km27-Km31 (4 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          },
+          {
+            id: 'Sub_S2_2',
+            name: 'Km31-Km34 (3 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-22', '2026-10-10', '2026-10-29'],
+            note: '- 0 cầu, - 12 cống'
+          },
+          {
+            id: 'Sub_S2_3',
+            name: 'Km34-Km35 (1 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-08-21', '2026-10-10', '2026-10-29'],
+            note: 'a. Linh bổ sung thang bậc nước, tường TL'
+          },
+          {
+            id: 'Sub_S2_4',
+            name: 'Km35-Km40 (5 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          }
+        ]
+      },
+      {
+        id: 'S3',
+        name: 'Km40-Km50',
+        progress: 60,
+        progresses: [80, 80, 60],
+        deadlines: ['2026-09-28', '2026-10-26', '2026-10-29'],
+        subSegments: [
+          {
+            id: 'Sub_S3_1',
+            name: 'Km40-Km44 (4 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-25', '2026-10-22', '2026-10-29'],
+            note: '- 1 cầu gần xong đã đi thép a. Linh, - 16 cống'
+          },
+          {
+            id: 'Sub_S3_2',
+            name: 'Km44-Km46 (2 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-08-09', '2026-10-22', '2026-10-29'],
+            note: 'a. Linh bổ sung thang bậc nước + Tường TL'
+          },
+          {
+            id: 'Sub_S3_3',
+            name: 'Km46-Km47 (1 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-23', '2026-10-26', '2026-10-29'],
+            note: '- 0 cầu, - 6 cống'
+          },
+          {
+            id: 'Sub_S3_4',
+            name: 'Km47-Km49 (2 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-28', '2026-10-26', '2026-10-29'],
+            note: '- 2 cầu, trong đó 1 cầu 48 đã đi thép, - 5 cống'
+          },
+          {
+            id: 'Sub_S3_5',
+            name: 'Km49-Km50 (1 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          }
+        ]
+      },
+      {
+        id: 'S4',
+        name: 'Km50-Km62',
+        progress: 45,
+        progresses: [65, 65, 50],
+        deadlines: ['2026-09-24', '2026-10-26', '2026-10-29'],
+        subSegments: [
+          {
+            id: 'Sub_S4_1',
+            name: 'Km50-Km53 (3 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-24', '2026-10-26', '2026-10-29'],
+            note: '- 2 cầu ngắn, - 6 cống'
+          },
+          {
+            id: 'Sub_S4_2',
+            name: 'Km53-Km54 (1 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-07-26', '2026-10-17', '2026-10-29'],
+            note: 'a. Linh bổ sung thang bậc nước + Tường TL'
+          },
+          {
+            id: 'Sub_S4_3',
+            name: 'Km54-Km62 (8 km)',
+            progresses: [0, 0, 0],
+            deadlines: ['2026-09-25', '2026-10-15', '2026-10-29'],
+            note: ''
+          }
+        ]
+      },
+      {
+        id: 'S5',
+        name: 'Km62-Km72',
+        progress: 55,
+        progresses: [100, 65, 50],
+        deadlines: ['2026-09-29', '2026-10-28', '2026-10-29'],
+        subSegments: [
+          {
+            id: 'Sub_S5_1',
+            name: 'Km62-Km69 (7 km)',
+            progresses: [100, 0, 0],
+            deadlines: ['2026-09-29', '2026-10-20', '2026-10-29'],
+            note: '- 3 cầu trong đó 1 dài, 2 cái trung bình, - 28 cống'
+          },
+          {
+            id: 'Sub_S5_2',
+            name: 'Km69-Km70 (1 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-08-21', '2026-10-28', '2026-10-29'],
+            note: '- 2 cầu, - 4 cống'
+          },
+          {
+            id: 'Sub_S5_3',
+            name: 'Km70-km72 (2 km)',
+            progresses: [100, 100, 75],
+            deadlines: ['2026-09-23', '2026-10-17', '2026-10-29'],
+            note: '- 0 cầu, - 8 cống'
+          }
+        ]
+      }
+    ],
+    team: [
+      { name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' },
+      { name: 'Trần Minh Khoa', role: 'BIM Coordinator' },
+      { name: 'Nguyễn Văn An', role: 'BIM Manager' }
     ],
     phases: [
       { id: 'survey', status: 'completed', progress: 100, startDate: '2026-01-01', endDate: '2026-03-31' },
@@ -301,8 +491,205 @@ export const projectItems = [
       { id: 'handover', status: 'planning', progress: 0, startDate: '2027-06-01', endDate: '2027-12-31' }
     ],
     tasks: [
-      { id: 'T001', name: 'Hoàn thiện hồ sơ thanh toán đợt 1', assignee: 'Trần Minh Khoa', status: 'active', progress: 60, dueDate: '2026-09-25' },
-      { id: 'T002', name: 'Thẩm tra bản vẽ lần 2 (Km44-Km46)', assignee: 'Nguyễn Văn An', status: 'active', progress: 20, dueDate: '2026-09-19' }
+      {
+        id: 't_1789354546060',
+        name: 'An Toàn Giao Thông (Km0-Km5)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km0-5',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-09-25',
+        segmentIdx: 0,
+        subSegmentIdx: 0,
+        milestoneIdx: 0,
+        dailyHours_planned: { '2026-09-14': 3, '2026-09-15': 3, '2026-09-16': 3, '2026-09-17': 3, '2026-09-18': 3 },
+        dailyHours_actual: { '2026-09-14': 3, '2026-09-15': 3 }
+      },
+      {
+        id: 't_1789354764016',
+        name: 'An Toàn Giao Thông (Km34-Km35)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km34-35',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-10',
+        segmentIdx: 1,
+        subSegmentIdx: 2,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-12': 4, '2026-10-13': 4, '2026-10-14': 4 },
+        dailyHours_actual: { '2026-10-12': 4, '2026-10-13': 4 }
+      },
+      {
+        id: 't_1789354890001',
+        name: 'Mô hình Cầu & Cống (Km10-Km16: 2 cầu, 25 cống)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km10-16',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-09-23',
+        segmentIdx: 0,
+        subSegmentIdx: 2,
+        milestoneIdx: 0,
+        dailyHours_planned: { '2026-10-08': 4, '2026-10-09': 4 },
+        dailyHours_actual: { '2026-10-08': 4, '2026-10-09': 4 }
+      },
+      {
+        id: 't_1789354890002',
+        name: 'Mô hình Cống & Thoát nước (Km31-Km34: 12 cống)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km31-34',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-10',
+        segmentIdx: 1,
+        subSegmentIdx: 1,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-10': 4, '2026-10-11': 4 },
+        dailyHours_actual: { '2026-10-10': 4 }
+      },
+      {
+        id: 't_1789354890003',
+        name: 'Mô hình 1 cầu đi thép & 16 cống (Km40-Km44)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km40-44',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-22',
+        segmentIdx: 2,
+        subSegmentIdx: 0,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-13': 4, '2026-10-14': 4 },
+        dailyHours_actual: { '2026-10-13': 4 }
+      },
+      {
+        id: 't_1789354890004',
+        name: 'Bổ sung thang bậc nước & Tường chắn (Km44-Km46)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km44-46',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-22',
+        segmentIdx: 2,
+        subSegmentIdx: 1,
+        milestoneIdx: 1
+      },
+      {
+        id: 't_1789354890005',
+        name: 'Mô hình cầu 48 đi thép & 5 cống (Km47-Km49)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km47-49',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-26',
+        segmentIdx: 2,
+        subSegmentIdx: 3,
+        milestoneIdx: 1
+      },
+      {
+        id: 't_1789354890006',
+        name: 'Mô hình 2 cầu ngắn & 6 cống (Km50-Km53)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km50-53',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-26',
+        segmentIdx: 3,
+        subSegmentIdx: 0,
+        milestoneIdx: 1
+      },
+      {
+        id: 't_1789354890007',
+        name: 'Bổ sung thang bậc nước & Tường chắn (Km53-Km54)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km53-54',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-17',
+        segmentIdx: 3,
+        subSegmentIdx: 1,
+        milestoneIdx: 1
+      },
+      {
+        id: 't_1789354890008',
+        name: 'Mô hình 3 cầu & 28 cống (Km62-Km69)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km62-69',
+        status: 'completed',
+        progress: 100,
+        dueDate: '2026-09-29',
+        segmentIdx: 4,
+        subSegmentIdx: 0,
+        milestoneIdx: 0
+      },
+      {
+        id: 't_1789354890009',
+        name: 'Mô hình 2 cầu & 4 cống (Km69-Km70)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km69-70',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-28',
+        segmentIdx: 4,
+        subSegmentIdx: 1,
+        milestoneIdx: 1
+      },
+      {
+        id: 't_1789354890010',
+        name: 'Mô hình 8 cống (Km70-Km72)',
+        assignee: 'Nguyễn Quốc Triệu',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km70-72',
+        status: 'active',
+        progress: 75,
+        dueDate: '2026-10-17',
+        segmentIdx: 4,
+        subSegmentIdx: 2,
+        milestoneIdx: 1
+      },
+      {
+        id: 'T001',
+        name: 'Hoàn thiện hồ sơ thanh toán đợt 1',
+        assignee: 'Trần Minh Khoa',
+        status: 'active',
+        progress: 60,
+        dueDate: '2026-09-25',
+        segmentIdx: 0,
+        milestoneIdx: 0
+      },
+      {
+        id: 'T002',
+        name: 'Thẩm tra bản vẽ lần 2 (Km44-Km46)',
+        assignee: 'Nguyễn Văn An',
+        status: 'active',
+        progress: 20,
+        dueDate: '2026-09-19',
+        segmentIdx: 2,
+        subSegmentIdx: 1,
+        milestoneIdx: 1
+      }
     ]
   }
 ];

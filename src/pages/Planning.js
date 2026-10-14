@@ -66,12 +66,30 @@ export function render() {
 
   const timesheets = state.timesheets || [];
   
-  const getTsRecord = (userId, taskId, dateStr) => {
-    return timesheets.find(t => t.userId === userId && t.taskId === taskId && t.dateString === dateStr && !t.isActual);
+  const matchTaskTs = (t, userId, taskId, projId) => {
+    if (t.userId !== userId) return false;
+    if (projId && t.projectId && t.projectId !== projId) return false;
+    if (t.taskId === taskId) return true;
+    const proj = (state.projects || []).find(p => p.id === (projId || t.projectId));
+    if (proj && proj.tasks) {
+      if (typeof taskId === 'string' && taskId.startsWith('t_')) {
+        const idx = parseInt(taskId.replace('t_', ''), 10);
+        if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === t.taskId) return true;
+      }
+      if (typeof t.taskId === 'string' && t.taskId.startsWith('t_')) {
+        const idx = parseInt(t.taskId.replace('t_', ''), 10);
+        if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === taskId) return true;
+      }
+    }
+    return false;
   };
   
-  const getActualHours = (userId, taskId, dateStr) => {
-    return timesheets.filter(t => t.userId === userId && t.taskId === taskId && t.dateString === dateStr && t.isActual)
+  const getTsRecord = (userId, taskId, dateStr, projId) => {
+    return timesheets.find(t => matchTaskTs(t, userId, taskId, projId) && t.dateString === dateStr && !t.isActual);
+  };
+  
+  const getActualHours = (userId, taskId, dateStr, projId) => {
+    return timesheets.filter(t => matchTaskTs(t, userId, taskId, projId) && t.dateString === dateStr && t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
   
@@ -81,9 +99,9 @@ export function render() {
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
-  const getTaskWeekTotal = (userId, taskId, weekData) => {
+  const getTaskWeekTotal = (userId, taskId, weekData, projId) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && t.taskId === taskId && weekDates.includes(t.dateString) && !t.isActual)
+    return timesheets.filter(t => matchTaskTs(t, userId, taskId, projId) && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
   
@@ -233,7 +251,8 @@ export function render() {
                 // Add assigned tasks
                 pObj.tasks.forEach(t => {
                    const trueIdx = pObj.project.tasks.indexOf(t);
-                   if (!itemsToRender.find(x => x.id === `t_${trueIdx}`)) {
+                   const effectiveId = t.id || `t_${trueIdx}`;
+                   if (!itemsToRender.find(x => x.id === effectiveId || (t.id && x.id === t.id))) {
                       let displayName = t.name;
                       if (t.segmentIdx !== undefined && t.segmentIdx !== null && pObj.project.segments?.[t.segmentIdx]) {
                         displayName += ` - ${pObj.project.segments[t.segmentIdx].name}`;
@@ -241,15 +260,16 @@ export function render() {
                           displayName += ` / ${pObj.project.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}`;
                         }
                       }
-                      itemsToRender.push({ id: `t_${trueIdx}`, name: displayName, type: 'task' });
+                      itemsToRender.push({ id: effectiveId, name: displayName, type: 'task' });
                    }
                 });
                 
                 // Add assigned rfis
                 (pObj.rfis || []).forEach(r => {
                    const trueIdx = pObj.project.rfis.indexOf(r);
-                   if (!itemsToRender.find(x => x.id === `rfi_${trueIdx}`)) {
-                      itemsToRender.push({ id: `rfi_${trueIdx}`, name: r.title, type: 'rfi' });
+                   const effectiveId = r.id || `rfi_${trueIdx}`;
+                   if (!itemsToRender.find(x => x.id === effectiveId || (r.id && x.id === r.id))) {
+                      itemsToRender.push({ id: effectiveId, name: r.title, type: 'rfi' });
                    }
                 });
 
@@ -257,29 +277,34 @@ export function render() {
                 (pObj.loggedTaskIds || []).forEach(tid => {
                    if (tid === 't_general' || !tid) return;
                    if (itemsToRender.find(x => x.id === tid)) return;
-                   if (tid.startsWith('t_')) {
-                      const idx = parseInt(tid.split('_')[1]);
-                      const task = pObj.project.tasks?.[idx];
-                      if (task) {
-                        let displayName = task.name;
-                        if (task.segmentIdx !== undefined && task.segmentIdx !== null && pObj.project.segments?.[task.segmentIdx]) {
-                          displayName += ` - ${pObj.project.segments[task.segmentIdx].name}`;
-                          if (task.subSegmentIdx !== undefined && task.subSegmentIdx !== null && pObj.project.segments[task.segmentIdx].subSegments?.[task.subSegmentIdx]) {
-                            displayName += ` / ${pObj.project.segments[task.segmentIdx].subSegments[task.subSegmentIdx].name}`;
-                          }
-                        }
-                        itemsToRender.push({ id: tid, name: displayName, type: 'task' });
-                      }
-                   } else if (tid.startsWith('rfi_')) {
-                      const idx = parseInt(tid.split('_')[1]);
-                      const rfi = pObj.project.rfis?.[idx];
+
+                   let task = (pObj.project.tasks || []).find(x => x.id === tid);
+                   if (!task && tid.startsWith('t_')) {
+                      const idx = parseInt(tid.replace('t_', ''), 10);
+                      if (!isNaN(idx)) task = pObj.project.tasks?.[idx];
+                   }
+                   if (task) {
+                     let displayName = task.name;
+                     if (task.segmentIdx !== undefined && task.segmentIdx !== null && pObj.project.segments?.[task.segmentIdx]) {
+                       displayName += ` - ${pObj.project.segments[task.segmentIdx].name}`;
+                       if (task.subSegmentIdx !== undefined && task.subSegmentIdx !== null && pObj.project.segments[task.segmentIdx].subSegments?.[task.subSegmentIdx]) {
+                         displayName += ` / ${pObj.project.segments[task.segmentIdx].subSegments[task.subSegmentIdx].name}`;
+                       }
+                     }
+                     itemsToRender.push({ id: tid, name: displayName, type: 'task' });
+                     return;
+                   }
+
+                   if (tid.startsWith('rfi_')) {
+                      const idx = parseInt(tid.replace('rfi_', ''), 10);
+                      const rfi = pObj.project.rfis?.[idx] || (pObj.project.rfis || []).find(r => r.id === tid);
                       if (rfi) itemsToRender.push({ id: tid, name: rfi.title, type: 'rfi' });
                    }
                 });
 
                 itemsToRender.forEach(item => {
                   const taskId = item.id;
-                  const taskTotal = timesheets.filter(t => t.userId === personId && t.projectId === pObj.project.id && t.taskId === taskId && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0);
+                  const taskTotal = timesheets.filter(t => matchTaskTs(t, personId, taskId, pObj.project.id) && !t.isActual).reduce((s, t) => s + (Number(t.hours)||0), 0);
 
                   let rowPrefix = '└ ';
                   let rowStyle = 'border-left: 3px solid var(--accent-primary);';
@@ -298,7 +323,7 @@ export function render() {
                       ${planData.map(w => {
                         let wHtml = '';
                         w.days.forEach(d => {
-                          const ts = getTsRecord(personId, taskId, d.dateString);
+                          const ts = getTsRecord(personId, taskId, d.dateString, pObj.project.id);
                           const val = ts ? ts.hours : '';
                           const isOT = ts ? ts.isOT : false;
                           const hasComment = ts && ts.comment;
@@ -322,7 +347,7 @@ export function render() {
                                 style="width: 40px; text-align: center; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-primary); font-size: 0.75rem; padding: 4px; transition: border-color 0.2s, box-shadow 0.2s;"
                               >
                               ${(() => {
-                                const actual = getActualHours(personId, taskId, d.dateString);
+                                const actual = getActualHours(personId, taskId, d.dateString, pObj.project.id);
                                 if (actual > 0) {
                                   return `<div style="font-size: 0.7rem; color: #10b981; font-weight: 600; margin-top: 2px;">${actual}h</div>`;
                                 }
@@ -331,7 +356,7 @@ export function render() {
                             </td>
                           `;
                         });
-                        const twTotal = getTaskWeekTotal(personId, taskId, w);
+                        const twTotal = getTaskWeekTotal(personId, taskId, w, pObj.project.id);
                         wHtml += `<td style="text-align: center; font-size: 0.75rem; font-weight: bold; background: rgba(var(--accent-primary-rgb), 0.05);">${twTotal > 0 ? twTotal + 'h' : ''}</td>`;
                         return wHtml;
                       }).join('')}

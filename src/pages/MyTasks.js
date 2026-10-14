@@ -316,13 +316,16 @@ function renderRecentTimesheets(email, displayName, personnelName) {
                 ${(() => {
                   if (!proj) return '';
                   if (ts.taskId && ts.taskId.startsWith('rfi_')) {
-                    const idx = parseInt(ts.taskId.split('_')[1]);
-                    const rfi = proj.rfis?.[idx];
+                    const idx = parseInt(ts.taskId.replace('rfi_', ''), 10);
+                    const rfi = (proj.rfis || []).find(r => r.id === ts.taskId) || proj.rfis?.[idx];
                     if (rfi) return `<div style="font-size: 0.7rem; color: var(--text-warning); margin-top: 2px;">↳ Xử lý RFI: ${rfi.title}</div>`;
                   }
                   if (ts.taskId && ts.taskId.startsWith('t_') && ts.taskId !== 't_general') {
-                    const idx = parseInt(ts.taskId.split('_')[1]);
-                    const task = proj.tasks?.[idx];
+                    let task = (proj.tasks || []).find(x => x.id === ts.taskId);
+                    if (!task) {
+                      const idx = parseInt(ts.taskId.replace('t_', ''), 10);
+                      if (!isNaN(idx)) task = proj.tasks?.[idx];
+                    }
                     if (task) return `<div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">↳ Task: ${task.name}</div>`;
                   }
                   return '';
@@ -464,7 +467,7 @@ export function init() {
               extraInfo += ` / ${proj.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}`;
             }
           }
-          optionsHtml += `<option value="t_${trueIdx}">${t.name}${extraInfo}</option>`;
+          optionsHtml += `<option value="${t.id || ('t_' + trueIdx)}">${t.name}${extraInfo}</option>`;
         });
         optionsHtml += '</optgroup>';
       }

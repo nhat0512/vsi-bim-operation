@@ -646,33 +646,61 @@ export async function loadInitialData() {
           const data = docSnap.data();
           
           let projectsToLoad = data.projects || [];
+          let needsResync = false;
 
-          // RESTORE DATA BUG FIX (1): Nếu Firestore trả về mảng rỗng, khôi phục từ localStorage
+          // ─── PHỤC HỒI (1): Nếu Firestore rỗng → khôi phục từ localStorage ───
           if (projectsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
-             try {
-                const localProjStr = localStorage.getItem('bim_transpm_projects');
-                if (localProjStr) {
-                   const localProj = JSON.parse(localProjStr);
-                   if (localProj && localProj.length > 0) {
-                      console.log("♻️ Đã khôi phục các dự án bị mất từ Local Storage!");
-                      projectsToLoad = localProj;
-                      setTimeout(syncToFirestore, 2000);
-                   }
+            try {
+              const localProjStr = localStorage.getItem('bim_transpm_projects');
+              if (localProjStr) {
+                const localProj = JSON.parse(localProjStr);
+                if (localProj && localProj.length > 0) {
+                  console.log("♻️ Khôi phục dự án từ localStorage!");
+                  projectsToLoad = localProj;
+                  needsResync = true;
                 }
-             } catch(err) {}
+              }
+            } catch(err) {}
           }
 
-          // RESTORE DATA BUG FIX (2): Merge lại các dự án mặc định bị mất khỏi Firestore
-          // (VD: bug ghi đè khiến một số project không còn trong cloud)
-          const cloudIds = new Set(projectsToLoad.map(p => p.id));
-          const missingDefaults = defaultProjects.filter(p => !cloudIds.has(p.id));
+          // ─── PHỤC HỒI (2): Phát hiện project bị duplicate (trùng TÊN nhưng khác ID) ───
+          // Bug cũ: P007 trong Firestore bị ghi đè thành bản copy tên giống P006
+          // → Xóa bản trùng tên, thay bằng dữ liệu mặc định đúng theo ID
+          const seenNames = new Map(); // name → first project
+          const duplicatedIds = new Set();
+          projectsToLoad.forEach(p => {
+            if (seenNames.has(p.name)) {
+              // Project sau trùng tên → đây là bản bị ghi đè sai
+              duplicatedIds.add(p.id);
+              console.warn(`⚠️ Phát hiện dự án bị duplicate (${p.id}): "${p.name}" — sẽ thay bằng dữ liệu mặc định`);
+            } else {
+              seenNames.set(p.name, p);
+            }
+          });
+          if (duplicatedIds.size > 0) {
+            // Loại bỏ các project bị duplicate tên
+            projectsToLoad = projectsToLoad.filter(p => !duplicatedIds.has(p.id));
+            // Tìm lại project mặc định tương ứng với ID đó để thay thế
+            duplicatedIds.forEach(dupId => {
+              const defaultVersion = defaultProjects.find(p => p.id === dupId);
+              if (defaultVersion) {
+                projectsToLoad.push(defaultVersion);
+                console.log(`✅ Đã khôi phục dự án ${dupId}: "${defaultVersion.name}"`);
+              }
+            });
+            needsResync = true;
+          }
+
+          // ─── PHỤC HỒI (3): Thêm lại các project mặc định bị thiếu hoàn toàn ───
+          const currentIds = new Set(projectsToLoad.map(p => p.id));
+          const missingDefaults = defaultProjects.filter(p => !currentIds.has(p.id));
           if (missingDefaults.length > 0) {
-            console.warn(`⚠️ Phát hiện ${missingDefaults.length} dự án bị mất, đang khôi phục:`, missingDefaults.map(p => p.name));
+            console.warn(`⚠️ ${missingDefaults.length} dự án bị mất, đang khôi phục:`, missingDefaults.map(p => `${p.id}:${p.name}`));
             projectsToLoad = [...projectsToLoad, ...missingDefaults];
-            setTimeout(syncToFirestore, 2000); // Đồng bộ bản phục hồi lên cloud
+            needsResync = true;
           }
 
-          // Xoá duplicate (trùng id) nếu có
+          // ─── PHỤC HỒI (4): Xóa duplicate theo ID (phòng thủ) ───
           const seenIds = new Set();
           projectsToLoad = projectsToLoad.filter(p => {
             if (seenIds.has(p.id)) return false;
@@ -680,12 +708,36 @@ export async function loadInitialData() {
             return true;
           });
 
+          // Sắp xếp theo ID để hiển thị nhất quán
+          projectsToLoad.sort((a, b) => a.id.localeCompare(b.id));
+
+          if (needsResync) {
+            setTimeout(syncToFirestore, 3000); // Đồng bộ bản phục hồi lên Firestore
+          }
+
           setState('projects', projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
           setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
-          setState('timesheets', data.timesheets || [], true);
+
+          // ─── PHỤC HỒI (5): Timesheets — khôi phục từ localStorage nếu Firestore rỗng ───
+          let timesheetsToLoad = data.timesheets || [];
+          if (timesheetsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
+            try {
+              const localStateStr = localStorage.getItem('bimTransPM_State');
+              if (localStateStr) {
+                const localState = JSON.parse(localStateStr);
+                if (localState.timesheets && localState.timesheets.length > 0) {
+                  console.log(`♻️ Khôi phục ${localState.timesheets.length} bản ghi timesheet từ localStorage!`);
+                  timesheetsToLoad = localState.timesheets;
+                  needsResync = true;
+                  setTimeout(syncToFirestore, 3000);
+                }
+              }
+            } catch(err) {}
+          }
+          setState('timesheets', timesheetsToLoad, true);
           console.log("🔄 Dữ liệu Firestore đã cập nhật real-time");
           
           if (typeof window !== 'undefined') {

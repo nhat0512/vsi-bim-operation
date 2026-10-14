@@ -707,8 +707,12 @@ export async function loadInitialData() {
                  allocation: [],
                  totalAllocation: 0
               }];
-              // Gọi setState không có 'true' để kích hoạt syncToFirestore
-              setState('personnel', updatedPersonnel);
+              // BUG FIX: Dùng fromCloud=true để KHÔNG kích hoạt syncToFirestore ngay
+              // tại đây vì projects chưa được ghi vào state xong — tránh ghi đè
+              // Firestore với mảng projects rỗng gây mất toàn bộ dữ liệu dự án.
+              // Thay vào đó, dùng setTimeout để sync sau khi state đã ổn định.
+              setState('personnel', updatedPersonnel, true);
+              setTimeout(() => syncToFirestore(), 3000); // Sync sau 3 giây khi dữ liệu đã sẵn sàng
            }
         }
         // ------------------------------------------------------

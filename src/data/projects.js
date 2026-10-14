@@ -478,7 +478,8 @@ export const projectItems = [
       }
     ],
     team: [
-      { name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' },
+      { name: 'Thân Nguyễn Thái Thiện', role: 'BIM Modeler' },
+      { name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' },
       { name: 'Trần Minh Khoa', role: 'BIM Coordinator' },
       { name: 'Nguyễn Văn An', role: 'BIM Manager' }
     ],
@@ -494,7 +495,7 @@ export const projectItems = [
       {
         id: 't_1789354546060',
         name: 'An Toàn Giao Thông (Km0-Km5)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km0-5',
@@ -510,7 +511,7 @@ export const projectItems = [
       {
         id: 't_1789354764016',
         name: 'An Toàn Giao Thông (Km34-Km35)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km34-35',
@@ -526,7 +527,7 @@ export const projectItems = [
       {
         id: 't_1789354890001',
         name: 'Mô hình Cầu & Cống (Km10-Km16: 2 cầu, 25 cống)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km10-16',
@@ -542,7 +543,7 @@ export const projectItems = [
       {
         id: 't_1789354890002',
         name: 'Mô hình Cống & Thoát nước (Km31-Km34: 12 cống)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km31-34',
@@ -558,7 +559,7 @@ export const projectItems = [
       {
         id: 't_1789354890003',
         name: 'Mô hình 1 cầu đi thép & 16 cống (Km40-Km44)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km40-44',
@@ -574,7 +575,7 @@ export const projectItems = [
       {
         id: 't_1789354890004',
         name: 'Bổ sung thang bậc nước & Tường chắn (Km44-Km46)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km44-46',
@@ -588,7 +589,7 @@ export const projectItems = [
       {
         id: 't_1789354890005',
         name: 'Mô hình cầu 48 đi thép & 5 cống (Km47-Km49)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km47-49',
@@ -602,7 +603,7 @@ export const projectItems = [
       {
         id: 't_1789354890006',
         name: 'Mô hình 2 cầu ngắn & 6 cống (Km50-Km53)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km50-53',
@@ -616,7 +617,7 @@ export const projectItems = [
       {
         id: 't_1789354890007',
         name: 'Bổ sung thang bậc nước & Tường chắn (Km53-Km54)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km53-54',
@@ -630,7 +631,7 @@ export const projectItems = [
       {
         id: 't_1789354890008',
         name: 'Mô hình 3 cầu & 28 cống (Km62-Km69)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km62-69',
@@ -644,7 +645,7 @@ export const projectItems = [
       {
         id: 't_1789354890009',
         name: 'Mô hình 2 cầu & 4 cống (Km69-Km70)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km69-70',
@@ -658,7 +659,7 @@ export const projectItems = [
       {
         id: 't_1789354890010',
         name: 'Mô hình 8 cống (Km70-Km72)',
-        assignee: 'Nguyễn Quốc Triệu',
+        assignee: 'Thân Nguyễn Thái Thiện',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km70-72',

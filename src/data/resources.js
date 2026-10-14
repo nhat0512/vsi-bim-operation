@@ -251,6 +251,42 @@ export const personnelItems = [
     totalAllocation: 100,
     status: 'active',
     joinDate: '2023-01-10'
+  },
+  {
+    id: 'r_thien',
+    name: 'Thân Nguyễn Thái Thiện',
+    role: 'BIM Modeler',
+    roleId: 'bim-modeler',
+    level: 'mid',
+    email: 'thien.than@vsibim.com',
+    phone: '0918-345-678',
+    avatar: 'TNTT',
+    skills: ['Civil 3D', 'InfraWorks', 'AutoCAD'],
+    certifications: ['Autodesk Certified Professional'],
+    allocation: [
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
+    ],
+    totalAllocation: 100,
+    status: 'active',
+    joinDate: '2023-02-15'
+  },
+  {
+    id: 'r_tai',
+    name: 'Nguyễn Ngọc Thanh Tài',
+    role: 'BIM Modeler',
+    roleId: 'bim-modeler',
+    level: 'mid',
+    email: 'tai.nguyen@vsibim.com',
+    phone: '0928-456-789',
+    avatar: 'NNTT',
+    skills: ['Civil 3D', 'Revit Structure', 'Navisworks'],
+    certifications: ['Autodesk Certified Professional'],
+    allocation: [
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
+    ],
+    totalAllocation: 100,
+    status: 'active',
+    joinDate: '2023-03-01'
   }
 ];
 

@@ -249,6 +249,9 @@ export function render() {
                   ${isEditing ? `
                     <select id="edit-lead" class="form-select">
                       <option value="">-- Chọn --</option>
+                      ${project.teamLead && !(personnel || []).some(m => m.name === project.teamLead) ? `
+                        <option value="${project.teamLead}" selected>👤 ${project.teamLead}</option>
+                      ` : ''}
                       ${(personnel || []).map(m => {
                         let label = m.name;
                         const alloc = m.totalAllocation || 0;
@@ -544,6 +547,9 @@ export function render() {
                         ${isEditing ? `
                           <select class="form-select edit-task-assignee" data-idx="${idx}">
                             <option value="">-- Chọn --</option>
+                            ${t.assignee && !(personnel || []).some(m => m.name === t.assignee) ? `
+                              <option value="${t.assignee}" selected>👤 ${formatDisplayName(t.assignee)}</option>
+                            ` : ''}
                             ${(personnel || []).map(m => {
                               let label = formatDisplayName(m.name);
                               const alloc = m.totalAllocation || 0;
@@ -706,6 +712,9 @@ export function render() {
                       <div class="flex items-center gap-xs">
                         <select class="form-select edit-rfi-assignee inline-edit" data-idx="${idx}" style="font-size: 0.75rem; padding: 2px 4px; border: 1px solid transparent; background: transparent; cursor: pointer; flex: 1;">
                           <option value="">-- Chọn --</option>
+                          ${rfi.assignee && !(getState().personnel || []).some(m => m.name === rfi.assignee) ? `
+                            <option value="${rfi.assignee}" selected>👤 ${formatDisplayName(rfi.assignee)}</option>
+                          ` : ''}
                           ${(getState().personnel || []).map(p => {
                             let label = formatDisplayName(p.name);
                             const alloc = p.totalAllocation || 0;
@@ -846,90 +855,107 @@ export function init() {
     const indicator = document.getElementById('auto-save-indicator');
     if (indicator) indicator.style.display = 'flex';
 
-    const updates = {
-      name: document.getElementById('edit-name').value,
-      code: document.getElementById('edit-code').value,
-      status: document.getElementById('edit-status').value,
-      type: document.getElementById('edit-type').value,
-      client: document.getElementById('edit-client').value,
-      location: document.getElementById('edit-location').value,
-      length: document.getElementById('edit-length').value,
-      budget: document.getElementById('edit-budget').value,
-      lodTarget: parseInt(document.getElementById('edit-lod').value) || 300,
-      teamLead: document.getElementById('edit-lead').value,
-      startDate: document.getElementById('edit-start').value,
-      endDate: document.getElementById('edit-end').value,
-    };
-    // Extract Milestones FIRST
+    const updates = {};
+    const nameEl = document.getElementById('edit-name');
+    if (nameEl && nameEl.value) updates.name = nameEl.value;
+    const codeEl = document.getElementById('edit-code');
+    if (codeEl && codeEl.value) updates.code = codeEl.value;
+    const statusEl = document.getElementById('edit-status');
+    if (statusEl) updates.status = statusEl.value;
+    const typeEl = document.getElementById('edit-type');
+    if (typeEl) updates.type = typeEl.value;
+    const clientEl = document.getElementById('edit-client');
+    if (clientEl) updates.client = clientEl.value;
+    const locationEl = document.getElementById('edit-location');
+    if (locationEl) updates.location = locationEl.value;
+    const lengthEl = document.getElementById('edit-length');
+    if (lengthEl) updates.length = lengthEl.value;
+    const budgetEl = document.getElementById('edit-budget');
+    if (budgetEl) updates.budget = budgetEl.value;
+    const lodEl = document.getElementById('edit-lod');
+    if (lodEl) updates.lodTarget = parseInt(lodEl.value) || 300;
+    const leadEl = document.getElementById('edit-lead');
+    if (leadEl && leadEl.value) updates.teamLead = leadEl.value;
+    const startEl = document.getElementById('edit-start');
+    if (startEl && startEl.value) updates.startDate = startEl.value;
+    const endEl = document.getElementById('edit-end');
+    if (endEl && endEl.value) updates.endDate = endEl.value;
+
+    // 🛡️ BẢO VỆ CỘT MỐC TIẾN ĐỘ: Chỉ cập nhật khi DOM có input mốc (không bao giờ gán rỗng làm mất mốc)
     const milestoneNames = document.querySelectorAll('.edit-milestone-name');
     const milestoneDates = document.querySelectorAll('.edit-milestone-date');
     const newMilestones = [];
-    milestoneNames.forEach((el, idx) => {
-      newMilestones.push({
-        id: (currentProject.milestones || [])[idx]?.id || `M${Date.now()}_${idx}`,
-        name: el.value,
-        date: milestoneDates[idx].value
+    if (milestoneNames.length > 0) {
+      milestoneNames.forEach((el, idx) => {
+        newMilestones.push({
+          id: (currentProject.milestones || [])[idx]?.id || `M${Date.now()}_${idx}`,
+          name: el.value,
+          date: milestoneDates[idx]?.value || (currentProject.milestones || [])[idx]?.date || ''
+        });
       });
-    });
-    updates.milestones = newMilestones;
+      updates.milestones = newMilestones;
+    }
 
-    // Extract Segments, SubSegments and Matrix Progress
+    // 🛡️ BẢO VỆ PHÂN ĐOẠN & MA TRẬN TIẾN ĐỘ: Chỉ cập nhật khi DOM có input phân đoạn
     const segmentNames = document.querySelectorAll('.edit-segment-name');
     const newSegments = [];
-    segmentNames.forEach((el, sIdx) => {
-      const segName = el.value;
-      const progresses = [];
-      const deadlines = [];
-      newMilestones.forEach((m, mIdx) => {
-        const slider = document.querySelector(`.edit-segment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
-        progresses.push(slider ? parseInt(slider.value) : 0);
-        
-        const dateInput = document.querySelector(`.edit-segment-matrix-date[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
-        deadlines.push(dateInput ? dateInput.value : '');
-      });
-      
-      const subSegments = [];
-      const subNameInputs = document.querySelectorAll(`.edit-subsegment-name[data-sidx="${sIdx}"]`);
-      subNameInputs.forEach((subEl, subIdx) => {
-        const subProgresses = [];
-        const subDeadlines = [];
-        newMilestones.forEach((m, mIdx) => {
-          const subSlider = document.querySelector(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
-          subProgresses.push(subSlider ? parseInt(subSlider.value) : 0);
+    const activeMilestones = (newMilestones.length > 0) ? newMilestones : (currentProject.milestones || []);
+    if (segmentNames.length > 0) {
+      segmentNames.forEach((el, sIdx) => {
+        const segName = el.value;
+        const progresses = [];
+        const deadlines = [];
+        activeMilestones.forEach((m, mIdx) => {
+          const slider = document.querySelector(`.edit-segment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+          progresses.push(slider ? parseInt(slider.value) : (currentProject.segments?.[sIdx]?.progresses?.[mIdx] || 0));
           
-          const subDateInput = document.querySelector(`.edit-subsegment-matrix-date[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
-          subDeadlines.push(subDateInput ? subDateInput.value : '');
+          const dateInput = document.querySelector(`.edit-segment-matrix-date[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+          deadlines.push(dateInput ? dateInput.value : (currentProject.segments?.[sIdx]?.deadlines?.[mIdx] || ''));
         });
-        subSegments.push({
-          id: currentProject.segments[sIdx]?.subSegments?.[subIdx]?.id || `Sub_${Date.now()}_${sIdx}_${subIdx}`,
-          name: subEl.value,
-          progresses: subProgresses,
-          deadlines: subDeadlines
+        
+        const subSegments = [];
+        const subNameInputs = document.querySelectorAll(`.edit-subsegment-name[data-sidx="${sIdx}"]`);
+        subNameInputs.forEach((subEl, subIdx) => {
+          const subProgresses = [];
+          const subDeadlines = [];
+          activeMilestones.forEach((m, mIdx) => {
+            const subSlider = document.querySelector(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+            subProgresses.push(subSlider ? parseInt(subSlider.value) : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.progresses?.[mIdx] || 0));
+            
+            const subDateInput = document.querySelector(`.edit-subsegment-matrix-date[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+            subDeadlines.push(subDateInput ? subDateInput.value : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.deadlines?.[mIdx] || ''));
+          });
+          subSegments.push({
+            id: currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.id || `Sub_${Date.now()}_${sIdx}_${subIdx}`,
+            name: subEl.value,
+            progresses: subProgresses,
+            deadlines: subDeadlines
+          });
+        });
+        
+        // If has subsegments, override parent progresses with average
+        if (subSegments.length > 0) {
+          activeMilestones.forEach((m, mIdx) => {
+            const sum = subSegments.reduce((acc, sub) => acc + (sub.progresses[mIdx] || 0), 0);
+            progresses[mIdx] = Math.round(sum / subSegments.length);
+          });
+        }
+        
+        const avgProgress = progresses.length ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length) : 0;
+        
+        newSegments.push({
+          id: currentProject.segments?.[sIdx]?.id || `S${Date.now()}_${sIdx}`,
+          name: segName,
+          progress: avgProgress, // backward compatibility
+          progresses: progresses,
+          deadlines: deadlines,
+          subSegments: subSegments
         });
       });
-      
-      // If has subsegments, override parent progresses with average
-      if (subSegments.length > 0) {
-        newMilestones.forEach((m, mIdx) => {
-          const sum = subSegments.reduce((acc, sub) => acc + (sub.progresses[mIdx] || 0), 0);
-          progresses[mIdx] = Math.round(sum / subSegments.length);
-        });
-      }
-      
-      const avgProgress = progresses.length ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length) : 0;
-      
-      newSegments.push({
-        id: currentProject.segments[sIdx]?.id || `S${Date.now()}_${sIdx}`,
-        name: segName,
-        progress: avgProgress, // backward compatibility
-        progresses: progresses,
-        deadlines: deadlines,
-        subSegments: subSegments
-      });
-    });
-    updates.segments = newSegments;
+      updates.segments = newSegments;
+    }
 
-    // Extract Tasks
+    // 🛡️ BẢO VỆ NHIỆM VỤ (TASKS) & GIỜ LÀM KỸ SƯ: Chỉ cập nhật khi DOM có input tasks
     const taskNames = document.querySelectorAll('.edit-task-name');
     const taskAssignees = document.querySelectorAll('.edit-task-assignee');
     const taskProgresses = document.querySelectorAll('.edit-task-progress');
@@ -937,39 +963,48 @@ export function init() {
     const taskSegments = document.querySelectorAll('.edit-task-segment');
     const taskMilestones = document.querySelectorAll('.edit-task-milestone');
     const newTasks = [];
-    taskNames.forEach((el, idx) => {
-      const segValStr = taskSegments[idx]?.value || "-1";
-      const mlVal = parseInt(taskMilestones[idx]?.value);
-      
-      let sIdx = null;
-      let subIdx = null;
-      if (segValStr !== "-1") {
-        const parts = segValStr.split('_');
-        sIdx = parseInt(parts[0]);
-        if (parts.length > 1) subIdx = parseInt(parts[1]);
-      }
-      
-      const prevTask = currentProject.tasks?.[idx] || {};
-      newTasks.push({
-        id: prevTask.id || `t_${Date.now()}_${idx}`,
-        name: el.value,
-        assignee: taskAssignees[idx].value,
-        progress: parseInt(taskProgresses[idx].value) || 0,
-        dueDate: taskDues[idx].value,
-        status: parseInt(taskProgresses[idx].value) === 100 ? 'completed' : 'active',
-        segmentIdx: sIdx,
-        subSegmentIdx: subIdx,
-        milestoneIdx: mlVal >= 0 ? mlVal : null,
-        phase: prevTask.phase || 'BVTC',
-        lod: prevTask.lod || 'LOD 300',
-        chainage: prevTask.chainage || '',
-        dailyHours_planned: prevTask.dailyHours_planned || {},
-        dailyHours_actual: prevTask.dailyHours_actual || {},
-        description: prevTask.description || '',
-        cloudLinks: prevTask.cloudLinks || ''
+    if (taskNames.length > 0) {
+      taskNames.forEach((el, idx) => {
+        const segValStr = taskSegments[idx]?.value || "-1";
+        const mlVal = parseInt(taskMilestones[idx]?.value);
+        
+        let sIdx = null;
+        let subIdx = null;
+        if (segValStr !== "-1") {
+          const parts = segValStr.split('_');
+          sIdx = parseInt(parts[0]);
+          if (parts.length > 1) subIdx = parseInt(parts[1]);
+        }
+        
+        const prevTask = currentProject.tasks?.[idx] || {};
+        const chosenAssignee = (taskAssignees[idx] && taskAssignees[idx].value) ? taskAssignees[idx].value : (prevTask.assignee || '');
+        newTasks.push({
+          id: prevTask.id || `t_${Date.now()}_${idx}`,
+          name: el.value || prevTask.name,
+          assignee: chosenAssignee,
+          progress: taskProgresses[idx] ? (parseInt(taskProgresses[idx].value) || 0) : (prevTask.progress || 0),
+          dueDate: taskDues[idx] ? taskDues[idx].value : (prevTask.dueDate || ''),
+          status: (taskProgresses[idx] && parseInt(taskProgresses[idx].value) === 100) ? 'completed' : 'active',
+          segmentIdx: sIdx,
+          subSegmentIdx: subIdx,
+          milestoneIdx: mlVal >= 0 ? mlVal : null,
+          phase: prevTask.phase || 'BVTC',
+          lod: prevTask.lod || 'LOD 300',
+          chainage: prevTask.chainage || '',
+          dailyHours_planned: prevTask.dailyHours_planned || {},
+          dailyHours_actual: prevTask.dailyHours_actual || {},
+          description: prevTask.description || '',
+          cloudLinks: prevTask.cloudLinks || ''
+        });
       });
-    });
-    updates.tasks = newTasks;
+      // Bảo đảm không vô tình cắt cụt task nếu DOM chỉ render một phần
+      if (currentProject.tasks && currentProject.tasks.length > newTasks.length) {
+        for (let i = newTasks.length; i < currentProject.tasks.length; i++) {
+          newTasks.push(currentProject.tasks[i]);
+        }
+      }
+      updates.tasks = newTasks;
+    }
 
     // Extract Phases
     const phaseStarts = document.querySelectorAll('.edit-phase-start');
@@ -977,20 +1012,20 @@ export function init() {
     const phaseStatuses = document.querySelectorAll('.edit-phase-status');
     const phaseProgresses = document.querySelectorAll('.edit-phase-progress');
     const newPhases = [];
-    phaseStarts.forEach((el, idx) => {
-      newPhases.push({
-        id: currentProject.phases[idx].id,
-        startDate: el.value,
-        endDate: phaseEnds[idx].value,
-        status: phaseStatuses[idx].value,
-        progress: parseInt(phaseProgresses[idx].value) || 0
+    if (phaseStarts.length > 0) {
+      phaseStarts.forEach((el, idx) => {
+        newPhases.push({
+          id: (currentProject.phases || [])[idx]?.id || `phase-${idx}`,
+          startDate: el.value,
+          endDate: phaseEnds[idx]?.value || '',
+          status: phaseStatuses[idx]?.value || 'not_started',
+          progress: parseInt(phaseProgresses[idx]?.value) || 0
+        });
       });
-    });
-    if (newPhases.length > 0) {
       updates.phases = newPhases;
     }
 
-    // Extract RFIs
+    // 🛡️ BẢO VỆ RFI: Chỉ cập nhật khi DOM có input rfi
     const rfiCodes = document.querySelectorAll('.edit-rfi-code');
     const rfiTitles = document.querySelectorAll('.edit-rfi-title');
     const rfiPriorities = document.querySelectorAll('.edit-rfi-priority');
@@ -1000,39 +1035,44 @@ export function init() {
     const rfiSegments = document.querySelectorAll('.edit-rfi-segment');
     const rfiMilestones = document.querySelectorAll('.edit-rfi-milestone');
     const newRfis = [];
-    rfiCodes.forEach((el, idx) => {
-      let sIdx = null, subIdx = null;
-      if (rfiSegments[idx]) {
-        const segValStr = rfiSegments[idx].value;
-        if (segValStr !== "-1") {
-          const parts = segValStr.split('_');
-          sIdx = parseInt(parts[0]);
-          if (parts.length > 1) subIdx = parseInt(parts[1]);
+    if (rfiCodes.length > 0) {
+      rfiCodes.forEach((el, idx) => {
+        let sIdx = null, subIdx = null;
+        if (rfiSegments[idx]) {
+          const segValStr = rfiSegments[idx].value;
+          if (segValStr !== "-1") {
+            const parts = segValStr.split('_');
+            sIdx = parseInt(parts[0]);
+            if (parts.length > 1) subIdx = parseInt(parts[1]);
+          }
         }
-      }
-      
-      let mIdx = null;
-      if (rfiMilestones[idx]) {
-        const mlVal = parseInt(rfiMilestones[idx].value);
-        if (mlVal >= 0) mIdx = mlVal;
-      }
+        
+        let mIdx = null;
+        if (rfiMilestones[idx]) {
+          const mlVal = parseInt(rfiMilestones[idx].value);
+          if (mlVal >= 0) mIdx = mlVal;
+        }
 
-      newRfis.push({
-        id: (currentProject.rfis || [])[idx]?.id || `rfi-${Date.now()}-${idx}`,
-        code: el.value,
-        title: rfiTitles[idx].value,
-        priority: rfiPriorities[idx].value,
-        status: rfiStatuses[idx].value,
-        assignee: rfiAssignees[idx].value,
-        dueDate: rfiDues[idx].value,
-        segmentIdx: sIdx,
-        subSegmentIdx: subIdx,
-        milestoneIdx: mIdx,
-        description: (currentProject.rfis || [])[idx]?.description || '',
-        cloudLinks: (currentProject.rfis || [])[idx]?.cloudLinks || ''
+        const prevRfi = (currentProject.rfis || [])[idx] || {};
+        const chosenRfiAssignee = (rfiAssignees[idx] && rfiAssignees[idx].value) ? rfiAssignees[idx].value : (prevRfi.assignee || '');
+
+        newRfis.push({
+          id: prevRfi.id || `rfi-${Date.now()}-${idx}`,
+          code: el.value || prevRfi.code,
+          title: rfiTitles[idx]?.value || prevRfi.title,
+          priority: rfiPriorities[idx]?.value || prevRfi.priority || 'Medium',
+          status: rfiStatuses[idx]?.value || prevRfi.status || 'Open',
+          assignee: chosenRfiAssignee,
+          dueDate: rfiDues[idx]?.value || prevRfi.dueDate || '',
+          segmentIdx: sIdx,
+          subSegmentIdx: subIdx,
+          milestoneIdx: mIdx,
+          description: prevRfi.description || '',
+          cloudLinks: prevRfi.cloudLinks || ''
+        });
       });
-    });
-    updates.rfis = newRfis;
+      updates.rfis = newRfis;
+    }
 
     updateProject(selectedProjectId, updates);
     

@@ -31,6 +31,9 @@ export function renderTopbar() {
     </div>
     <div class="topbar-actions" style="display: flex; align-items: center; gap: 8px;">
       <!-- Khôi phục & Sao lưu dữ liệu an toàn -->
+      <button id="btn-snapshots" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-secondary); color: var(--accent-secondary);" title="Xem các điểm phục hồi tự động gần nhất">
+        🕒 Điểm phục hồi
+      </button>
       <button id="btn-restore-gs" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-primary); color: var(--accent-primary);" title="Khôi phục dữ liệu gốc từ Google Sheets">
         📥 Phục hồi GSheets
       </button>
@@ -205,6 +208,120 @@ export function initTopbar() {
     backupBtn.addEventListener('click', async () => {
       const { exportBackupJSON } = await import('../state.js');
       exportBackupJSON();
+    });
+  }
+
+  // Nút Điểm phục hồi (Snapshots modal)
+  const snapBtn = document.getElementById('btn-snapshots');
+  if (snapBtn) {
+    snapBtn.addEventListener('click', async () => {
+      const { getLocalSnapshotsMetadata, restoreSnapshotByIndex, exportBackupJSON, importBackupJSON } = await import('../state.js');
+      const snapshots = getLocalSnapshotsMetadata();
+      
+      let modalEl = document.getElementById('snapshots-modal');
+      if (!modalEl) {
+        modalEl = document.createElement('div');
+        modalEl.id = 'snapshots-modal';
+        document.body.appendChild(modalEl);
+      }
+      
+      modalEl.innerHTML = `
+        <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9999; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(4px);">
+          <div style="background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px; width: 90%; max-width: 620px; max-height: 85vh; overflow-y: auto; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+              <div>
+                <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+                  🛡️ Lịch Sử Điểm Phục Hồi An Toàn (Snapshots)
+                </h3>
+                <p style="margin: 4px 0 0; font-size: 0.8rem; color: var(--text-secondary);">
+                  Hệ thống tự động lưu trữ 5 bản ghi gần nhất vào máy tính. Bạn có thể quay lại bất kỳ thời điểm nào nếu lỡ xóa nhầm dữ liệu.
+                </p>
+              </div>
+              <button id="btn-close-snap-modal" class="btn btn-ghost btn-sm" style="font-size: 1.2rem; cursor: pointer;">✕</button>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+              ${snapshots.length === 0 ? `
+                <div style="text-align: center; padding: 30px; color: var(--text-muted); background: var(--bg-secondary); border-radius: 8px;">
+                  Chưa có snapshot cục bộ nào được tạo. Hệ thống sẽ tự động tạo khi có thay đổi dữ liệu!
+                </div>
+              ` : snapshots.map((s, idx) => `
+                <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 12px 16px; background: var(--bg-secondary); display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+                  <div>
+                    <div style="font-weight: bold; font-size: 0.9rem; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+                      <span>🕒 ${s.isoDate}</span>
+                      <span class="badge" style="font-size: 0.7rem; background: var(--bg-tertiary); color: var(--accent-primary); border: 1px solid var(--border-subtle);">${s.reason || 'Tự động'}</span>
+                    </div>
+                    <div style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 4px; display: flex; gap: 12px;">
+                      <span>📁 <strong>${s.summary?.projectsCount || 0}</strong> dự án</span>
+                      <span>📋 <strong>${s.summary?.totalTasks || 0}</strong> nhiệm vụ</span>
+                      <span>⏱️ <strong>${s.summary?.timesheetsCount || 0}</strong> giờ làm</span>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary btn-sm btn-restore-snap" data-idx="${idx}" style="white-space: nowrap; font-size: 0.8rem; padding: 6px 12px;">
+                    ↺ Khôi phục bản này
+                  </button>
+                </div>
+              `).join('')}
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 16px;">
+              <div style="display: flex; gap: 8px;">
+                <button id="btn-snap-export" class="btn btn-outline btn-sm" style="font-size: 0.8rem;">
+                  💾 Tải File Sao Lưu JSON
+                </button>
+                <label class="btn btn-outline btn-sm" style="font-size: 0.8rem; cursor: pointer; margin: 0;">
+                  📂 Nhập File JSON
+                  <input type="file" id="input-snap-import" accept=".json" style="display: none;">
+                </label>
+              </div>
+              <button id="btn-close-snap-modal-bottom" class="btn btn-ghost btn-sm">Đóng</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Event Handlers for Snapshot Modal
+      const closeModal = () => { modalEl.remove(); };
+      document.getElementById('btn-close-snap-modal')?.addEventListener('click', closeModal);
+      document.getElementById('btn-close-snap-modal-bottom')?.addEventListener('click', closeModal);
+
+      document.querySelectorAll('.btn-restore-snap').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const idx = parseInt(e.currentTarget.dataset.idx);
+          const targetSnap = snapshots[idx];
+          if (!confirm(`Bạn có chắc muốn khôi phục lại dữ liệu tại thời điểm ${targetSnap?.isoDate}?\n- ${targetSnap?.summary?.projectsCount} dự án\n- ${targetSnap?.summary?.totalTasks} nhiệm vụ\n- ${targetSnap?.summary?.timesheetsCount} bản ghi giờ làm`)) return;
+          
+          const res = restoreSnapshotByIndex(idx);
+          if (res && res.success) {
+            alert(`✅ Đã khôi phục thành công về bản sao ${res.isoDate}!\nDữ liệu đã được đồng bộ với Cloud an toàn.`);
+            closeModal();
+            window.dispatchEvent(new Event('hashchange'));
+          } else {
+            alert(`❌ Không thể khôi phục: ${res?.error || 'Lỗi không xác định'}`);
+          }
+        });
+      });
+
+      document.getElementById('btn-snap-export')?.addEventListener('click', () => {
+        exportBackupJSON();
+      });
+
+      document.getElementById('input-snap-import')?.addEventListener('change', async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (!confirm(`Bạn có muốn nạp dữ liệu từ file sao lưu ${file.name} không?`)) return;
+        try {
+          const res = await importBackupJSON(file);
+          if (res && res.success) {
+            alert(`✅ Nhập dữ liệu thành công từ file ${file.name}!`);
+            closeModal();
+            window.dispatchEvent(new Event('hashchange'));
+          }
+        } catch(err) {
+          alert(`❌ Lỗi khi đọc file sao lưu: ${err.message}`);
+        }
+      });
     });
   }
 }

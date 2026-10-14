@@ -31,7 +31,9 @@ let state = {
   currentUser: null, // { id, name, email, role }
   registeredUsers: [
     // Default admin account
-    { id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' }
+    { id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
+    { id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' },
+    { id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' }
   ]
 };
 
@@ -47,9 +49,20 @@ if (savedState) {
       state.widgetSpans.analytics = 3;
     }
     
-    // Ensure default admin exists
+    // Ensure default users exist
     if (!state.registeredUsers || state.registeredUsers.length === 0) {
-      state.registeredUsers = [{ id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' }];
+      state.registeredUsers = [
+        { id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
+        { id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' },
+        { id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' }
+      ];
+    } else {
+      if (!state.registeredUsers.some(u => u.name === 'Thân Nguyễn Thái Thiện')) {
+        state.registeredUsers.push({ id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' });
+      }
+      if (!state.registeredUsers.some(u => u.name === 'Nguyễn Ngọc Thanh Tài')) {
+        state.registeredUsers.push({ id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' });
+      }
     }
   } catch(e) {
     console.error('Error loading state', e);
@@ -83,6 +96,9 @@ export async function syncToFirestore() {
         console.warn("⚠️ Bỏ qua syncToFirestore: projects rỗng, bảo vệ an toàn dữ liệu!");
         return;
       }
+
+      // Lưu snapshot trước khi gửi lên Cloud để luôn có điểm phục hồi an toàn
+      saveLocalSnapshot('Trước khi đồng bộ Cloud');
 
       // TỰ ĐỘNG ĐỒNG BỘ DỮ LIỆU LIÊN KẾT (Single Source of Truth)
       if (state.projects) {
@@ -119,7 +135,7 @@ export async function syncToFirestore() {
         });
       }
 
-      // Đọc tài liệu hiện tại trên Firestore trước khi ghi để MERGE AN TOÀN, không làm mất timesheets
+      // Đọc tài liệu hiện tại trên Firestore trước khi ghi để MERGE AN TOÀN
       const docRef = doc(db, "app_data", "main");
       let existingData = {};
       try {
@@ -129,15 +145,55 @@ export async function syncToFirestore() {
         }
       } catch(e) {}
 
-      // Nếu state.timesheets rỗng nhưng trên Firestore đã có timesheets, tuyệt đối không được xóa mất của họ!
-      let timesheetsToSave = state.timesheets || [];
-      if (timesheetsToSave.length === 0 && existingData.timesheets && existingData.timesheets.length > 0) {
-        timesheetsToSave = existingData.timesheets;
+      // 🛡️ BẢO VỆ TIMESHEETS (Không bao giờ ghi đè làm mất giờ làm của modeler)
+      let timesheetsToSave = [...(state.timesheets || [])];
+      if (existingData.timesheets && existingData.timesheets.length > 0) {
+        const tsMap = new Map();
+        existingData.timesheets.forEach(ts => {
+          const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString}_${!!ts.isActual}`;
+          tsMap.set(key, ts);
+        });
+        timesheetsToSave.forEach(ts => {
+          const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString}_${!!ts.isActual}`;
+          tsMap.set(key, ts);
+        });
+        timesheetsToSave = Array.from(tsMap.values());
         state.timesheets = timesheetsToSave;
       }
 
+      // 🛡️ BẢO VỆ PROJECTS & TASKS (Data Loss Prevention Guard)
+      let projectsToSave = [...(state.projects || [])];
+      if (existingData.projects && existingData.projects.length > 0) {
+        // 1. Chống mất số lượng dự án: Nếu state hiện tại có ít dự án hơn Firestore
+        if (projectsToSave.length < existingData.projects.length) {
+          console.warn(`🛡️ DLP Guard: Phát hiện thiếu dự án (${projectsToSave.length} vs ${existingData.projects.length}). Tự động gộp!`);
+          const pMap = new Map(existingData.projects.map(p => [p.id, p]));
+          projectsToSave.forEach(p => pMap.set(p.id, p));
+          projectsToSave = Array.from(pMap.values());
+          state.projects = projectsToSave;
+        }
+
+        // 2. Chống mất Tasks, Segments, Milestones của từng dự án
+        projectsToSave.forEach(p => {
+          const exP = existingData.projects.find(ep => ep.id === p.id);
+          if (exP) {
+            if ((!p.tasks || p.tasks.length === 0) && (exP.tasks && exP.tasks.length > 0)) {
+              console.warn(`🛡️ DLP Guard: Dự án ${p.name} bị rỗng tasks. Tự động phục hồi ${exP.tasks.length} tasks từ Cloud!`);
+              p.tasks = exP.tasks;
+            }
+            if ((!p.segments || p.segments.length === 0) && (exP.segments && exP.segments.length > 0)) {
+              console.warn(`🛡️ DLP Guard: Dự án ${p.name} bị rỗng ma trận phân đoạn. Tự động phục hồi từ Cloud!`);
+              p.segments = exP.segments;
+            }
+            if ((!p.milestones || p.milestones.length === 0) && (exP.milestones && exP.milestones.length > 0)) {
+              p.milestones = exP.milestones;
+            }
+          }
+        });
+      }
+
       const dataToSave = JSON.parse(JSON.stringify({
-        projects: state.projects || existingData.projects || [],
+        projects: projectsToSave,
         personnel: state.personnel || existingData.personnel || [],
         softwareAssets: state.softwareAssets || existingData.softwareAssets || [],
         hardwareAssets: state.hardwareAssets || existingData.hardwareAssets || [],
@@ -439,6 +495,120 @@ export function importBackupJSON(file) {
     };
     reader.readAsText(file);
   });
+}
+
+const SNAPSHOT_KEY_PREFIX = 'bimTransPM_snapshot_';
+const MAX_SNAPSHOTS = 5;
+
+/**
+ * LƯU BẢN SAO LƯU ROLLING CỤC BỘ (LOCAL SNAPSHOT)
+ */
+export function saveLocalSnapshot(reason = 'Tự động sao lưu') {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  try {
+    if (!state.projects || state.projects.length === 0) return;
+    
+    let totalTasks = 0;
+    state.projects.forEach(p => { totalTasks += (p.tasks || []).length; });
+    const timesheetsCount = (state.timesheets || []).length;
+    
+    if (totalTasks === 0 && timesheetsCount === 0) return;
+
+    const newSnapshot = {
+      timestamp: Date.now(),
+      isoDate: new Date().toLocaleString('vi-VN'),
+      reason: reason,
+      summary: {
+        projectsCount: state.projects.length,
+        totalTasks: totalTasks,
+        timesheetsCount: timesheetsCount,
+        personnelCount: (state.personnel || []).length
+      },
+      data: {
+        projects: JSON.parse(JSON.stringify(state.projects)),
+        personnel: JSON.parse(JSON.stringify(state.personnel || [])),
+        timesheets: JSON.parse(JSON.stringify(state.timesheets || [])),
+        softwareAssets: JSON.parse(JSON.stringify(state.softwareAssets || [])),
+        hardwareAssets: JSON.parse(JSON.stringify(state.hardwareAssets || [])),
+        activityLog: JSON.parse(JSON.stringify(state.activityLog || []))
+      }
+    };
+
+    let metaList = getLocalSnapshotsMetadata();
+    if (metaList.length > 0) {
+      const last = metaList[0];
+      if (Date.now() - last.timestamp < 30000 && 
+          last.summary.totalTasks === totalTasks && 
+          last.summary.timesheetsCount === timesheetsCount) {
+        return;
+      }
+    }
+
+    metaList.unshift({
+      timestamp: newSnapshot.timestamp,
+      isoDate: newSnapshot.isoDate,
+      reason: newSnapshot.reason,
+      summary: newSnapshot.summary
+    });
+
+    if (metaList.length > MAX_SNAPSHOTS) {
+      metaList = metaList.slice(0, MAX_SNAPSHOTS);
+    }
+
+    // Dịch chuyển các slot dữ liệu
+    for (let i = MAX_SNAPSHOTS - 1; i >= 1; i--) {
+      const prev = localStorage.getItem(`${SNAPSHOT_KEY_PREFIX}${i - 1}`);
+      if (prev) localStorage.setItem(`${SNAPSHOT_KEY_PREFIX}${i}`, prev);
+    }
+    localStorage.setItem(`${SNAPSHOT_KEY_PREFIX}0`, JSON.stringify(newSnapshot));
+    localStorage.setItem('bimTransPM_snapshots_meta', JSON.stringify(metaList));
+    console.log(`📦 [DLP] Đã tạo điểm phục hồi cục bộ: ${newSnapshot.summary.projectsCount} dự án, ${totalTasks} tasks, ${timesheetsCount} timesheets (${reason})`);
+  } catch (e) {
+    console.warn("⚠️ Không thể lưu snapshot cục bộ:", e);
+  }
+}
+
+/**
+ * LẤY DANH SÁCH METADATA CỦA CÁC ĐIỂM PHỤC HỒI
+ */
+export function getLocalSnapshotsMetadata() {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = localStorage.getItem('bimTransPM_snapshots_meta');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * PHỤC HỒI STATE TỪ ĐIỂM SAO LƯU CHỈ ĐỊNH
+ */
+export function restoreSnapshotByIndex(index) {
+  if (typeof window === 'undefined' || !window.localStorage) return { success: false, error: 'Trình duyệt không hỗ trợ localStorage' };
+  try {
+    const raw = localStorage.getItem(`${SNAPSHOT_KEY_PREFIX}${index}`);
+    if (!raw) return { success: false, error: 'Không tìm thấy dữ liệu điểm sao lưu này' };
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || !snapshot.data) return { success: false, error: 'Dữ liệu điểm sao lưu bị hỏng' };
+
+    if (snapshot.data.projects) setState('projects', snapshot.data.projects);
+    if (snapshot.data.personnel) setState('personnel', snapshot.data.personnel);
+    if (snapshot.data.timesheets) setState('timesheets', snapshot.data.timesheets);
+    if (snapshot.data.softwareAssets) setState('softwareAssets', snapshot.data.softwareAssets);
+    if (snapshot.data.hardwareAssets) setState('hardwareAssets', snapshot.data.hardwareAssets);
+    if (snapshot.data.activityLog) setState('activityLog', snapshot.data.activityLog);
+
+    syncToFirestore();
+    return {
+      success: true,
+      summary: snapshot.summary,
+      isoDate: snapshot.isoDate,
+      reason: snapshot.reason
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
 }
 
 
@@ -1020,8 +1190,13 @@ export async function loadInitialData() {
             }
             if (!cur.team || cur.team.length === 0) {
               cur.team = JSON.parse(JSON.stringify(default14D.team || []));
-            } else if (!cur.team.some(m => m.name === 'Nguyễn Quốc Triệu')) {
-              cur.team.unshift({ name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' });
+            } else {
+              if (!cur.team.some(m => m.name === 'Thân Nguyễn Thái Thiện')) {
+                cur.team.unshift({ name: 'Thân Nguyễn Thái Thiện', role: 'BIM Modeler' });
+              }
+              if (!cur.team.some(m => m.name === 'Nguyễn Ngọc Thanh Tài')) {
+                cur.team.unshift({ name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' });
+              }
             }
             // Khôi phục danh sách tasks đầy đủ cho 14D nếu chỉ có mock tasks cũ (<= 2)
             if (!cur.tasks || cur.tasks.length <= 2) {
@@ -1037,8 +1212,43 @@ export async function loadInitialData() {
             }
           }
 
+          let loadedPersonnel = (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems;
+          const requiredPersonnel = [
+            {
+              id: 'r_thien',
+              name: 'Thân Nguyễn Thái Thiện',
+              role: 'BIM Modeler',
+              roleId: 'bim-modeler',
+              level: 'mid',
+              email: 'thien.than@vsibim.com',
+              avatar: 'TNTT',
+              skills: ['Civil 3D', 'InfraWorks', 'AutoCAD'],
+              allocation: [{ projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }],
+              totalAllocation: 100,
+              status: 'active'
+            },
+            {
+              id: 'r_tai',
+              name: 'Nguyễn Ngọc Thanh Tài',
+              role: 'BIM Modeler',
+              roleId: 'bim-modeler',
+              level: 'mid',
+              email: 'tai.nguyen@vsibim.com',
+              avatar: 'NNTT',
+              skills: ['Civil 3D', 'Revit Structure', 'Navisworks'],
+              allocation: [{ projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }],
+              totalAllocation: 100,
+              status: 'active'
+            }
+          ];
+          requiredPersonnel.forEach(rp => {
+            if (!loadedPersonnel.some(p => p.name === rp.name)) {
+              loadedPersonnel.push(rp);
+            }
+          });
+
           setState('projects', projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
-          setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
+          setState('personnel', loadedPersonnel, true);
           setState('softwareAssets', data.softwareAssets || resourcesMod.softwareAssets, true);
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
@@ -1061,8 +1271,10 @@ export async function loadInitialData() {
           if (default14D && default14D.tasks) {
             default14D.tasks.forEach(task => {
               const taskId = task.id;
-              const taskAssignee = task.assignee || 'Nguyễn Quốc Triệu';
-              const uid = 'r_1789368276534';
+              const taskAssignee = task.assignee || 'Thân Nguyễn Thái Thiện';
+              const pObj = loadedPersonnel.find(p => p.name === taskAssignee);
+              const uid = pObj ? pObj.id : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'r_tai' : 'r_thien');
+              const email = pObj ? pObj.email : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'tai.nguyen@vsibim.com' : 'thien.than@vsibim.com');
               
               if (task.dailyHours_planned && typeof task.dailyHours_planned === 'object') {
                 Object.entries(task.dailyHours_planned).forEach(([dStr, hrs]) => {
@@ -1072,7 +1284,7 @@ export async function loadInitialData() {
                       id: `ts-plan-${taskId}-${dStr}`,
                       userId: uid,
                       userName: taskAssignee,
-                      email: 'trieu.nguyen@vsibim.com',
+                      email: email,
                       projectId: 'P007',
                       projectName: default14D.name,
                       taskId: taskId,
@@ -1096,7 +1308,7 @@ export async function loadInitialData() {
                       id: `ts-act-${taskId}-${dStr}`,
                       userId: uid,
                       userName: taskAssignee,
-                      email: 'trieu.nguyen@vsibim.com',
+                      email: email,
                       projectId: 'P007',
                       projectName: default14D.name,
                       taskId: taskId,
@@ -1120,7 +1332,7 @@ export async function loadInitialData() {
           // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets nếu phát hiện thiếu 14D hoặc thiếu modeler tasks ───
           const p14d = projectsToLoad.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
           const has14DTasks = p14d && p14d.tasks && p14d.tasks.length > 5;
-          const hasModelerTs = timesheetsToLoad && timesheetsToLoad.some(ts => ts.userName === 'Nguyễn Quốc Triệu' || ts.userId === 'r_1789368276534');
+          const hasModelerTs = timesheetsToLoad && timesheetsToLoad.some(ts => ts.userName === 'Thân Nguyễn Thái Thiện' || ts.userName === 'Nguyễn Ngọc Thanh Tài');
 
           if (!has14DTasks || !hasModelerTs) {
             console.log("ℹ️ Đang tự động kéo dữ liệu dự án 14D & timesheets từ Google Sheets...");
@@ -1139,6 +1351,7 @@ export async function loadInitialData() {
             if (!isLocalWrite && !isEditing) {
               window.dispatchEvent(new Event('hashchange'));
             }
+            saveLocalSnapshot('Tải dữ liệu Cloud thành công');
           }
         } else {
           // Khởi tạo lần đầu

@@ -16,6 +16,16 @@ const PAGE_TITLES = {
 };
 
 export function renderTopbar() {
+  const state = getState();
+  const currentUserRole = state.currentUserRole;
+  const currentUser = state.currentUser;
+  const currentUserAuth = state.currentUserAuth;
+
+  const isAdmin = ['BIM Manager', 'Project Manager'].includes(currentUserRole) || 
+                  currentUser?.role === 'BIM Manager' || 
+                  currentUser?.role === 'Project Manager' ||
+                  currentUserAuth?.email === 'admin@vsibim.com';
+
   return `
     <div class="topbar-page-info">
       <span class="topbar-page-title" id="topbar-title">Dashboard</span>
@@ -23,23 +33,25 @@ export function renderTopbar() {
     </div>
     <div class="topbar-spacer"></div>
     <button class="topbar-btn" id="btn-toggle-theme" data-tooltip="Sáng/Tối" style="margin-right: var(--space-md);">
-      ${getState().theme === 'dark' ? '🌞' : '🌙'}
+      ${state.theme === 'dark' ? '🌞' : '🌙'}
     </button>
     <div class="topbar-search" id="topbar-search">
       <span>🔍</span>
       <input type="text" placeholder="Tìm kiếm dự án, nhân sự..." id="search-input" />
     </div>
     <div class="topbar-actions" style="display: flex; align-items: center; gap: 8px;">
-      <!-- Khôi phục & Sao lưu dữ liệu an toàn -->
-      <button id="btn-snapshots" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-secondary); color: var(--accent-secondary);" title="Xem các điểm phục hồi tự động gần nhất">
-        🕒 Điểm phục hồi
-      </button>
-      <button id="btn-restore-gs" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-primary); color: var(--accent-primary);" title="Khôi phục dữ liệu gốc từ Google Sheets">
-        📥 Phục hồi GSheets
-      </button>
-      <button id="btn-backup-json" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px;" title="Tải file sao lưu JSON về máy tính">
-        💾 Sao lưu
-      </button>
+      <!-- Khôi phục & Sao lưu dữ liệu an toàn (CHỈ HIỂN THỊ VỚI ADMIN / BIM MANAGER) -->
+      ${isAdmin ? `
+        <button id="btn-snapshots" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-secondary); color: var(--accent-secondary);" title="Xem các điểm phục hồi tự động gần nhất (Chỉ Quản trị viên)">
+          🕒 Điểm phục hồi
+        </button>
+        <button id="btn-restore-gs" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-primary); color: var(--accent-primary);" title="Khôi phục dữ liệu gốc từ Google Sheets (Chỉ Quản trị viên)">
+          📥 Phục hồi GSheets
+        </button>
+        <button id="btn-backup-json" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px;" title="Tải file sao lưu JSON về máy tính (Chỉ Quản trị viên)">
+          💾 Sao lưu
+        </button>
+      ` : ''}
 
       <!-- User Profile & Logout -->
       <div class="topbar-role-selector" style="display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: 1px solid var(--border-color);">

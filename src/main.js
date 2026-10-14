@@ -90,6 +90,17 @@ async function initApp() {
   // Listen for real-time activities from others
   startActivityListener();
 
+  // Re-render Topbar dynamically when user or permissions change
+  subscribe((key) => {
+    if (key === 'currentUser' || key === 'currentUserRole') {
+      const topbarEl = document.getElementById('topbar');
+      if (topbarEl) {
+        topbarEl.innerHTML = renderTopbar();
+        initTopbar();
+      }
+    }
+  });
+
   console.log('🏗️ BIM TransPM initialized successfully');
 }
 

@@ -30,6 +30,14 @@ export function renderTopbar() {
       <input type="text" placeholder="Tìm kiếm dự án, nhân sự..." id="search-input" />
     </div>
     <div class="topbar-actions" style="display: flex; align-items: center; gap: 8px;">
+      <!-- Khôi phục & Sao lưu dữ liệu an toàn -->
+      <button id="btn-restore-gs" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-primary); color: var(--accent-primary);" title="Khôi phục dữ liệu gốc từ Google Sheets">
+        📥 Phục hồi GSheets
+      </button>
+      <button id="btn-backup-json" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px;" title="Tải file sao lưu JSON về máy tính">
+        💾 Sao lưu
+      </button>
+
       <!-- User Profile & Logout -->
       <div class="topbar-role-selector" style="display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: 1px solid var(--border-color);">
         <div style="width: 24px; height: 24px; background: var(--accent-primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">
@@ -165,5 +173,39 @@ export function initTopbar() {
     });
   }
 
-  // removed manual sync button logic
+  // Nút Khôi phục dữ liệu từ Google Sheets
+  const restoreBtn = document.getElementById('btn-restore-gs');
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', async () => {
+      if (!confirm('Bạn có muốn đồng bộ kéo lại Dự án 14D, Tasks và Giờ làm kỹ sư từ Google Sheets không?')) return;
+      restoreBtn.disabled = true;
+      const oldText = restoreBtn.innerHTML;
+      restoreBtn.innerHTML = '⏳ Đang kéo...';
+      try {
+        const { restoreFromGoogleSheets } = await import('../state.js');
+        const res = await restoreFromGoogleSheets();
+        if (res && res.success) {
+          alert(`✅ Phục hồi thành công từ Google Sheets!\n- ${res.tasksCount} nhiệm vụ\n- ${res.timesheetsCount} bản ghi giờ làm của kỹ sư\n- Dự án 14D đã được cập nhật!`);
+          window.dispatchEvent(new Event('hashchange'));
+        } else {
+          alert('⚠️ Có lỗi xảy ra khi phục hồi: ' + (res?.error || 'Không rõ nguyên nhân'));
+        }
+      } catch(err) {
+        alert('❌ Lỗi: ' + err.message);
+      } finally {
+        restoreBtn.disabled = false;
+        restoreBtn.innerHTML = oldText;
+      }
+    });
+  }
+
+  // Nút Tải file Sao lưu JSON
+  const backupBtn = document.getElementById('btn-backup-json');
+  if (backupBtn) {
+    backupBtn.addEventListener('click', async () => {
+      const { exportBackupJSON } = await import('../state.js');
+      exportBackupJSON();
+    });
+  }
 }
+

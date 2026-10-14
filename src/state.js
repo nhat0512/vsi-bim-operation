@@ -72,15 +72,21 @@ if (state.theme === 'dark') {
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx7XiBpWK5409sDFQGFsJCtQHv3WHWGe8U4sfOQjZNqjQMmW3PTX9Csy431W3sQwm8y/exec";
 
 let syncTimeout = null;
-function syncToFirestore() {
+export async function syncToFirestore() {
   if (!db) return;
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     try {
+      // 🛡️ CHẶN GHI ĐÈ NGUY HIỂM (Data Loss Prevention)
+      // Không bao giờ ghi đè lên Firestore nếu state.projects đang rỗng
+      if (!state.projects || state.projects.length === 0) {
+        console.warn("⚠️ Bỏ qua syncToFirestore: projects rỗng, bảo vệ an toàn dữ liệu!");
+        return;
+      }
+
       // TỰ ĐỘNG ĐỒNG BỘ DỮ LIỆU LIÊN KẾT (Single Source of Truth)
       if (state.projects) {
         state.projects.forEach(proj => {
-          // 1. Đồng bộ tiến độ dự án từ các tasks
           if (proj.tasks && proj.tasks.length > 0) {
              const totalProgress = proj.tasks.reduce((sum, t) => sum + (t.progress || 0), 0);
              proj.progress = Math.round(totalProgress / proj.tasks.length);
@@ -89,9 +95,7 @@ function syncToFirestore() {
       }
 
       if (state.projects && state.personnel) {
-
         state.personnel.forEach(person => {
-          // 2. Đồng bộ nguồn lực (allocation) từ danh sách thành viên dự án
           const oldAllocMap = {};
           (person.allocation || []).forEach(a => oldAllocMap[a.projectId] = a.percentage);
           
@@ -104,7 +108,7 @@ function syncToFirestore() {
                newAllocation.push({
                  projectId: proj.id,
                  projectName: proj.name,
-                 percentage: oldAllocMap[proj.id] || 30 // Mặc định 30% nếu mới gán
+                 percentage: oldAllocMap[proj.id] || 30
                });
             }
           });
@@ -115,21 +119,310 @@ function syncToFirestore() {
         });
       }
 
+      // Đọc tài liệu hiện tại trên Firestore trước khi ghi để MERGE AN TOÀN, không làm mất timesheets
+      const docRef = doc(db, "app_data", "main");
+      let existingData = {};
+      try {
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          existingData = snap.data() || {};
+        }
+      } catch(e) {}
+
+      // Nếu state.timesheets rỗng nhưng trên Firestore đã có timesheets, tuyệt đối không được xóa mất của họ!
+      let timesheetsToSave = state.timesheets || [];
+      if (timesheetsToSave.length === 0 && existingData.timesheets && existingData.timesheets.length > 0) {
+        timesheetsToSave = existingData.timesheets;
+        state.timesheets = timesheetsToSave;
+      }
+
       const dataToSave = JSON.parse(JSON.stringify({
-        projects: state.projects || [],
-        personnel: state.personnel || [],
-        softwareAssets: state.softwareAssets || [],
-        hardwareAssets: state.hardwareAssets || [],
-        activityLog: state.activityLog || [],
-        timesheets: state.timesheets || [],
+        projects: state.projects || existingData.projects || [],
+        personnel: state.personnel || existingData.personnel || [],
+        softwareAssets: state.softwareAssets || existingData.softwareAssets || [],
+        hardwareAssets: state.hardwareAssets || existingData.hardwareAssets || [],
+        activityLog: state.activityLog || existingData.activityLog || [],
+        timesheets: timesheetsToSave,
         lastUpdated: new Date().toISOString()
       }));
-      await setDoc(doc(db, "app_data", "main"), dataToSave);
-      console.log("✅ Đồng bộ Firestore thành công");
+
+      await setDoc(docRef, dataToSave, { merge: true });
+      console.log("✅ Đồng bộ Firestore an toàn thành công (merge: true)");
     } catch (e) {
       console.error("❌ Lỗi đồng bộ Firestore:", e);
     }
   }, 1000);
+}
+
+/**
+ * KHÔI PHỤC DỮ LIỆU TỪ GOOGLE SHEETS (Dự án 14D, Tasks, Giờ làm của kỹ sư)
+ */
+export async function restoreFromGoogleSheets() {
+  try {
+    console.log("⏳ Đang kết nối tải dữ liệu gốc từ Google Sheets...");
+    const res = await fetch(GAS_URL);
+    if (!res.ok) throw new Error("Không thể kết nối đến Google Sheets");
+    const data = await res.json();
+    
+    // 1. Phục hồi danh sách Tasks từ Google Sheets
+    const rawTasks = [];
+    if (Array.isArray(data.Tasks)) {
+      data.Tasks.forEach(row => {
+        if (typeof row === 'object' && row !== null) {
+          for (const val of Object.values(row)) {
+            if (typeof val === 'string' && val.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(val);
+                if (parsed && (parsed.id || parsed.name)) rawTasks.push(parsed);
+              } catch(e) {}
+            } else if (typeof val === 'object' && val !== null && (val.id || val.name)) {
+              rawTasks.push(val);
+            }
+          }
+          if (row.id && row.name && !rawTasks.some(t => t.id === row.id)) {
+            rawTasks.push(row);
+          }
+        }
+      });
+    }
+
+    // 2. Phục hồi Resources (Nhân sự kỹ sư)
+    const rawResources = [];
+    if (Array.isArray(data.Resources)) {
+      data.Resources.forEach(row => {
+        if (typeof row === 'object' && row !== null) {
+          for (const val of Object.values(row)) {
+            if (typeof val === 'string' && val.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(val);
+                if (parsed && parsed.name) rawResources.push(parsed);
+              } catch(e) {}
+            } else if (typeof val === 'object' && val !== null && val.name) {
+              rawResources.push(val);
+            }
+          }
+          if (row.name && !rawResources.some(r => r.name === row.name)) {
+            rawResources.push(row);
+          }
+        }
+      });
+    }
+
+    // Cập nhật Personnel
+    let personnel = [...(state.personnel || [])];
+    rawResources.forEach(res => {
+      const existing = personnel.find(p => p.name === res.name);
+      if (!existing) {
+        personnel.push({
+          id: res.id || `p-trieu-${Date.now()}`,
+          name: res.name,
+          email: `${res.name.toLowerCase().replace(/\s+/g, '')}@vsibim.com`,
+          avatar: "👤",
+          role: res.role || "Modeler",
+          level: "Mid",
+          skills: Array.isArray(res.skills) ? res.skills : (res.skills ? [res.skills] : ["Civil 3D"]),
+          allocation: [{ projectId: "P007", projectName: "Theo dõi tiến độ bản vẽ 14D", percentage: 100 }],
+          totalAllocation: 100,
+          status: "active"
+        });
+      }
+    });
+
+    // 3. Phục hồi Dự án 14D và nhiệm vụ (Tasks)
+    let projects = [...(state.projects || [])];
+    let p14d = projects.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
+    if (!p14d) {
+      p14d = {
+        id: 'P007',
+        code: '14D',
+        name: 'Theo dõi tiến độ bản vẽ 14D',
+        type: 'road',
+        status: 'active',
+        priority: 'high',
+        client: 'Dự án 14D',
+        location: 'Tuyến 14D',
+        length: '72 km',
+        budget: 'Chưa cập nhật',
+        progress: 45,
+        startDate: '2026-07-01',
+        endDate: '2026-12-31',
+        bepVersion: 'v1.0',
+        currentPhase: 'detailed',
+        modelHealth: 100,
+        lodTarget: 300,
+        lodCurrent: 300,
+        disciplines: ['road', 'bridge', 'drainage'],
+        teamSize: 10,
+        teamLead: 'Trần Minh Khoa',
+        tasks: [],
+        segments: [],
+        phases: []
+      };
+      projects.push(p14d);
+    } else {
+      p14d.code = '14D';
+      p14d.name = 'Theo dõi tiến độ bản vẽ 14D';
+      p14d.client = 'Dự án 14D';
+      p14d.location = 'Tuyến 14D';
+    }
+
+    // Merge tasks từ Google Sheets vào p14d.tasks
+    p14d.tasks = p14d.tasks || [];
+    rawTasks.forEach(gTask => {
+      const existingTask = p14d.tasks.find(t => t.id === gTask.id || (t.name === gTask.name && t.chainage === gTask.chainage));
+      if (!existingTask) {
+        p14d.tasks.push({
+          id: gTask.id || `t_${Date.now()}`,
+          name: gTask.name || 'Hạng mục 14D',
+          phase: gTask.phase || 'BVTC',
+          lod: gTask.lod || 'LOD 300',
+          chainage: gTask.chainage || 'Km0-5',
+          assignee: gTask.assignee || 'Nguyễn Quốc Triệu',
+          progress: 50,
+          status: 'active',
+          dueDate: '2026-10-30',
+          dailyHours_planned: gTask.dailyHours_planned || {},
+          dailyHours_actual: gTask.dailyHours_actual || {}
+        });
+      }
+    });
+
+    // Đảm bảo team của 14D có Nguyễn Quốc Triệu
+    p14d.team = p14d.team || [];
+    if (!p14d.team.some(m => m.name === 'Nguyễn Quốc Triệu')) {
+      p14d.team.push({ name: 'Nguyễn Quốc Triệu', role: 'Modeler' });
+    }
+
+    // 4. Phục hồi Timesheets (Giờ làm kỹ sư đã nhập) từ dailyHours_planned và dailyHours_actual
+    let timesheets = [...(state.timesheets || [])];
+    const trieuPerson = personnel.find(p => p.name === 'Nguyễn Quốc Triệu');
+    const trieuId = trieuPerson ? trieuPerson.id : 'r_1789368276534';
+
+    rawTasks.forEach(gTask => {
+      const taskId = gTask.id;
+      const taskAssignee = gTask.assignee || 'Nguyễn Quốc Triệu';
+      const personObj = personnel.find(p => p.name === taskAssignee);
+      const uid = personObj ? personObj.id : trieuId;
+
+      // Kế hoạch giờ (dailyHours_planned)
+      if (gTask.dailyHours_planned && typeof gTask.dailyHours_planned === 'object') {
+        Object.entries(gTask.dailyHours_planned).forEach(([dateStr, hours]) => {
+          const numH = Number(hours);
+          if (numH > 0) {
+            const exists = timesheets.some(ts => ts.taskId === taskId && ts.dateString === dateStr && !ts.isActual);
+            if (!exists) {
+              timesheets.push({
+                id: `ts-plan-${taskId}-${dateStr}`,
+                userId: uid,
+                userName: taskAssignee,
+                email: personObj ? personObj.email : 'trieu.nguyen@vsibim.com',
+                projectId: p14d.id,
+                projectName: p14d.name,
+                taskId: taskId,
+                taskName: gTask.name || 'An Toàn Giao Thông',
+                dateString: dateStr,
+                date: dateStr,
+                hours: numH,
+                isActual: false,
+                isOT: false,
+                comment: `Kế hoạch ${gTask.name} (${gTask.chainage || ''})`
+              });
+            }
+          }
+        });
+      }
+
+      // Giờ thực tế (dailyHours_actual)
+      if (gTask.dailyHours_actual && typeof gTask.dailyHours_actual === 'object') {
+        Object.entries(gTask.dailyHours_actual).forEach(([dateStr, hours]) => {
+          const numH = Number(hours);
+          if (numH > 0) {
+            const exists = timesheets.some(ts => ts.taskId === taskId && ts.dateString === dateStr && ts.isActual);
+            if (!exists) {
+              timesheets.push({
+                id: `ts-act-${taskId}-${dateStr}`,
+                userId: uid,
+                userName: taskAssignee,
+                email: personObj ? personObj.email : 'trieu.nguyen@vsibim.com',
+                projectId: p14d.id,
+                projectName: p14d.name,
+                taskId: taskId,
+                taskName: gTask.name || 'An Toàn Giao Thông',
+                dateString: dateStr,
+                date: dateStr,
+                hours: numH,
+                isActual: true,
+                isOT: false,
+                comment: `Thực tế ${gTask.name}`
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // 5. Cập nhật State
+    setState('projects', projects);
+    setState('personnel', personnel);
+    setState('timesheets', timesheets);
+
+    console.log(`✅ Khôi phục thành công từ Google Sheets! Tasks: ${rawTasks.length}, Timesheets: ${timesheets.length}`);
+    return {
+      success: true,
+      tasksCount: rawTasks.length,
+      timesheetsCount: timesheets.length,
+      personnelCount: rawResources.length
+    };
+  } catch (err) {
+    console.error("❌ Lỗi khi khôi phục từ Google Sheets:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * XUẤT FILE SAO LƯU JSON VỀ MÁY
+ */
+export function exportBackupJSON() {
+  const backup = {
+    projects: state.projects || [],
+    personnel: state.personnel || [],
+    timesheets: state.timesheets || [],
+    softwareAssets: state.softwareAssets || [],
+    hardwareAssets: state.hardwareAssets || [],
+    activityLog: state.activityLog || [],
+    exportedAt: new Date().toISOString()
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `BIM_TransPM_Backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * NHẬP FILE SAO LƯU JSON TỪ MÁY
+ */
+export function importBackupJSON(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (data.projects) setState('projects', data.projects);
+        if (data.personnel) setState('personnel', data.personnel);
+        if (data.timesheets) setState('timesheets', data.timesheets);
+        if (data.softwareAssets) setState('softwareAssets', data.softwareAssets);
+        if (data.hardwareAssets) setState('hardwareAssets', data.hardwareAssets);
+        if (data.activityLog) setState('activityLog', data.activityLog);
+        resolve({ success: true });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.readAsText(file);
+  });
 }
 
 
@@ -646,61 +939,48 @@ export async function loadInitialData() {
           const data = docSnap.data();
           
           let projectsToLoad = data.projects || [];
-          let needsResync = false;
 
-          // ─── PHỤC HỒI (1): Nếu Firestore rỗng → khôi phục từ localStorage ───
+          // ─── PHỤC HỒI (1): Khôi phục từ localStorage nếu Firestore trống ───
           if (projectsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
             try {
               const localProjStr = localStorage.getItem('bim_transpm_projects');
               if (localProjStr) {
                 const localProj = JSON.parse(localProjStr);
                 if (localProj && localProj.length > 0) {
-                  console.log("♻️ Khôi phục dự án từ localStorage!");
                   projectsToLoad = localProj;
-                  needsResync = true;
                 }
               }
             } catch(err) {}
           }
 
-          // ─── PHỤC HỒI (2): Phát hiện project bị duplicate (trùng TÊN nhưng khác ID) ───
-          // Bug cũ: P007 trong Firestore bị ghi đè thành bản copy tên giống P006
-          // → Xóa bản trùng tên, thay bằng dữ liệu mặc định đúng theo ID
-          const seenNames = new Map(); // name → first project
+          // ─── PHỤC HỒI (2): Xử lý trùng tên lỗi do sao chép (như P006 và P007 cùng tên QL15D) ───
+          const seenNames = new Map();
           const duplicatedIds = new Set();
           projectsToLoad.forEach(p => {
             if (seenNames.has(p.name)) {
-              // Project sau trùng tên → đây là bản bị ghi đè sai
               duplicatedIds.add(p.id);
-              console.warn(`⚠️ Phát hiện dự án bị duplicate (${p.id}): "${p.name}" — sẽ thay bằng dữ liệu mặc định`);
             } else {
               seenNames.set(p.name, p);
             }
           });
           if (duplicatedIds.size > 0) {
-            // Loại bỏ các project bị duplicate tên
             projectsToLoad = projectsToLoad.filter(p => !duplicatedIds.has(p.id));
-            // Tìm lại project mặc định tương ứng với ID đó để thay thế
             duplicatedIds.forEach(dupId => {
               const defaultVersion = defaultProjects.find(p => p.id === dupId);
               if (defaultVersion) {
                 projectsToLoad.push(defaultVersion);
-                console.log(`✅ Đã khôi phục dự án ${dupId}: "${defaultVersion.name}"`);
               }
             });
-            needsResync = true;
           }
 
-          // ─── PHỤC HỒI (3): Thêm lại các project mặc định bị thiếu hoàn toàn ───
+          // ─── PHỤC HỒI (3): Bổ sung các dự án bị thiếu ───
           const currentIds = new Set(projectsToLoad.map(p => p.id));
           const missingDefaults = defaultProjects.filter(p => !currentIds.has(p.id));
           if (missingDefaults.length > 0) {
-            console.warn(`⚠️ ${missingDefaults.length} dự án bị mất, đang khôi phục:`, missingDefaults.map(p => `${p.id}:${p.name}`));
             projectsToLoad = [...projectsToLoad, ...missingDefaults];
-            needsResync = true;
           }
 
-          // ─── PHỤC HỒI (4): Xóa duplicate theo ID (phòng thủ) ───
+          // Xóa duplicate theo ID
           const seenIds = new Set();
           projectsToLoad = projectsToLoad.filter(p => {
             if (seenIds.has(p.id)) return false;
@@ -708,12 +988,8 @@ export async function loadInitialData() {
             return true;
           });
 
-          // Sắp xếp theo ID để hiển thị nhất quán
+          // Sắp xếp theo ID
           projectsToLoad.sort((a, b) => a.id.localeCompare(b.id));
-
-          if (needsResync) {
-            setTimeout(syncToFirestore, 3000); // Đồng bộ bản phục hồi lên Firestore
-          }
 
           setState('projects', projectsToLoad.length > 0 ? projectsToLoad : defaultProjects, true);
           setState('personnel', (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems, true);
@@ -721,7 +997,7 @@ export async function loadInitialData() {
           setState('hardwareAssets', data.hardwareAssets || resourcesMod.hardwareAssets, true);
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
 
-          // ─── PHỤC HỒI (5): Timesheets — khôi phục từ localStorage nếu Firestore rỗng ───
+          // ─── PHỤC HỒI (4): Timesheets — lấy từ Firestore hoặc localStorage ───
           let timesheetsToLoad = data.timesheets || [];
           if (timesheetsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
             try {
@@ -729,20 +1005,30 @@ export async function loadInitialData() {
               if (localStateStr) {
                 const localState = JSON.parse(localStateStr);
                 if (localState.timesheets && localState.timesheets.length > 0) {
-                  console.log(`♻️ Khôi phục ${localState.timesheets.length} bản ghi timesheet từ localStorage!`);
                   timesheetsToLoad = localState.timesheets;
-                  needsResync = true;
-                  setTimeout(syncToFirestore, 3000);
                 }
               }
             } catch(err) {}
           }
           setState('timesheets', timesheetsToLoad, true);
-          console.log("🔄 Dữ liệu Firestore đã cập nhật real-time");
+          console.log("🔄 Dữ liệu Firestore đã kết nối real-time");
+
+          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets nếu phát hiện thiếu 14D hoặc thiếu timesheet ───
+          const p14d = projectsToLoad.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
+          const has14DTasks = p14d && p14d.tasks && p14d.tasks.length > 0;
+          const hasTimesheets = timesheetsToLoad && timesheetsToLoad.length > 0;
+
+          if (!has14DTasks || !hasTimesheets) {
+            console.log("ℹ️ Đang tự động kéo dữ liệu dự án 14D & timesheets từ Google Sheets...");
+            restoreFromGoogleSheets().then(res => {
+              if (res && res.success) {
+                console.log("✅ Phục hồi hoàn tất từ Google Sheets!");
+                window.dispatchEvent(new Event('hashchange'));
+              }
+            });
+          }
           
           if (typeof window !== 'undefined') {
-            // Prevent jumping UI: Don't force re-render if we triggered the write locally
-            // or if the user is actively typing in an input.
             const isLocalWrite = docSnap.metadata && docSnap.metadata.hasPendingWrites;
             const isEditing = document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
             

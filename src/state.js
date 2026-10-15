@@ -12,6 +12,7 @@ let state = {
   hardwareAssets: [],
   activityLog: [],
   timesheets: [],
+  deletedTimesheetIds: [], // Danh sách tombstone chống hồi sinh timesheet đã xóa
   qualityData: null,
   selectedProjectId: null,
   sidebarOpen: false,
@@ -42,6 +43,26 @@ if (savedState) {
   try {
     const parsed = JSON.parse(savedState);
     state = { ...state, ...parsed };
+
+    // Phục hồi tombstone các timesheet đã xóa từ localStorage
+    try {
+      const savedDeleted = localStorage.getItem('bimTransPM_DeletedTimesheets');
+      if (savedDeleted) {
+        const parsedDel = JSON.parse(savedDeleted);
+        if (Array.isArray(parsedDel)) {
+          state.deletedTimesheetIds = Array.from(new Set([...(state.deletedTimesheetIds || []), ...parsedDel]));
+        }
+      }
+    } catch(e) {}
+
+    // Lọc bỏ ngay các timesheets nằm trong danh sách đã xóa
+    if (state.deletedTimesheetIds && state.deletedTimesheetIds.length > 0) {
+      const dSet = new Set(state.deletedTimesheetIds);
+      state.timesheets = (state.timesheets || []).filter(ts => {
+        const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
+        return !dSet.has(ts.id) && !dSet.has(key);
+      });
+    }
     
     // Auto-add new widgets to legacy saved layouts
     if (!state.dashboardLayout.includes('analytics')) {
@@ -145,21 +166,52 @@ export async function syncToFirestore() {
         }
       } catch(e) {}
 
-      // 🛡️ BẢO VỆ TIMESHEETS (Không bao giờ ghi đè làm mất giờ làm của modeler)
-      let timesheetsToSave = [...(state.timesheets || [])];
+      // 🛡️ BẢO VỆ TIMESHEETS (Đồng bộ an toàn giữa các thiết bị nhưng TÔN TRỌNG THAO TÁC XÓA)
+      let deletedIds = new Set([
+        ...(state.deletedTimesheetIds || []),
+        ...(existingData.deletedTimesheetIds || [])
+      ]);
+      try {
+        const localDelStr = localStorage.getItem('bimTransPM_DeletedTimesheets');
+        if (localDelStr) {
+          const parsedLocalDel = JSON.parse(localDelStr);
+          if (Array.isArray(parsedLocalDel)) {
+            parsedLocalDel.forEach(id => deletedIds.add(id));
+          }
+        }
+      } catch(e) {}
+      state.deletedTimesheetIds = Array.from(deletedIds);
+      try {
+        localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(state.deletedTimesheetIds));
+      } catch(e) {}
+
+      const tsMap = new Map();
+      const isTsDeleted = (ts) => {
+        if (!ts) return true;
+        const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
+        return deletedIds.has(ts.id) || deletedIds.has(key);
+      };
+
+      // 1. Lấy timesheets từ Firestore nhưng BỎ HẾT các bản ghi đã xóa
       if (existingData.timesheets && existingData.timesheets.length > 0) {
-        const tsMap = new Map();
         existingData.timesheets.forEach(ts => {
-          const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString}_${!!ts.isActual}`;
-          tsMap.set(key, ts);
+          if (!isTsDeleted(ts)) {
+            const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
+            tsMap.set(key, ts);
+          }
         });
-        timesheetsToSave.forEach(ts => {
-          const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString}_${!!ts.isActual}`;
-          tsMap.set(key, ts);
-        });
-        timesheetsToSave = Array.from(tsMap.values());
-        state.timesheets = timesheetsToSave;
       }
+
+      // 2. Gộp timesheets hiện tại ở State, BỎ QUA item đã bị xóa
+      (state.timesheets || []).forEach(ts => {
+        if (!isTsDeleted(ts)) {
+          const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
+          tsMap.set(key, ts);
+        }
+      });
+
+      let timesheetsToSave = Array.from(tsMap.values());
+      state.timesheets = timesheetsToSave;
 
       // 🛡️ BẢO VỆ PROJECTS & TASKS (Data Loss Prevention Guard)
       let projectsToSave = [...(state.projects || [])];
@@ -197,6 +249,7 @@ export async function syncToFirestore() {
         hardwareAssets: state.hardwareAssets || existingData.hardwareAssets || [],
         activityLog: state.activityLog || existingData.activityLog || [],
         timesheets: timesheetsToSave,
+        deletedTimesheetIds: state.deletedTimesheetIds || [],
         lastUpdated: new Date().toISOString()
       }));
 
@@ -367,6 +420,7 @@ export async function restoreFromGoogleSheets() {
     }
 
     // 4. Phục hồi Timesheets (Giờ làm kỹ sư đã nhập) từ dailyHours_planned và dailyHours_actual
+    const delSetGoogle = new Set(state.deletedTimesheetIds || []);
     let timesheets = [...(state.timesheets || [])];
 
     (p14d.tasks || []).forEach(gTask => {
@@ -382,11 +436,13 @@ export async function restoreFromGoogleSheets() {
       if (gTask.dailyHours_planned && typeof gTask.dailyHours_planned === 'object') {
         Object.entries(gTask.dailyHours_planned).forEach(([dateStr, hours]) => {
           const numH = Number(hours);
-          if (numH > 0) {
+          const planId = `ts-plan-${taskId}-${dateStr}`;
+          const planKey = `${uid}_${p14d.id}_${taskId}_${dateStr}_false`;
+          if (numH > 0 && !delSetGoogle.has(planId) && !delSetGoogle.has(planKey)) {
             const exists = timesheets.some(ts => ts.taskId === taskId && ts.dateString === dateStr && !ts.isActual);
             if (!exists) {
               timesheets.push({
-                id: `ts-plan-${taskId}-${dateStr}`,
+                id: planId,
                 userId: uid,
                 userName: taskAssignee,
                 email: personObj ? personObj.email : 'trieu.nguyen@vsibim.com',
@@ -410,11 +466,13 @@ export async function restoreFromGoogleSheets() {
       if (gTask.dailyHours_actual && typeof gTask.dailyHours_actual === 'object') {
         Object.entries(gTask.dailyHours_actual).forEach(([dateStr, hours]) => {
           const numH = Number(hours);
-          if (numH > 0) {
+          const actId = `ts-act-${taskId}-${dateStr}`;
+          const actKey = `${uid}_${p14d.id}_${taskId}_${dateStr}_true`;
+          if (numH > 0 && !delSetGoogle.has(actId) && !delSetGoogle.has(actKey)) {
             const exists = timesheets.some(ts => ts.taskId === taskId && ts.dateString === dateStr && ts.isActual);
             if (!exists) {
               timesheets.push({
-                id: `ts-act-${taskId}-${dateStr}`,
+                id: actId,
                 userId: uid,
                 userName: taskAssignee,
                 email: personObj ? personObj.email : 'trieu.nguyen@vsibim.com',
@@ -976,6 +1034,120 @@ export function deleteProject(projectId) {
   return true;
 }
 
+// ============================================
+// TIMESHEET CRUD OPERATIONS
+// ============================================
+
+/**
+ * XÓA BẢN GHI TIMESHEET AN TOÀN (VĨNH VIỄN, CHỐNG TỰ HỒI SINH TỪ CLOUD)
+ * @param {string} idOrKey - ID hoặc Composite Key của timesheet
+ * @returns {boolean} True nếu xóa thành công
+ */
+export function deleteTimesheet(idOrKey) {
+  if (!idOrKey) return false;
+  
+  const curTimesheets = state.timesheets || [];
+  const targetTs = curTimesheets.find(t => {
+    if (t.id === idOrKey) return true;
+    const cKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
+    return cKey === idOrKey;
+  });
+
+  // Gom tất cả các key đại diện cho bản ghi này vào tombstone
+  const tombstoneKeys = [idOrKey];
+  if (targetTs) {
+    if (targetTs.id) tombstoneKeys.push(targetTs.id);
+    const cKey = `${targetTs.userId}_${targetTs.projectId}_${targetTs.taskId || ''}_${targetTs.dateString || targetTs.date}_${!!targetTs.isActual}`;
+    tombstoneKeys.push(cKey);
+    const dStr = targetTs.dateString || targetTs.date;
+    if (targetTs.taskId && dStr) {
+      tombstoneKeys.push(`ts-${targetTs.isActual ? 'act' : 'plan'}-${targetTs.taskId}-${dStr}`);
+    }
+  }
+
+  // 1. Cập nhật danh sách tombstone (deletedTimesheetIds)
+  const deletedSet = new Set([...(state.deletedTimesheetIds || []), ...tombstoneKeys]);
+  state.deletedTimesheetIds = Array.from(deletedSet);
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(state.deletedTimesheetIds));
+    } catch(e) {}
+  }
+
+  // 2. Lọc bỏ khỏi state.timesheets
+  const updatedTs = curTimesheets.filter(t => {
+    if (tombstoneKeys.includes(t.id)) return false;
+    const cKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
+    if (tombstoneKeys.includes(cKey)) return false;
+    return true;
+  });
+  state.timesheets = updatedTs;
+
+  // 3. Xóa đồng bộ trong dailyHours_actual / dailyHours_planned trên task của project
+  if (targetTs && targetTs.projectId) {
+    const dStr = targetTs.dateString || targetTs.date;
+    const isActual = targetTs.isActual !== false;
+    let anyProjectUpdated = false;
+
+    const updatedProjects = (state.projects || []).map(p => {
+      if (p.id === targetTs.projectId && p.tasks) {
+        let taskModified = false;
+        const newTasks = p.tasks.map(tsk => {
+          const matchTask = tsk.id === targetTs.taskId || tsk.name === targetTs.taskName;
+          if (matchTask) {
+            if (isActual && tsk.dailyHours_actual && tsk.dailyHours_actual[dStr] !== undefined) {
+              const newActual = { ...tsk.dailyHours_actual };
+              delete newActual[dStr];
+              taskModified = true;
+              return { ...tsk, dailyHours_actual: newActual };
+            } else if (!isActual && tsk.dailyHours_planned && tsk.dailyHours_planned[dStr] !== undefined) {
+              const newPlanned = { ...tsk.dailyHours_planned };
+              delete newPlanned[dStr];
+              taskModified = true;
+              return { ...tsk, dailyHours_planned: newPlanned };
+            }
+          }
+          return tsk;
+        });
+        if (taskModified) {
+          anyProjectUpdated = true;
+          return { ...p, tasks: newTasks };
+        }
+      }
+      return p;
+    });
+
+    if (anyProjectUpdated) {
+      state.projects = updatedProjects;
+      if (typeof window !== 'undefined' && window.localStorage) {
+        try {
+          localStorage.setItem('bim_transpm_projects', JSON.stringify(updatedProjects));
+        } catch(e) {}
+      }
+    }
+  }
+
+  // 4. Lưu local state & tạo snapshot phục hồi
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.setItem('bimTransPM_State', JSON.stringify(state));
+    } catch(e) {}
+  }
+  saveLocalSnapshot(`Xóa bản ghi giờ làm (${targetTs?.hours || 0}h)`);
+
+  // 5. Thông báo subscribers & ghi nhật ký
+  listeners.forEach(fn => fn('timesheets', state.timesheets, { ...state }));
+  if (targetTs) {
+    addActivityLog(`xóa bản ghi ${targetTs.hours}h ngày ${targetTs.dateString || targetTs.date}`, targetTs.projectName || '');
+  }
+
+  // 6. Đồng bộ ngay lên Firestore
+  syncToFirestore();
+
+  console.log(`🗑️ Đã xóa timesheet vĩnh viễn: ${idOrKey}`);
+  return true;
+}
+
 /**
  * Add an entry to the activity log
  */
@@ -1249,20 +1421,41 @@ export async function loadInitialData() {
           setState('activityLog', data.activityLog || resourcesMod.activityLog, true);
 
           // ─── PHỤC HỒI (4): Timesheets — lấy từ Firestore, localStorage hoặc sinh từ planned/actual ───
-          let timesheetsToLoad = data.timesheets || [];
+          let deletedIds = new Set([
+            ...(state.deletedTimesheetIds || []),
+            ...(data.deletedTimesheetIds || [])
+          ]);
+          try {
+            const localDelStr = localStorage.getItem('bimTransPM_DeletedTimesheets');
+            if (localDelStr) {
+              const parsedLocalDel = JSON.parse(localDelStr);
+              if (Array.isArray(parsedLocalDel)) {
+                parsedLocalDel.forEach(id => deletedIds.add(id));
+              }
+            }
+          } catch(e) {}
+          state.deletedTimesheetIds = Array.from(deletedIds);
+
+          const isTsDeleted = (ts) => {
+            if (!ts) return true;
+            const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
+            return deletedIds.has(ts.id) || deletedIds.has(key);
+          };
+
+          let timesheetsToLoad = (data.timesheets || []).filter(ts => !isTsDeleted(ts));
           if (timesheetsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
             try {
               const localStateStr = localStorage.getItem('bimTransPM_State');
               if (localStateStr) {
                 const localState = JSON.parse(localStateStr);
                 if (localState.timesheets && localState.timesheets.length > 0) {
-                  timesheetsToLoad = localState.timesheets;
+                  timesheetsToLoad = localState.timesheets.filter(ts => !isTsDeleted(ts));
                 }
               }
             } catch(err) {}
           }
 
-          // Tự động bổ sung giờ làm của Modeler từ tasks nếu timesheetsToLoad đang thiếu
+          // Tự động bổ sung giờ làm của Modeler từ tasks nếu timesheetsToLoad đang thiếu (CHỈ THÊM NẾU CHƯA TỪNG BỊ XÓA)
           if (default14D && default14D.tasks) {
             default14D.tasks.forEach(task => {
               const taskId = task.id;
@@ -1274,9 +1467,11 @@ export async function loadInitialData() {
               if (task.dailyHours_planned && typeof task.dailyHours_planned === 'object') {
                 Object.entries(task.dailyHours_planned).forEach(([dStr, hrs]) => {
                   const hNum = Number(hrs);
-                  if (hNum > 0 && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && !ts.isActual)) {
+                  const planId = `ts-plan-${taskId}-${dStr}`;
+                  const planKey = `${uid}_P007_${taskId}_${dStr}_false`;
+                  if (hNum > 0 && !deletedIds.has(planId) && !deletedIds.has(planKey) && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && !ts.isActual)) {
                     timesheetsToLoad.push({
-                      id: `ts-plan-${taskId}-${dStr}`,
+                      id: planId,
                       userId: uid,
                       userName: taskAssignee,
                       email: email,
@@ -1298,9 +1493,11 @@ export async function loadInitialData() {
               if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
                 Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
                   const hNum = Number(hrs);
-                  if (hNum > 0 && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && ts.isActual)) {
+                  const actId = `ts-act-${taskId}-${dStr}`;
+                  const actKey = `${uid}_P007_${taskId}_${dStr}_true`;
+                  if (hNum > 0 && !deletedIds.has(actId) && !deletedIds.has(actKey) && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && ts.isActual)) {
                     timesheetsToLoad.push({
-                      id: `ts-act-${taskId}-${dStr}`,
+                      id: actId,
                       userId: uid,
                       userName: taskAssignee,
                       email: email,

@@ -1,7 +1,7 @@
 // ============================================
 // MY TASKS — Trang báo cáo tiến độ cá nhân & Chấm công nhanh
 // ============================================
-import { getState, setState, subscribe, updateProject, saveLocalSnapshot } from '../state.js';
+import { getState, setState, subscribe, updateProject, deleteTimesheet, saveLocalSnapshot } from '../state.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
 import { formatDisplayName } from '../utils/formatters.js';
 import { openModal, closeModal } from '../components/Modal.js';
@@ -648,10 +648,10 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
                 </td>
                 <td class="text-sm text-muted">${ts.note || ts.comment || '—'}</td>
                 <td class="text-sm text-center" style="white-space: nowrap;">
-                  <button class="btn btn-ghost btn-sm text-primary btn-edit-timesheet" data-id="${ts.id}" title="Chỉnh sửa bản ghi giờ này" style="padding: 2px 6px; margin-right: 2px;">
+                  <button class="btn btn-ghost btn-sm text-primary btn-edit-timesheet" data-id="${ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`}" title="Chỉnh sửa bản ghi giờ này" style="padding: 2px 6px; margin-right: 2px;">
                     ✏️
                   </button>
-                  <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="Xóa bản ghi giờ thực tế này" style="padding: 2px 6px;">
+                  <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`}" title="Xóa bản ghi giờ thực tế này" style="padding: 2px 6px;">
                     🗑️
                   </button>
                 </td>
@@ -826,7 +826,7 @@ function renderTimesheetCalendar(email, displayName, personnelName, personId, ye
                   ${c.items.map(t => {
                     const p = (projects || []).find(proj => proj.id === t.projectId);
                     return `
-                      <div class="cal-ts-chip btn-edit-timesheet" data-id="${t.id}" style="font-size: 0.68rem; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 4px; transition: transform 0.1s;" onmouseover="this.style.borderColor='var(--accent-primary)'" onmouseout="this.style.borderColor='var(--border-subtle)'" title="Bấm để chỉnh sửa: ${t.taskName} (${t.hours}h)">
+                      <div class="cal-ts-chip btn-edit-timesheet" data-id="${t.id || `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`}" style="font-size: 0.68rem; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 4px; transition: transform 0.1s;" onmouseover="this.style.borderColor='var(--accent-primary)'" onmouseout="this.style.borderColor='var(--border-subtle)'" title="Bấm để chỉnh sửa: ${t.taskName} (${t.hours}h)">
                         <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 78%;">
                           <strong style="color: var(--accent-primary); font-size: 0.65rem;">[${p?.code || p?.name?.substring(0, 4) || 'DA'}]</strong> ${t.taskName || 'Việc chung'}
                           ${t.sheetNo ? `<span style="color: #0284c7; font-size: 0.62rem; display: block;">🏷️ ${t.sheetNo}</span>` : ''}
@@ -1308,7 +1308,11 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
  */
 function openEditTimesheetModal(tsId) {
   const { timesheets, projects } = getState();
-  const targetTs = (timesheets || []).find(t => t.id === tsId);
+  const targetTs = (timesheets || []).find(t => {
+    if (t.id === tsId) return true;
+    const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
+    return compKey === tsId;
+  });
   if (!targetTs) {
     showToast('⚠️ Không tìm thấy bản ghi giờ làm!', 'warning');
     return;
@@ -1422,11 +1426,16 @@ function openEditTimesheetModal(tsId) {
       </div>
 
       <!-- Action buttons -->
-      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-color);">
-        <button type="button" class="btn btn-outline" id="edit-ts-btn-cancel">Hủy</button>
-        <button type="button" class="btn btn-primary" id="edit-ts-btn-submit" style="background: #10b981; border-color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 8px 18px;">
-          💾 Lưu Thay Đổi
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px;">
+        <button type="button" class="btn btn-outline text-danger" id="edit-ts-btn-delete" style="display: flex; align-items: center; gap: 5px; border-color: rgba(239, 68, 68, 0.4); font-weight: 600;">
+          🗑️ Xóa bản ghi
         </button>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-outline" id="edit-ts-btn-cancel">Hủy</button>
+          <button type="button" class="btn btn-primary" id="edit-ts-btn-submit" style="background: #10b981; border-color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 8px 18px;">
+            💾 Lưu Thay Đổi
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -1472,6 +1481,24 @@ function openEditTimesheetModal(tsId) {
   // Cancel
   document.getElementById('edit-ts-btn-cancel')?.addEventListener('click', closeModal);
 
+  // Delete from modal
+  document.getElementById('edit-ts-btn-delete')?.addEventListener('click', () => {
+    const isActual = targetTs.isActual !== false;
+    const { currentUserRole, currentUser } = getState();
+    const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
+    if (!isActual && !isManager) {
+      alert('Bạn không thể tự xóa giờ Kế hoạch do Quản lý phân công!');
+      return;
+    }
+    const dStr = targetTs.dateString || targetTs.date;
+    if (confirm(`Bạn có chắc chắn muốn xóa vĩnh viễn bản ghi ${isActual ? 'giờ thực tế' : 'giờ kế hoạch'} (${targetTs.hours}h ngày ${formatDate(dStr)})?`)) {
+      deleteTimesheet(tsId);
+      closeModal();
+      showToast('🗑️ Đã xóa bản ghi giờ làm thành công!');
+      refreshPage();
+    }
+  });
+
   // Submit
   document.getElementById('edit-ts-btn-submit')?.addEventListener('click', () => {
     const newDate = dateInput.value;
@@ -1491,7 +1518,11 @@ function openEditTimesheetModal(tsId) {
 
     const { timesheets: curTs } = getState();
     const updatedTs = [...(curTs || [])];
-    const tsIdx = updatedTs.findIndex(t => t.id === tsId);
+    const tsIdx = updatedTs.findIndex(t => {
+      if (t.id === tsId) return true;
+      const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
+      return compKey === tsId;
+    });
 
     if (tsIdx >= 0) {
       const oldDate = updatedTs[tsIdx].dateString || updatedTs[tsIdx].date;
@@ -1896,11 +1927,16 @@ export function init() {
   document.querySelectorAll('.btn-delete-timesheet').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const tsId = e.currentTarget.dataset.id;
-      const { timesheets, projects, currentUserRole, currentUser } = getState();
-      const targetTs = (timesheets || []).find(t => t.id === tsId);
-      if (!targetTs) return;
+      if (!tsId) return;
 
-      const isActual = targetTs.isActual !== false;
+      const { timesheets, currentUserRole, currentUser } = getState();
+      const targetTs = (timesheets || []).find(t => {
+        if (t.id === tsId) return true;
+        const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
+        return compKey === tsId;
+      });
+
+      const isActual = targetTs ? targetTs.isActual !== false : true;
       const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
 
       // Chặn bảo vệ: Nếu là giờ kế hoạch và không phải cấp quản lý
@@ -1909,41 +1945,14 @@ export function init() {
         return;
       }
 
-      const dStr = targetTs.dateString || targetTs.date;
-      const confirmMsg = isActual 
-        ? `Bạn có chắc chắn muốn xóa bản ghi giờ thực tế (${targetTs.hours}h ngày ${formatDate(dStr)})?`
-        : `Bạn có chắc chắn muốn xóa bản ghi kế hoạch (${targetTs.hours}h ngày ${formatDate(dStr)})?`;
+      const dStr = targetTs ? (targetTs.dateString || targetTs.date) : '';
+      const hStr = targetTs ? `${targetTs.hours}h` : '';
+      const confirmMsg = targetTs
+        ? `Bạn có chắc chắn muốn xóa vĩnh viễn bản ghi ${isActual ? 'giờ thực tế' : 'giờ kế hoạch'} (${hStr} ngày ${formatDate(dStr)})?`
+        : `Bạn có chắc chắn muốn xóa bản ghi này?`;
 
       if (confirm(confirmMsg)) {
-        // 1. Cập nhật mảng timesheets trong state
-        const updatedTimesheets = (timesheets || []).filter(t => t.id !== tsId);
-        setState('timesheets', updatedTimesheets);
-
-        // 2. Đồng thời xóa giờ trong task của dự án (dailyHours_actual / dailyHours_planned)
-        if (targetTs.projectId && dStr) {
-          const project = (projects || []).find(p => p.id === targetTs.projectId);
-          if (project && project.tasks) {
-            let taskUpdated = false;
-            const updatedTasks = project.tasks.map(tsk => {
-              const matchTask = tsk.id === targetTs.taskId || tsk.name === targetTs.taskName;
-              if (matchTask) {
-                if (isActual && tsk.dailyHours_actual && tsk.dailyHours_actual[dStr] !== undefined) {
-                  delete tsk.dailyHours_actual[dStr];
-                  taskUpdated = true;
-                } else if (!isActual && tsk.dailyHours_planned && tsk.dailyHours_planned[dStr] !== undefined) {
-                  delete tsk.dailyHours_planned[dStr];
-                  taskUpdated = true;
-                }
-              }
-              return tsk;
-            });
-            if (taskUpdated) {
-              updateProject(project.id, { tasks: updatedTasks });
-            }
-          }
-        }
-
-        saveLocalSnapshot(isActual ? 'Xóa bản ghi giờ làm thực tế' : 'Xóa bản ghi giờ kế hoạch');
+        deleteTimesheet(tsId);
         showToast('🗑️ Đã xóa bản ghi giờ làm thành công!');
         refreshPage();
       }

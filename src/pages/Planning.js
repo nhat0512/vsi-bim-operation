@@ -1196,7 +1196,14 @@ function saveTimesheet(ds, hours, isOT = false, comment = '') {
   const existingIdx = updated.findIndex(t => t.userId === uid && t.projectId === pid && t.taskId === tid && t.dateString === dateStr && !t.isActual);
   
   if (hours === 0 || hours === '') {
-    if (existingIdx >= 0) updated.splice(existingIdx, 1);
+    if (existingIdx >= 0) {
+      const targetTs = updated[existingIdx];
+      import('../state.js').then(module => {
+        module.deleteTimesheet(targetTs.id || `${targetTs.userId}_${targetTs.projectId}_${targetTs.taskId || ''}_${targetTs.dateString || targetTs.date}_false`);
+        refreshView();
+      });
+      return;
+    }
   } else {
     if (existingIdx >= 0) {
       updated[existingIdx].hours = hours;

@@ -173,19 +173,17 @@ export async function syncToFirestore() {
           state.projects = projectsToSave;
         }
 
-        // 2. Chống mất Tasks, Segments, Milestones của từng dự án
+        // 2. Chống mất Tasks, Segments, Milestones khi cập nhật một phần (cho phép xóa rỗng có chủ đích)
         projectsToSave.forEach(p => {
           const exP = existingData.projects.find(ep => ep.id === p.id);
           if (exP) {
-            if ((!p.tasks || p.tasks.length === 0) && (exP.tasks && exP.tasks.length > 0)) {
-              console.warn(`🛡️ DLP Guard: Dự án ${p.name} bị rỗng tasks. Tự động phục hồi ${exP.tasks.length} tasks từ Cloud!`);
+            if (p.tasks === undefined && exP.tasks) {
               p.tasks = exP.tasks;
             }
-            if ((!p.segments || p.segments.length === 0) && (exP.segments && exP.segments.length > 0)) {
-              console.warn(`🛡️ DLP Guard: Dự án ${p.name} bị rỗng ma trận phân đoạn. Tự động phục hồi từ Cloud!`);
+            if (p.segments === undefined && exP.segments) {
               p.segments = exP.segments;
             }
-            if ((!p.milestones || p.milestones.length === 0) && (exP.milestones && exP.milestones.length > 0)) {
+            if (p.milestones === undefined && exP.milestones) {
               p.milestones = exP.milestones;
             }
           }
@@ -1203,39 +1201,9 @@ export async function loadInitialData() {
                 cur.team.unshift({ name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' });
               }
             }
-            // Khôi phục danh sách tasks đầy đủ và đồng bộ Assignee chuẩn cho 14D
-            if (!cur.tasks || cur.tasks.length <= 2) {
+            // Chỉ nạp tasks mẫu cho 14D nếu chưa từng có danh sách tasks (không ép thêm lại task người dùng đã xóa)
+            if (cur.tasks === undefined) {
               cur.tasks = JSON.parse(JSON.stringify(default14D.tasks || []));
-            } else {
-              // Cập nhật assignee chuẩn chuyên môn cho từng task
-              const dtMap = new Map((default14D.tasks || []).map(dt => [dt.id, dt]));
-              cur.tasks.forEach(t => {
-                const dt = dtMap.get(t.id) || (default14D.tasks || []).find(d => d.name === t.name);
-                if (dt) {
-                  // ATGT -> Thân Nguyễn Thái Thiện; Cầu/Cống/Thoát nước/Tường chắn -> Nguyễn Ngọc Thanh Tài
-                  const nameLower = (t.name || dt.name).toLowerCase();
-                  if (nameLower.includes('an toàn giao thông') || nameLower.includes('atgt')) {
-                    t.assignee = 'Thân Nguyễn Thái Thiện';
-                  } else if (nameLower.includes('cầu') || nameLower.includes('cống') || nameLower.includes('nước') || nameLower.includes('tường')) {
-                    t.assignee = 'Nguyễn Ngọc Thanh Tài';
-                  } else if (!t.assignee || t.assignee === 'Nguyễn Quốc Triệu') {
-                    t.assignee = dt.assignee;
-                  }
-                  if (t.segmentIdx === undefined && dt.segmentIdx !== undefined) t.segmentIdx = dt.segmentIdx;
-                  if (t.subSegmentIdx === undefined && dt.subSegmentIdx !== undefined) t.subSegmentIdx = dt.subSegmentIdx;
-                  if (t.milestoneIdx === undefined && dt.milestoneIdx !== undefined) t.milestoneIdx = dt.milestoneIdx;
-                  if (!t.phase && dt.phase) t.phase = dt.phase;
-                  if (!t.lod && dt.lod) t.lod = dt.lod;
-                }
-              });
-
-              const existingIds = new Set(cur.tasks.map(t => t.id || t.name));
-              (default14D.tasks || []).forEach(dt => {
-                if (!existingIds.has(dt.id) && !existingIds.has(dt.name)) {
-                  cur.tasks.push(JSON.parse(JSON.stringify(dt)));
-                  existingIds.add(dt.id);
-                }
-              });
             }
           }
 
@@ -1356,24 +1324,7 @@ export async function loadInitialData() {
           setState('timesheets', timesheetsToLoad, true);
           console.log("🔄 Dữ liệu Firestore đã kết nối real-time");
 
-          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets chỉ khi dự án chưa tồn tại lần đầu ───
-          const p14d = projectsToLoad.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
-          const isInitialSeeded = typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem('vsi_seeded_14d_v2');
-
-          if (!p14d || (!isInitialSeeded && (!p14d.tasks || p14d.tasks.length === 0))) {
-            console.log("ℹ️ Đang tự động kéo dữ liệu dự án 14D & timesheets từ Google Sheets...");
-            restoreFromGoogleSheets().then(res => {
-              if (res && res.success) {
-                if (typeof window !== 'undefined' && window.localStorage) {
-                  window.localStorage.setItem('vsi_seeded_14d_v2', 'true');
-                }
-                console.log("✅ Phục hồi hoàn tất từ Google Sheets!");
-                window.dispatchEvent(new Event('hashchange'));
-              }
-            });
-          } else if (typeof window !== 'undefined' && window.localStorage && !isInitialSeeded) {
-            window.localStorage.setItem('vsi_seeded_14d_v2', 'true');
-          }
+          // Phục hồi từ Google Sheets chỉ chạy thủ công khi người dùng bấm nút trên Topbar, không tự động đè lại thao tác xóa
           
           if (typeof window !== 'undefined') {
             const isLocalWrite = docSnap.metadata && docSnap.metadata.hasPendingWrites;

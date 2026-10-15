@@ -528,6 +528,11 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
           <button class="btn btn-primary btn-sm" id="btn-add-task">
             ➕ Thêm công việc
           </button>
+          ${(project.tasks && project.tasks.length > 0) ? `
+            <button class="btn btn-outline btn-sm text-danger" id="btn-delete-all-tasks" title="Xóa toàn bộ công việc để làm mới" style="border-color: rgba(239, 68, 68, 0.4);">
+              🗑️ Xóa tất cả
+            </button>
+          ` : ''}
         </div>
       </div>
 
@@ -594,18 +599,19 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
             <tbody>
               ${(project.tasks || []).map((t, idx) => {
                 const isOverdue = new Date(t.dueDate) < new Date() && t.status !== 'completed';
+                const taskId = t.id || `t_${idx}`;
                 return `
-                  <tr class="task-row" data-name="${(t.name || '').toLowerCase()}" data-assignee="${t.assignee || ''}">
+                  <tr class="task-row" data-id="${taskId}" data-name="${(t.name || '').toLowerCase()}" data-assignee="${t.assignee || ''}">
                     <td style="text-align: center;">
-                      <input type="checkbox" class="task-select-chk" data-idx="${idx}">
+                      <input type="checkbox" class="task-select-chk" data-id="${taskId}" data-idx="${idx}">
                     </td>
                     <td>
                       ${isEditing ? `
-                        <input type="text" class="form-input edit-task-name" data-idx="${idx}" value="${t.name || ''}" style="width: 100%; font-weight: 600; margin-bottom: 4px;">
+                        <input type="text" class="form-input edit-task-name" data-id="${taskId}" data-idx="${idx}" value="${t.name || ''}" placeholder="Nhập tên công việc..." style="width: 100%; font-weight: 600; margin-bottom: 4px;">
                         <div class="flex items-center gap-xs" style="flex-wrap: wrap;">
                           <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
                             <span style="font-size: 0.65rem; margin-right: 4px;">🏷️</span>
-                            <select class="edit-task-segment" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                            <select class="edit-task-segment" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
                               <option value="-1">-- Phân đoạn --</option>
                               ${project.segments.map((s, sIdx) => {
                                 let html = `<option value="${sIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx == null ? 'selected' : ''}>▶ ${s.name}</option>`;
@@ -620,7 +626,7 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
                           </div>
                           <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
                             <span style="font-size: 0.65rem; margin-right: 4px;">🎯</span>
-                            <select class="edit-task-milestone" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+                            <select class="edit-task-milestone" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
                               <option value="-1">-- Cột mốc --</option>
                               ${(project.milestones || []).map((m, mIdx) => `
                                 <option value="${mIdx}" ${t.milestoneIdx === mIdx ? 'selected' : ''}>${m.name}</option>
@@ -646,7 +652,7 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
                     </td>
                     <td class="text-sm">
                       ${isEditing ? `
-                        <select class="form-select edit-task-assignee" data-idx="${idx}" style="font-size: 0.8rem; padding: 4px 8px;">
+                        <select class="form-select edit-task-assignee" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.8rem; padding: 4px 8px;">
                           <option value="">-- Chọn --</option>
                           ${t.assignee && !(personnel || []).some(m => m.name === t.assignee) ? `
                             <option value="${t.assignee}" selected>👤 ${formatDisplayName(t.assignee)}</option>
@@ -674,7 +680,7 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
                     <td>
                       ${isEditing ? `
                         <div class="flex items-center gap-xs">
-                          <input type="number" class="form-input edit-task-progress" data-idx="${idx}" value="${t.progress || 0}" min="0" max="100" style="width: 65px; font-weight: bold; text-align: center;">
+                          <input type="number" class="form-input edit-task-progress" data-id="${taskId}" data-idx="${idx}" value="${t.progress || 0}" min="0" max="100" style="width: 65px; font-weight: bold; text-align: center;">
                           <span class="text-xs font-semibold">%</span>
                         </div>
                       ` : `
@@ -688,17 +694,17 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
                     </td>
                     <td>
                       ${isEditing ? `
-                        <input type="date" class="form-input edit-task-due" data-idx="${idx}" value="${(t.dueDate || '').split('T')[0]}" style="font-size: 0.8rem; padding: 4px 6px;">
+                        <input type="date" class="form-input edit-task-due" data-id="${taskId}" data-idx="${idx}" value="${(t.dueDate || '').split('T')[0]}" style="font-size: 0.8rem; padding: 4px 6px;">
                       ` : `
                         <span class="text-xs ${isOverdue ? 'text-danger font-bold' : 'text-muted'}">${formatDate(t.dueDate)}${isOverdue ? ' ⚠️' : ''}</span>
                       `}
                     </td>
                     <td style="text-align: center;">
                       <div class="flex items-center justify-center gap-xs">
-                        <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
+                        <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
                           🔍
                         </button>
-                        <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
+                        <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
                           🗑️
                         </button>
                       </div>
@@ -753,7 +759,7 @@ function renderTasksKanban(project, personnel, formatDate) {
                 const avatar = (member && member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(formatDisplayName(t.assignee || 'BIM'))}&background=random`;
 
                 return `
-                  <div class="kanban-card" draggable="true" data-idx="${t.originalIndex}" data-col="${col.id}" style="background: var(--bg-card); border: 1px solid var(--border-default); border-left: 3.5px solid ${col.color}; border-radius: 8px; padding: 12px; cursor: grab; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s;">
+                  <div class="kanban-card" draggable="true" data-id="${t.id}" data-idx="${t.originalIndex}" data-col="${col.id}" style="background: var(--bg-card); border: 1px solid var(--border-default); border-left: 3.5px solid ${col.color}; border-radius: 8px; padding: 12px; cursor: grab; box-shadow: var(--shadow-sm); transition: transform 0.15s, box-shadow 0.15s;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
                       <div class="flex items-center gap-xs" style="flex-wrap: wrap;">
                         <span class="badge" style="font-size: 0.65rem; padding: 2px 5px; background: var(--bg-tertiary);">${t.lod || 'LOD 300'}</span>
@@ -764,7 +770,7 @@ function renderTasksKanban(project, personnel, formatDate) {
                       ` : ''}
                     </div>
 
-                    <div class="kanban-card-title btn-task-detail" data-idx="${t.originalIndex}" style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); cursor: pointer; margin-bottom: 6px;" title="Bấm để xem & sửa chi tiết">
+                    <div class="kanban-card-title btn-task-detail" data-id="${t.id}" data-idx="${t.originalIndex}" style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); cursor: pointer; margin-bottom: 6px;" title="Bấm để xem & sửa chi tiết">
                       ${t.name}
                     </div>
 
@@ -789,10 +795,10 @@ function renderTasksKanban(project, personnel, formatDate) {
 
                       <div class="flex items-center gap-xs">
                         ${t.progress < 100 ? `
-                          <button class="btn btn-ghost btn-sm btn-quick-advance" data-idx="${t.originalIndex}" data-step="25" title="Tăng +25% tiến độ" style="padding: 2px 6px; font-size: 0.7rem;">+25%</button>
-                          <button class="btn btn-ghost btn-sm btn-quick-done text-success" data-idx="${t.originalIndex}" title="Đánh dấu hoàn thành" style="padding: 2px 6px; font-size: 0.7rem;">✔</button>
+                          <button class="btn btn-ghost btn-sm btn-quick-advance" data-id="${t.id}" data-idx="${t.originalIndex}" data-step="25" title="Tăng +25% tiến độ" style="padding: 2px 6px; font-size: 0.7rem;">+25%</button>
+                          <button class="btn btn-ghost btn-sm btn-quick-done text-success" data-id="${t.id}" data-idx="${t.originalIndex}" title="Đánh dấu hoàn thành" style="padding: 2px 6px; font-size: 0.7rem;">✔</button>
                         ` : ''}
-                        <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-idx="${t.originalIndex}" title="Xóa công việc này" style="padding: 2px 5px; font-size: 0.7rem;">🗑️</button>
+                        <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${t.id}" data-idx="${t.originalIndex}" title="Xóa công việc này" style="padding: 2px 5px; font-size: 0.7rem;">🗑️</button>
                       </div>
                     </div>
                   </div>
@@ -1549,23 +1555,44 @@ export function init() {
       const newTasks = [];
 
       taskNames.forEach((el, idx) => {
-        const segValStr = taskSegments[idx]?.value || "-1";
-        const mlVal = parseInt(taskMilestones[idx]?.value);
+        const taskId = el.dataset.id || currentProject.tasks?.[idx]?.id;
+        const prevTask = (taskId ? currentProject.tasks?.find(t => t.id === taskId) : null) || currentProject.tasks?.[idx] || {};
+
+        // Nếu task này đã bị xóa khỏi currentProject.tasks, không phục hồi lại từ DOM
+        if (taskId && currentProject.tasks && !currentProject.tasks.some(t => t.id === taskId)) {
+          return;
+        }
+
+        const segEl = (taskId ? document.querySelector(`.edit-task-segment[data-id="${taskId}"]`) : null) || taskSegments[idx];
+        const segValStr = segEl?.value || "-1";
+        const mlEl = (taskId ? document.querySelector(`.edit-task-milestone[data-id="${taskId}"]`) : null) || taskMilestones[idx];
+        const mlVal = parseInt(mlEl?.value);
         let sIdx = null, subIdx = null;
         if (segValStr !== "-1") {
           const parts = segValStr.split('_');
           sIdx = parseInt(parts[0]);
           if (parts.length > 1) subIdx = parseInt(parts[1]);
         }
-        const prevTask = currentProject.tasks?.[idx] || {};
-        const chosenAssignee = (taskAssignees[idx] && taskAssignees[idx].value) ? taskAssignees[idx].value : (prevTask.assignee || '');
+
+        const assigneeEl = (taskId ? document.querySelector(`.edit-task-assignee[data-id="${taskId}"]`) : null) || taskAssignees[idx];
+        const chosenAssignee = assigneeEl ? assigneeEl.value : (prevTask.assignee || '');
+
+        const progEl = (taskId ? document.querySelector(`.edit-task-progress[data-id="${taskId}"]`) : null) || taskProgresses[idx];
+        const progVal = progEl ? (parseInt(progEl.value) || 0) : (prevTask.progress || 0);
+
+        const dueEl = (taskId ? document.querySelector(`.edit-task-due[data-id="${taskId}"]`) : null) || taskDues[idx];
+        const dueVal = dueEl ? dueEl.value : (prevTask.dueDate || '');
+
+        // Cho phép chỉnh sửa hoặc xóa trắng tên mà không bị tự phục hồi chuỗi cũ
+        const cleanName = el.value !== undefined ? el.value : (prevTask.name || '');
+
         newTasks.push({
-          id: prevTask.id || `t_${Date.now()}_${idx}`,
-          name: el.value || prevTask.name || 'Công việc',
+          id: taskId || prevTask.id || `t_${Date.now()}_${idx}`,
+          name: cleanName || '(Chưa đặt tên)',
           assignee: chosenAssignee,
-          progress: taskProgresses[idx] ? (parseInt(taskProgresses[idx].value) || 0) : (prevTask.progress || 0),
-          dueDate: taskDues[idx] ? taskDues[idx].value : (prevTask.dueDate || ''),
-          status: (taskProgresses[idx] && parseInt(taskProgresses[idx].value) === 100) ? 'completed' : 'active',
+          progress: progVal,
+          dueDate: dueVal,
+          status: progVal === 100 ? 'completed' : 'active',
           segmentIdx: sIdx,
           subSegmentIdx: subIdx,
           milestoneIdx: mlVal >= 0 ? mlVal : null,
@@ -1911,9 +1938,11 @@ function bindTaskActions() {
     if (!currentProj || !currentProj.tasks) return;
 
     checkedBoxes.forEach(cb => {
+      const taskId = cb.dataset.id;
       const idx = parseInt(cb.dataset.idx, 10);
-      if (currentProj.tasks[idx]) {
-        currentProj.tasks[idx].assignee = val;
+      const target = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      if (target) {
+        target.assignee = val;
       }
     });
     updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
@@ -1932,10 +1961,12 @@ function bindTaskActions() {
     if (!currentProj || !currentProj.tasks) return;
 
     checkedBoxes.forEach(cb => {
+      const taskId = cb.dataset.id;
       const idx = parseInt(cb.dataset.idx, 10);
-      if (currentProj.tasks[idx]) {
-        currentProj.tasks[idx].progress = pVal;
-        currentProj.tasks[idx].status = pVal >= 100 ? 'completed' : 'active';
+      const target = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      if (target) {
+        target.progress = pVal;
+        target.status = pVal >= 100 ? 'completed' : 'active';
       }
     });
     updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
@@ -1943,9 +1974,28 @@ function bindTaskActions() {
     refreshDetail();
   });
 
-  // Bulk Delete
+  // Bulk Delete (Trực tiếp, không phụ thuộc nút phụ)
   document.getElementById('bulk-delete-btn')?.addEventListener('click', () => {
-    document.getElementById('btn-delete-selected-tasks')?.click();
+    const checkedBoxes = document.querySelectorAll('.task-select-chk:checked');
+    if (checkedBoxes.length === 0) {
+      alert('Vui lòng tích chọn ít nhất một công việc để xóa!');
+      return;
+    }
+    if (confirm(`Bạn có chắc chắn muốn xóa ${checkedBoxes.length} công việc đã chọn? Thao tác này sẽ xóa vĩnh viễn khỏi hệ thống!`)) {
+      const selectedIds = new Set(Array.from(checkedBoxes).map(cb => cb.dataset.id).filter(Boolean));
+      const selectedIndices = new Set(Array.from(checkedBoxes).map(cb => parseInt(cb.dataset.idx, 10)));
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      if (!currentProj || !currentProj.tasks) return;
+
+      currentProj.tasks = currentProj.tasks.filter((t, idx) => {
+        if (t.id && selectedIds.has(t.id)) return false;
+        if (selectedIndices.has(idx)) return false;
+        return true;
+      });
+      updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
+      showToast(`🗑️ Đã xóa thành công ${checkedBoxes.length} công việc!`);
+      refreshDetail();
+    }
   });
 
   // Bulk Clear
@@ -1976,17 +2026,21 @@ function bindTaskActions() {
     refreshDetail();
   });
 
-  // 5. XÓA TỪNG CÔNG VIỆC
+  // 5. XÓA TỪNG CÔNG VIỆC (Định danh theo ID & Index an toàn)
   document.querySelectorAll('.btn-delete-task').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      const taskId = e.currentTarget.dataset.id;
       const idx = parseInt(e.currentTarget.dataset.idx, 10);
       const currentProj = getState().projects.find(p => p.id === selectedProjectId);
-      if (!currentProj || !currentProj.tasks || !currentProj.tasks[idx]) return;
+      if (!currentProj || !currentProj.tasks) return;
 
-      const taskName = currentProj.tasks[idx].name || 'công việc này';
+      const targetTask = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      if (!targetTask) return;
+
+      const taskName = targetTask.name || 'công việc này';
       if (confirm(`Bạn có chắc chắn muốn xóa "${taskName}" khỏi dự án?`)) {
-        currentProj.tasks.splice(idx, 1);
+        currentProj.tasks = currentProj.tasks.filter(t => (taskId ? t.id !== taskId : t !== targetTask));
         updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
         showToast(`🗑️ Đã xóa "${taskName}"!`);
         refreshDetail();
@@ -1994,30 +2048,11 @@ function bindTaskActions() {
     });
   });
 
-  // 6. XÓA CÔNG VIỆC ĐÃ CHỌN (BATCH DELETE)
-  document.getElementById('btn-delete-selected-tasks')?.addEventListener('click', () => {
-    const checkedBoxes = document.querySelectorAll('.task-select-chk:checked');
-    if (checkedBoxes.length === 0) {
-      alert('Vui lòng tích chọn ít nhất một công việc để xóa!');
-      return;
-    }
-    if (confirm(`Bạn có chắc chắn muốn xóa ${checkedBoxes.length} công việc đã chọn?`)) {
-      const indices = Array.from(checkedBoxes).map(cb => parseInt(cb.dataset.idx, 10)).sort((a, b) => b - a);
-      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
-      indices.forEach(idx => {
-        currentProj.tasks.splice(idx, 1);
-      });
-      updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
-      showToast(`🗑️ Đã xóa ${indices.length} công việc đã chọn!`);
-      refreshDetail();
-    }
-  });
-
-  // 7. XÓA TOÀN BỘ CÔNG VIỆC
+  // 6. XÓA TOÀN BỘ CÔNG VIỆC
   document.getElementById('btn-delete-all-tasks')?.addEventListener('click', () => {
     const currentProj = getState().projects.find(p => p.id === selectedProjectId);
     if (!currentProj || !currentProj.tasks || currentProj.tasks.length === 0) return;
-    if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa TOÀN BỘ ${currentProj.tasks.length} công việc của dự án này? Thao tác này không thể hoàn tác!`)) {
+    if (confirm(`⚠️ CẢNH BÁO NGUY HIỂM: Bạn có chắc chắn muốn xóa TOÀN BỘ ${currentProj.tasks.length} công việc của dự án này? Thao tác này sẽ làm sạch danh sách công việc!`)) {
       currentProj.tasks = [];
       updateProject(selectedProjectId, { tasks: [] });
       showToast('🗑️ Đã xóa toàn bộ công việc của dự án!');
@@ -2025,13 +2060,17 @@ function bindTaskActions() {
     }
   });
 
-  // 8. Xem modal chi tiết công việc
+  // 7. Xem & sửa modal chi tiết công việc
   document.querySelectorAll('.btn-task-detail').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      const taskId = e.currentTarget.dataset.id;
       const idx = parseInt(e.currentTarget.dataset.idx, 10);
       const currentProj = getState().projects.find(p => p.id === selectedProjectId);
-      if (currentProj && currentProj.tasks && currentProj.tasks[idx]) {
-        showItemDetailModal(currentProj.tasks[idx], idx, 'task', currentProj, refreshDetail);
+      if (!currentProj || !currentProj.tasks) return;
+      const targetTask = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      const targetIdx = targetTask ? currentProj.tasks.indexOf(targetTask) : idx;
+      if (targetTask && targetIdx >= 0) {
+        showItemDetailModal(targetTask, targetIdx, 'task', currentProj, refreshDetail);
       }
     });
   });

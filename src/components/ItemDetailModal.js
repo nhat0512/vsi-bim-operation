@@ -78,9 +78,12 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
             <textarea id="modal-item-links" class="form-input w-full" style="min-height: 80px; font-size: 0.85rem;" placeholder="https://acc.autodesk.com/...\nhttps://dropbox.com/...">${currentItem.cloudLinks || ''}</textarea>
           </div>
 
-          <div class="flex justify-end gap-sm" style="margin-top: 16px;">
-            <button class="btn btn-outline" id="modal-btn-cancel">Hủy</button>
-            <button class="btn btn-primary" id="modal-btn-save">💾 Lưu thay đổi</button>
+          <div class="flex justify-between items-center" style="margin-top: 16px;">
+            <button class="btn btn-outline btn-sm text-danger" id="modal-btn-delete" style="border-color: rgba(239, 68, 68, 0.4);">🗑️ Xóa ${isRfi ? 'RFI' : 'công việc'}</button>
+            <div class="flex gap-sm">
+              <button class="btn btn-outline" id="modal-btn-cancel">Hủy</button>
+              <button class="btn btn-primary" id="modal-btn-save">💾 Lưu thay đổi</button>
+            </div>
           </div>
         </div>
       `;
@@ -102,7 +105,10 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
               ` : ''}
             </div>
           </div>
-          <button class="btn btn-primary btn-sm" id="modal-btn-edit">✏️ Chỉnh sửa</button>
+          <div class="flex items-center gap-xs">
+            <button class="btn btn-primary btn-sm" id="modal-btn-edit">✏️ Chỉnh sửa</button>
+            <button class="btn btn-ghost btn-sm text-danger" id="modal-btn-delete-view" title="Xóa ${isRfi ? 'RFI' : 'công việc này'}" style="padding: 4px 8px;">🗑️</button>
+          </div>
         </div>
         
         <div>
@@ -180,11 +186,15 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
         currentItem.cloudLinks = linksVal;
         
         if (type === 'rfi') {
-           project.rfis[itemIdx] = currentItem;
-           updateProject(project.id, { rfis: project.rfis });
+          const rIndex = project.rfis.findIndex(r => r.id === currentItem.id);
+          if (rIndex >= 0) project.rfis[rIndex] = currentItem;
+          else project.rfis[itemIdx] = currentItem;
+          updateProject(project.id, { rfis: [...project.rfis] });
         } else {
-           project.tasks[itemIdx] = currentItem;
-           updateProject(project.id, { tasks: project.tasks });
+          const tIndex = project.tasks.findIndex(t => t.id === currentItem.id);
+          if (tIndex >= 0) project.tasks[tIndex] = currentItem;
+          else project.tasks[itemIdx] = currentItem;
+          updateProject(project.id, { tasks: [...project.tasks] });
         }
 
         isEditing = false;
@@ -193,6 +203,24 @@ export function showItemDetailModal(item, itemIdx, type, project, onSaveCb) {
         if (onSaveCb) onSaveCb();
       });
     }
+
+    const handleDelete = () => {
+      const itemTitle = type === 'rfi' ? (currentItem.title || 'RFI này') : (currentItem.name || 'công việc này');
+      if (confirm(`Bạn có chắc chắn muốn xóa "${itemTitle}" khỏi dự án?`)) {
+        if (type === 'rfi') {
+          project.rfis = (project.rfis || []).filter(r => (currentItem.id ? r.id !== currentItem.id : r !== item));
+          updateProject(project.id, { rfis: [...project.rfis] });
+        } else {
+          project.tasks = (project.tasks || []).filter(t => (currentItem.id ? t.id !== currentItem.id : t !== item));
+          updateProject(project.id, { tasks: [...project.tasks] });
+        }
+        closeModal();
+        if (onSaveCb) onSaveCb();
+      }
+    };
+
+    document.getElementById('modal-btn-delete')?.addEventListener('click', handleDelete);
+    document.getElementById('modal-btn-delete-view')?.addEventListener('click', handleDelete);
 
     const btnSend = document.getElementById('modal-btn-send-comment');
     const inputComment = document.getElementById('modal-comment-input');

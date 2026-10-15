@@ -15,7 +15,9 @@ let currentTaskViewMode = 'table'; // 'table' | 'kanban'
 let hoursSummaryCache = { key: '', data: null };
 
 function getIsEditing() {
-  return ['BIM Manager', 'Project Manager'].includes(getState().currentUserRole);
+  const { currentUserRole, currentUser } = getState();
+  const role = currentUser?.role || currentUserRole;
+  return ['BIM Manager', 'Project Manager', 'Admin'].includes(role);
 }
 
 function showToast(message, type = 'success') {
@@ -173,7 +175,7 @@ export function render() {
             <span class="badge-dot"></span>
             ${statusInfo.label}
           </span>
-          ${['BIM Manager', 'Project Manager'].includes(getState().currentUserRole) ? `<button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>` : ''}
+          ${getIsEditing() ? `<button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>` : ''}
         `}
       </div>
 
@@ -189,7 +191,7 @@ export function render() {
 
       <!-- Project KPIs (6 thẻ thống kê nhanh) -->
       <div class="kpi-grid stagger-children mb-lg" style="grid-template-columns: repeat(6, 1fr);">
-        <div class="kpi-card blue"><div class="kpi-card-value">${project.progress}%</div><div class="kpi-card-label">Tiến độ</div></div>
+        <div class="kpi-card blue"><div class="kpi-card-value" id="proj-kpi-progress">${project.progress}%</div><div class="kpi-card-label">Tiến độ</div></div>
         <div class="kpi-card green"><div class="kpi-card-value">${project.modelHealth}%</div><div class="kpi-card-label">Model Health</div></div>
         <div class="kpi-card purple"><div class="kpi-card-value">LOD ${project.lodCurrent}</div><div class="kpi-card-label">LOD hiện tại</div></div>
         <div class="kpi-card cyan"><div class="kpi-card-value">${project.teamSize}</div><div class="kpi-card-label">Thành viên</div></div>
@@ -902,8 +904,8 @@ function renderSegmentsSection(project, isEditing) {
                       ` : `
                         ${isEditing ? `
                           <div class="flex items-center gap-xs justify-center">
-                            <input type="range" class="edit-segment-matrix-progress" data-sidx="${sIdx}" data-midx="${mIdx}" value="${pValue}" min="0" max="100" style="width: 70px;">
-                            <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'};">${pValue}%</span>
+                            <input type="range" class="edit-segment-matrix-progress" data-sidx="${sIdx}" data-midx="${mIdx}" value="${pValue}" min="0" max="100" style="width: 70px; cursor: pointer; accent-color: var(--accent-primary);">
+                            <span class="text-xs font-bold matrix-progress-label" style="width: 35px; text-align: right; color: ${pValue >= 100 ? 'var(--text-success)' : 'inherit'}; cursor: pointer;" title="Kéo thanh trượt hoặc nhấp đúp để nhập %">${pValue}%</span>
                           </div>
                         ` : `
                           <div class="flex items-center gap-xs justify-center">
@@ -945,8 +947,8 @@ function renderSegmentsSection(project, isEditing) {
                           <td style="border-right: 1px solid var(--border-subtle); text-align: center; padding: 6px;">
                             ${isEditing ? `
                               <div class="flex items-center gap-xs justify-center">
-                                <input type="range" class="edit-subsegment-matrix-progress" data-sidx="${sIdx}" data-subidx="${subIdx}" data-midx="${mIdx}" value="${subPValue}" min="0" max="100" style="width: 70px;">
-                                <span class="text-xs font-bold" style="width: 35px; text-align: right; color: ${subPValue >= 100 ? 'var(--text-success)' : 'inherit'};">${subPValue}%</span>
+                                <input type="range" class="edit-subsegment-matrix-progress" data-sidx="${sIdx}" data-subidx="${subIdx}" data-midx="${mIdx}" value="${subPValue}" min="0" max="100" style="width: 70px; cursor: pointer; accent-color: var(--accent-primary);">
+                                <span class="text-xs font-bold matrix-progress-label" style="width: 35px; text-align: right; color: ${subPValue >= 100 ? 'var(--text-success)' : 'inherit'}; cursor: pointer;" title="Kéo thanh trượt hoặc nhấp đúp để nhập %">${subPValue}%</span>
                               </div>
                               <input type="date" class="form-input edit-subsegment-matrix-date inline-edit" data-sidx="${sIdx}" data-subidx="${subIdx}" data-midx="${mIdx}" value="${subDeadline}" style="font-size: 0.7rem; padding: 2px 4px; margin-top: 4px; text-align: center; width: 100%;">
                             ` : `
@@ -1302,8 +1304,8 @@ function renderPhases(project) {
                   <option value="completed" ${phase.status === 'completed' ? 'selected' : ''}>Hoàn thành</option>
                 </select>
                 <div class="flex items-center gap-xs">
-                  <input type="range" class="edit-phase-progress" data-idx="${idx}" value="${phase.progress}" min="0" max="100" style="width: 70px;">
-                  <span class="text-xs font-bold" style="width: 30px; text-align: right;">${phase.progress}%</span>
+                  <input type="range" class="edit-phase-progress" data-idx="${idx}" value="${phase.progress}" min="0" max="100" style="width: 70px; cursor: pointer; accent-color: var(--accent-primary);">
+                  <span class="text-xs font-bold edit-phase-progress-label" style="width: 30px; text-align: right;">${phase.progress}%</span>
                 </div>
               </div>
             ` : `
@@ -1384,6 +1386,7 @@ function switchProjectTab(targetTab) {
     const projectTimesheets = (getState().timesheets || []).filter(t => t.projectId === project.id);
     const hoursSummaryData = computeProjectHoursSummary(project, projectTimesheets);
     initHoursSummaryCharts(hoursSummaryData);
+    bindOverviewActions();
   }
   if (targetTab === 'tasks' || targetTab === 'all') {
     bindTaskActions();
@@ -1394,6 +1397,348 @@ function switchProjectTab(targetTab) {
   if (targetTab === 'rfis' || targetTab === 'all') {
     bindRfiActions();
   }
+}
+
+let projectAutoSaveTimer = null;
+function triggerProjectAutoSave() {
+  clearTimeout(projectAutoSaveTimer);
+  projectAutoSaveTimer = setTimeout(() => {
+    performSilentSave();
+  }, 400);
+}
+
+function handleMatrixSliderInput(slider) {
+  if (!slider) return;
+  const val = Math.min(100, Math.max(0, parseInt(slider.value) || 0));
+
+  // 1. Cập nhật nhãn text bên cạnh slider ngay lập tức
+  const label = slider.parentElement?.querySelector('.matrix-progress-label') || slider.nextElementSibling;
+  if (label) {
+    label.textContent = `${val}%`;
+    label.style.color = val >= 100 ? 'var(--text-success)' : 'inherit';
+  }
+
+  // 2. Nếu là phân đoạn con (subsegment): tự động tính lại tiến độ trung bình của phân đoạn cha
+  if (slider.classList.contains('edit-subsegment-matrix-progress')) {
+    const sIdx = slider.dataset.sidx;
+    const mIdx = slider.dataset.midx;
+    const subSliders = document.querySelectorAll(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+    if (subSliders.length > 0) {
+      let sum = 0;
+      subSliders.forEach(sub => {
+        sum += Math.min(100, Math.max(0, parseInt(sub.value) || 0));
+      });
+      const avg = Math.round(sum / subSliders.length);
+
+      // Cập nhật thanh tiến độ cha
+      const parentFill = document.querySelector(`.parent-progress-fill-${sIdx}-${mIdx}`);
+      if (parentFill) {
+        parentFill.style.width = `${avg}%`;
+        if (avg >= 100) parentFill.classList.add('green');
+        else parentFill.classList.remove('green');
+      }
+
+      // Cập nhật số % của cha
+      const parentText = document.querySelector(`.parent-progress-text-${sIdx}-${mIdx}`);
+      if (parentText) {
+        parentText.textContent = `${avg}%`;
+        parentText.style.color = avg >= 100 ? 'var(--text-success)' : 'inherit';
+      }
+
+      // Cập nhật input hidden của cha để lưu đúng
+      const parentHidden = document.getElementById(`parent-hidden-${sIdx}-${mIdx}`);
+      if (parentHidden) {
+        parentHidden.value = avg;
+      }
+    }
+  }
+
+  // 3. Tự động lưu ngầm
+  triggerProjectAutoSave();
+}
+
+function handlePhaseSliderInput(slider) {
+  if (!slider) return;
+  const val = Math.min(100, Math.max(0, parseInt(slider.value) || 0));
+  const label = slider.parentElement?.querySelector('.edit-phase-progress-label') || slider.nextElementSibling;
+  if (label) {
+    label.textContent = `${val}%`;
+  }
+  triggerProjectAutoSave();
+}
+
+function bindOverviewActions() {
+  document.querySelectorAll('.edit-phase-progress').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      handlePhaseSliderInput(e.target);
+    });
+    slider.addEventListener('change', (e) => {
+      handlePhaseSliderInput(e.target);
+      triggerProjectAutoSave();
+    });
+  });
+}
+
+function performSilentSave() {
+  const { selectedProjectId } = getState();
+  const currentProject = getState().projects.find(p => p.id === selectedProjectId);
+  if (!currentProject) return;
+
+  const indicator = document.getElementById('auto-save-indicator');
+  if (indicator) indicator.style.display = 'flex';
+
+  const updates = {};
+  const nameEl = document.getElementById('edit-name');
+  if (nameEl && nameEl.value) updates.name = nameEl.value;
+  const codeEl = document.getElementById('edit-code');
+  if (codeEl && codeEl.value) updates.code = codeEl.value;
+  const statusEl = document.getElementById('edit-status');
+  if (statusEl) updates.status = statusEl.value;
+  const typeEl = document.getElementById('edit-type');
+  if (typeEl) updates.type = typeEl.value;
+  const clientEl = document.getElementById('edit-client');
+  if (clientEl) updates.client = clientEl.value;
+  const locationEl = document.getElementById('edit-location');
+  if (locationEl) updates.location = locationEl.value;
+  const lengthEl = document.getElementById('edit-length');
+  if (lengthEl) updates.length = lengthEl.value;
+  const budgetEl = document.getElementById('edit-budget');
+  if (budgetEl) updates.budget = budgetEl.value;
+  const lodEl = document.getElementById('edit-lod');
+  if (lodEl) updates.lodTarget = parseInt(lodEl.value) || 300;
+  const leadEl = document.getElementById('edit-lead');
+  if (leadEl && leadEl.value) updates.teamLead = leadEl.value;
+  const startEl = document.getElementById('edit-start');
+  if (startEl && startEl.value) updates.startDate = startEl.value;
+  const endEl = document.getElementById('edit-end');
+  if (endEl && endEl.value) updates.endDate = endEl.value;
+
+  // Cột mốc
+  const milestoneNames = document.querySelectorAll('.edit-milestone-name');
+  const milestoneDates = document.querySelectorAll('.edit-milestone-date');
+  if (milestoneNames.length > 0) {
+    const newMilestones = [];
+    milestoneNames.forEach((el, idx) => {
+      newMilestones.push({
+        id: (currentProject.milestones || [])[idx]?.id || `M${Date.now()}_${idx}`,
+        name: el.value,
+        date: milestoneDates[idx]?.value || (currentProject.milestones || [])[idx]?.date || ''
+      });
+    });
+    updates.milestones = newMilestones;
+  }
+
+  // Phân đoạn & ma trận
+  const segmentNames = document.querySelectorAll('.edit-segment-name');
+  if (segmentNames.length > 0) {
+    const newSegments = [];
+    const activeMilestones = (updates.milestones || currentProject.milestones || []);
+    segmentNames.forEach((el, sIdx) => {
+      const segName = el.value;
+      const progresses = [];
+      const deadlines = [];
+      activeMilestones.forEach((m, mIdx) => {
+        const slider = document.querySelector(`.edit-segment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+        progresses.push(slider ? parseInt(slider.value) : (currentProject.segments?.[sIdx]?.progresses?.[mIdx] || 0));
+        const dateInput = document.querySelector(`.edit-segment-matrix-date[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
+        deadlines.push(dateInput ? dateInput.value : (currentProject.segments?.[sIdx]?.deadlines?.[mIdx] || ''));
+      });
+      
+      const subSegments = [];
+      const subNameInputs = document.querySelectorAll(`.edit-subsegment-name[data-sidx="${sIdx}"]`);
+      subNameInputs.forEach((subEl, subIdx) => {
+        const subProgresses = [];
+        const subDeadlines = [];
+        activeMilestones.forEach((m, mIdx) => {
+          const subSlider = document.querySelector(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+          subProgresses.push(subSlider ? parseInt(subSlider.value) : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.progresses?.[mIdx] || 0));
+          const subDateInput = document.querySelector(`.edit-subsegment-matrix-date[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
+          subDeadlines.push(subDateInput ? subDateInput.value : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.deadlines?.[mIdx] || ''));
+        });
+        subSegments.push({
+          id: currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.id || `Sub_${Date.now()}_${sIdx}_${subIdx}`,
+          name: subEl.value,
+          progresses: subProgresses,
+          deadlines: subDeadlines
+        });
+      });
+      
+      if (subSegments.length > 0) {
+        activeMilestones.forEach((m, mIdx) => {
+          const sum = subSegments.reduce((acc, sub) => acc + (sub.progresses[mIdx] || 0), 0);
+          progresses[mIdx] = Math.round(sum / subSegments.length);
+        });
+      }
+      
+      const avgProgress = progresses.length ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length) : 0;
+      newSegments.push({
+        id: currentProject.segments?.[sIdx]?.id || `S${Date.now()}_${sIdx}`,
+        name: segName,
+        progress: avgProgress,
+        progresses: progresses,
+        deadlines: deadlines,
+        subSegments: subSegments
+      });
+    });
+    updates.segments = newSegments;
+    if (newSegments.length > 0) {
+      const totalSegProgress = newSegments.reduce((sum, s) => sum + (s.progress || 0), 0);
+      updates.progress = Math.round(totalSegProgress / newSegments.length);
+    }
+  }
+
+  // Tasks (chỉ cập nhật danh sách task hiện có, KHÔNG BAO GIỜ tự nối lại task đã xóa)
+  const taskNames = document.querySelectorAll('.edit-task-name');
+  if (taskNames.length > 0) {
+    const taskAssignees = document.querySelectorAll('.edit-task-assignee');
+    const taskProgresses = document.querySelectorAll('.edit-task-progress');
+    const taskDues = document.querySelectorAll('.edit-task-due');
+    const taskSegments = document.querySelectorAll('.edit-task-segment');
+    const taskMilestones = document.querySelectorAll('.edit-task-milestone');
+    const newTasks = [];
+
+    taskNames.forEach((el, idx) => {
+      const taskId = el.dataset.id || currentProject.tasks?.[idx]?.id;
+      const prevTask = (taskId ? currentProject.tasks?.find(t => t.id === taskId) : null) || currentProject.tasks?.[idx] || {};
+
+      // Nếu task này đã bị xóa khỏi currentProject.tasks, không phục hồi lại từ DOM
+      if (taskId && currentProject.tasks && !currentProject.tasks.some(t => t.id === taskId)) {
+        return;
+      }
+
+      const segEl = (taskId ? document.querySelector(`.edit-task-segment[data-id="${taskId}"]`) : null) || taskSegments[idx];
+      const segValStr = segEl?.value || "-1";
+      const mlEl = (taskId ? document.querySelector(`.edit-task-milestone[data-id="${taskId}"]`) : null) || taskMilestones[idx];
+      const mlVal = parseInt(mlEl?.value);
+      let sIdx = null, subIdx = null;
+      if (segValStr !== "-1") {
+        const parts = segValStr.split('_');
+        sIdx = parseInt(parts[0]);
+        if (parts.length > 1) subIdx = parseInt(parts[1]);
+      }
+
+      const assigneeEl = (taskId ? document.querySelector(`.edit-task-assignee[data-id="${taskId}"]`) : null) || taskAssignees[idx];
+      const chosenAssignee = assigneeEl ? assigneeEl.value : (prevTask.assignee || '');
+
+      const progEl = (taskId ? document.querySelector(`.edit-task-progress[data-id="${taskId}"]`) : null) || taskProgresses[idx];
+      const progVal = progEl ? (parseInt(progEl.value) || 0) : (prevTask.progress || 0);
+
+      const dueEl = (taskId ? document.querySelector(`.edit-task-due[data-id="${taskId}"]`) : null) || taskDues[idx];
+      const dueVal = dueEl ? dueEl.value : (prevTask.dueDate || '');
+
+      const cleanName = el.value !== undefined ? el.value : (prevTask.name || '');
+
+      newTasks.push({
+        id: taskId || prevTask.id || `t_${Date.now()}_${idx}`,
+        name: cleanName || '(Chưa đặt tên)',
+        assignee: chosenAssignee,
+        progress: progVal,
+        dueDate: dueVal,
+        status: progVal === 100 ? 'completed' : 'active',
+        segmentIdx: sIdx,
+        subSegmentIdx: subIdx,
+        milestoneIdx: mlVal >= 0 ? mlVal : null,
+        phase: prevTask.phase || 'BVTC',
+        lod: prevTask.lod || 'LOD 300',
+        chainage: prevTask.chainage || '',
+        dailyHours_planned: prevTask.dailyHours_planned || {},
+        dailyHours_actual: prevTask.dailyHours_actual || {},
+        description: prevTask.description || '',
+        cloudLinks: prevTask.cloudLinks || ''
+      });
+    });
+    updates.tasks = newTasks;
+    if (updates.progress === undefined && newTasks.length > 0) {
+      const totalTaskProgress = newTasks.reduce((sum, t) => sum + (t.progress || 0), 0);
+      updates.progress = Math.round(totalTaskProgress / newTasks.length);
+    }
+  }
+
+  // Phases
+  const phaseStarts = document.querySelectorAll('.edit-phase-start');
+  if (phaseStarts.length > 0) {
+    const phaseEnds = document.querySelectorAll('.edit-phase-end');
+    const phaseStatuses = document.querySelectorAll('.edit-phase-status');
+    const phaseProgresses = document.querySelectorAll('.edit-phase-progress');
+    const newPhases = [];
+    phaseStarts.forEach((el, idx) => {
+      newPhases.push({
+        id: (currentProject.phases || [])[idx]?.id || `phase-${idx}`,
+        startDate: el.value,
+        endDate: phaseEnds[idx]?.value || '',
+        status: phaseStatuses[idx]?.value || 'not_started',
+        progress: parseInt(phaseProgresses[idx]?.value) || 0
+      });
+    });
+    updates.phases = newPhases;
+  }
+
+  // RFIs
+  const rfiCodes = document.querySelectorAll('.edit-rfi-code');
+  if (rfiCodes.length > 0) {
+    const rfiTitles = document.querySelectorAll('.edit-rfi-title');
+    const rfiPriorities = document.querySelectorAll('.edit-rfi-priority');
+    const rfiStatuses = document.querySelectorAll('.edit-rfi-status');
+    const rfiAssignees = document.querySelectorAll('.edit-rfi-assignee');
+    const rfiDues = document.querySelectorAll('.edit-rfi-due');
+    const rfiSegments = document.querySelectorAll('.edit-rfi-segment');
+    const rfiMilestones = document.querySelectorAll('.edit-rfi-milestone');
+    const newRfis = [];
+    rfiCodes.forEach((el, idx) => {
+      let sIdx = null, subIdx = null;
+      if (rfiSegments[idx]) {
+        const segValStr = rfiSegments[idx].value;
+        if (segValStr !== "-1") {
+          const parts = segValStr.split('_');
+          sIdx = parseInt(parts[0]);
+          if (parts.length > 1) subIdx = parseInt(parts[1]);
+        }
+      }
+      let mIdx = null;
+      if (rfiMilestones[idx]) {
+        const mlVal = parseInt(rfiMilestones[idx].value);
+        if (mlVal >= 0) mIdx = mlVal;
+      }
+      const prevRfi = (currentProject.rfis || [])[idx] || {};
+      const chosenRfiAssignee = (rfiAssignees[idx] && rfiAssignees[idx].value) ? rfiAssignees[idx].value : (prevRfi.assignee || '');
+      newRfis.push({
+        id: prevRfi.id || `rfi-${Date.now()}-${idx}`,
+        code: el.value || prevRfi.code,
+        title: rfiTitles[idx]?.value || prevRfi.title,
+        priority: rfiPriorities[idx]?.value || prevRfi.priority || 'Medium',
+        status: rfiStatuses[idx]?.value || prevRfi.status || 'Open',
+        assignee: chosenRfiAssignee,
+        dueDate: rfiDues[idx]?.value || prevRfi.dueDate || '',
+        segmentIdx: sIdx,
+        subSegmentIdx: subIdx,
+        milestoneIdx: mIdx,
+        description: prevRfi.description || '',
+        cloudLinks: prevRfi.cloudLinks || ''
+      });
+    });
+    updates.rfis = newRfis;
+  }
+
+  updateProject(selectedProjectId, updates);
+
+  if (updates.progress !== undefined) {
+    const kpiEl = document.getElementById('proj-kpi-progress');
+    if (kpiEl) kpiEl.textContent = `${updates.progress}%`;
+  }
+
+  setTimeout(() => {
+    const indicator = document.getElementById('auto-save-indicator');
+    if (indicator) {
+      indicator.innerHTML = '<span style="font-size: 0.8rem; font-weight: bold; color: var(--text-success);">✅ Đã lưu</span>';
+      setTimeout(() => {
+        indicator.style.display = 'none';
+        indicator.innerHTML = `
+          <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+          <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">Đang lưu...</span>
+        `;
+      }, 1500);
+    }
+  }, 400);
 }
 
 // ============================================
@@ -1422,6 +1767,7 @@ export function init() {
     const projectTimesheets = (getState().timesheets || []).filter(t => t.projectId === project.id);
     const hoursSummaryData = computeProjectHoursSummary(project, projectTimesheets);
     initHoursSummaryCharts(hoursSummaryData);
+    bindOverviewActions();
   }
 
   // 3. Khởi tạo sự kiện Công việc (nếu ở tab tasks hoặc all)
@@ -1441,267 +1787,26 @@ export function init() {
 
   // 6. Xử lý chỉnh sửa chung (General Edit)
   const isEditing = getIsEditing();
-  const performSilentSave = () => {
-    const currentProject = getState().projects.find(p => p.id === selectedProjectId);
-    if (!currentProject) return;
-
-    const indicator = document.getElementById('auto-save-indicator');
-    if (indicator) indicator.style.display = 'flex';
-
-    const updates = {};
-    const nameEl = document.getElementById('edit-name');
-    if (nameEl && nameEl.value) updates.name = nameEl.value;
-    const codeEl = document.getElementById('edit-code');
-    if (codeEl && codeEl.value) updates.code = codeEl.value;
-    const statusEl = document.getElementById('edit-status');
-    if (statusEl) updates.status = statusEl.value;
-    const typeEl = document.getElementById('edit-type');
-    if (typeEl) updates.type = typeEl.value;
-    const clientEl = document.getElementById('edit-client');
-    if (clientEl) updates.client = clientEl.value;
-    const locationEl = document.getElementById('edit-location');
-    if (locationEl) updates.location = locationEl.value;
-    const lengthEl = document.getElementById('edit-length');
-    if (lengthEl) updates.length = lengthEl.value;
-    const budgetEl = document.getElementById('edit-budget');
-    if (budgetEl) updates.budget = budgetEl.value;
-    const lodEl = document.getElementById('edit-lod');
-    if (lodEl) updates.lodTarget = parseInt(lodEl.value) || 300;
-    const leadEl = document.getElementById('edit-lead');
-    if (leadEl && leadEl.value) updates.teamLead = leadEl.value;
-    const startEl = document.getElementById('edit-start');
-    if (startEl && startEl.value) updates.startDate = startEl.value;
-    const endEl = document.getElementById('edit-end');
-    if (endEl && endEl.value) updates.endDate = endEl.value;
-
-    // Cột mốc
-    const milestoneNames = document.querySelectorAll('.edit-milestone-name');
-    const milestoneDates = document.querySelectorAll('.edit-milestone-date');
-    if (milestoneNames.length > 0) {
-      const newMilestones = [];
-      milestoneNames.forEach((el, idx) => {
-        newMilestones.push({
-          id: (currentProject.milestones || [])[idx]?.id || `M${Date.now()}_${idx}`,
-          name: el.value,
-          date: milestoneDates[idx]?.value || (currentProject.milestones || [])[idx]?.date || ''
-        });
-      });
-      updates.milestones = newMilestones;
-    }
-
-    // Phân đoạn & ma trận
-    const segmentNames = document.querySelectorAll('.edit-segment-name');
-    if (segmentNames.length > 0) {
-      const newSegments = [];
-      const activeMilestones = (updates.milestones || currentProject.milestones || []);
-      segmentNames.forEach((el, sIdx) => {
-        const segName = el.value;
-        const progresses = [];
-        const deadlines = [];
-        activeMilestones.forEach((m, mIdx) => {
-          const slider = document.querySelector(`.edit-segment-matrix-progress[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
-          progresses.push(slider ? parseInt(slider.value) : (currentProject.segments?.[sIdx]?.progresses?.[mIdx] || 0));
-          const dateInput = document.querySelector(`.edit-segment-matrix-date[data-sidx="${sIdx}"][data-midx="${mIdx}"]`);
-          deadlines.push(dateInput ? dateInput.value : (currentProject.segments?.[sIdx]?.deadlines?.[mIdx] || ''));
-        });
-        
-        const subSegments = [];
-        const subNameInputs = document.querySelectorAll(`.edit-subsegment-name[data-sidx="${sIdx}"]`);
-        subNameInputs.forEach((subEl, subIdx) => {
-          const subProgresses = [];
-          const subDeadlines = [];
-          activeMilestones.forEach((m, mIdx) => {
-            const subSlider = document.querySelector(`.edit-subsegment-matrix-progress[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
-            subProgresses.push(subSlider ? parseInt(subSlider.value) : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.progresses?.[mIdx] || 0));
-            const subDateInput = document.querySelector(`.edit-subsegment-matrix-date[data-sidx="${sIdx}"][data-subidx="${subIdx}"][data-midx="${mIdx}"]`);
-            subDeadlines.push(subDateInput ? subDateInput.value : (currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.deadlines?.[mIdx] || ''));
-          });
-          subSegments.push({
-            id: currentProject.segments?.[sIdx]?.subSegments?.[subIdx]?.id || `Sub_${Date.now()}_${sIdx}_${subIdx}`,
-            name: subEl.value,
-            progresses: subProgresses,
-            deadlines: subDeadlines
-          });
-        });
-        
-        if (subSegments.length > 0) {
-          activeMilestones.forEach((m, mIdx) => {
-            const sum = subSegments.reduce((acc, sub) => acc + (sub.progresses[mIdx] || 0), 0);
-            progresses[mIdx] = Math.round(sum / subSegments.length);
-          });
-        }
-        
-        const avgProgress = progresses.length ? Math.round(progresses.reduce((a, b) => a + b, 0) / progresses.length) : 0;
-        newSegments.push({
-          id: currentProject.segments?.[sIdx]?.id || `S${Date.now()}_${sIdx}`,
-          name: segName,
-          progress: avgProgress,
-          progresses: progresses,
-          deadlines: deadlines,
-          subSegments: subSegments
-        });
-      });
-      updates.segments = newSegments;
-    }
-
-    // Tasks (chỉ cập nhật danh sách task hiện có, KHÔNG BAO GIỜ tự nối lại task đã xóa)
-    const taskNames = document.querySelectorAll('.edit-task-name');
-    if (taskNames.length > 0) {
-      const taskAssignees = document.querySelectorAll('.edit-task-assignee');
-      const taskProgresses = document.querySelectorAll('.edit-task-progress');
-      const taskDues = document.querySelectorAll('.edit-task-due');
-      const taskSegments = document.querySelectorAll('.edit-task-segment');
-      const taskMilestones = document.querySelectorAll('.edit-task-milestone');
-      const newTasks = [];
-
-      taskNames.forEach((el, idx) => {
-        const taskId = el.dataset.id || currentProject.tasks?.[idx]?.id;
-        const prevTask = (taskId ? currentProject.tasks?.find(t => t.id === taskId) : null) || currentProject.tasks?.[idx] || {};
-
-        // Nếu task này đã bị xóa khỏi currentProject.tasks, không phục hồi lại từ DOM
-        if (taskId && currentProject.tasks && !currentProject.tasks.some(t => t.id === taskId)) {
-          return;
-        }
-
-        const segEl = (taskId ? document.querySelector(`.edit-task-segment[data-id="${taskId}"]`) : null) || taskSegments[idx];
-        const segValStr = segEl?.value || "-1";
-        const mlEl = (taskId ? document.querySelector(`.edit-task-milestone[data-id="${taskId}"]`) : null) || taskMilestones[idx];
-        const mlVal = parseInt(mlEl?.value);
-        let sIdx = null, subIdx = null;
-        if (segValStr !== "-1") {
-          const parts = segValStr.split('_');
-          sIdx = parseInt(parts[0]);
-          if (parts.length > 1) subIdx = parseInt(parts[1]);
-        }
-
-        const assigneeEl = (taskId ? document.querySelector(`.edit-task-assignee[data-id="${taskId}"]`) : null) || taskAssignees[idx];
-        const chosenAssignee = assigneeEl ? assigneeEl.value : (prevTask.assignee || '');
-
-        const progEl = (taskId ? document.querySelector(`.edit-task-progress[data-id="${taskId}"]`) : null) || taskProgresses[idx];
-        const progVal = progEl ? (parseInt(progEl.value) || 0) : (prevTask.progress || 0);
-
-        const dueEl = (taskId ? document.querySelector(`.edit-task-due[data-id="${taskId}"]`) : null) || taskDues[idx];
-        const dueVal = dueEl ? dueEl.value : (prevTask.dueDate || '');
-
-        // Cho phép chỉnh sửa hoặc xóa trắng tên mà không bị tự phục hồi chuỗi cũ
-        const cleanName = el.value !== undefined ? el.value : (prevTask.name || '');
-
-        newTasks.push({
-          id: taskId || prevTask.id || `t_${Date.now()}_${idx}`,
-          name: cleanName || '(Chưa đặt tên)',
-          assignee: chosenAssignee,
-          progress: progVal,
-          dueDate: dueVal,
-          status: progVal === 100 ? 'completed' : 'active',
-          segmentIdx: sIdx,
-          subSegmentIdx: subIdx,
-          milestoneIdx: mlVal >= 0 ? mlVal : null,
-          phase: prevTask.phase || 'BVTC',
-          lod: prevTask.lod || 'LOD 300',
-          chainage: prevTask.chainage || '',
-          dailyHours_planned: prevTask.dailyHours_planned || {},
-          dailyHours_actual: prevTask.dailyHours_actual || {},
-          description: prevTask.description || '',
-          cloudLinks: prevTask.cloudLinks || ''
-        });
-      });
-      updates.tasks = newTasks;
-    }
-
-    // Phases
-    const phaseStarts = document.querySelectorAll('.edit-phase-start');
-    if (phaseStarts.length > 0) {
-      const phaseEnds = document.querySelectorAll('.edit-phase-end');
-      const phaseStatuses = document.querySelectorAll('.edit-phase-status');
-      const phaseProgresses = document.querySelectorAll('.edit-phase-progress');
-      const newPhases = [];
-      phaseStarts.forEach((el, idx) => {
-        newPhases.push({
-          id: (currentProject.phases || [])[idx]?.id || `phase-${idx}`,
-          startDate: el.value,
-          endDate: phaseEnds[idx]?.value || '',
-          status: phaseStatuses[idx]?.value || 'not_started',
-          progress: parseInt(phaseProgresses[idx]?.value) || 0
-        });
-      });
-      updates.phases = newPhases;
-    }
-
-    // RFIs
-    const rfiCodes = document.querySelectorAll('.edit-rfi-code');
-    if (rfiCodes.length > 0) {
-      const rfiTitles = document.querySelectorAll('.edit-rfi-title');
-      const rfiPriorities = document.querySelectorAll('.edit-rfi-priority');
-      const rfiStatuses = document.querySelectorAll('.edit-rfi-status');
-      const rfiAssignees = document.querySelectorAll('.edit-rfi-assignee');
-      const rfiDues = document.querySelectorAll('.edit-rfi-due');
-      const rfiSegments = document.querySelectorAll('.edit-rfi-segment');
-      const rfiMilestones = document.querySelectorAll('.edit-rfi-milestone');
-      const newRfis = [];
-      rfiCodes.forEach((el, idx) => {
-        let sIdx = null, subIdx = null;
-        if (rfiSegments[idx]) {
-          const segValStr = rfiSegments[idx].value;
-          if (segValStr !== "-1") {
-            const parts = segValStr.split('_');
-            sIdx = parseInt(parts[0]);
-            if (parts.length > 1) subIdx = parseInt(parts[1]);
-          }
-        }
-        let mIdx = null;
-        if (rfiMilestones[idx]) {
-          const mlVal = parseInt(rfiMilestones[idx].value);
-          if (mlVal >= 0) mIdx = mlVal;
-        }
-        const prevRfi = (currentProject.rfis || [])[idx] || {};
-        const chosenRfiAssignee = (rfiAssignees[idx] && rfiAssignees[idx].value) ? rfiAssignees[idx].value : (prevRfi.assignee || '');
-        newRfis.push({
-          id: prevRfi.id || `rfi-${Date.now()}-${idx}`,
-          code: el.value || prevRfi.code,
-          title: rfiTitles[idx]?.value || prevRfi.title,
-          priority: rfiPriorities[idx]?.value || prevRfi.priority || 'Medium',
-          status: rfiStatuses[idx]?.value || prevRfi.status || 'Open',
-          assignee: chosenRfiAssignee,
-          dueDate: rfiDues[idx]?.value || prevRfi.dueDate || '',
-          segmentIdx: sIdx,
-          subSegmentIdx: subIdx,
-          milestoneIdx: mIdx,
-          description: prevRfi.description || '',
-          cloudLinks: prevRfi.cloudLinks || ''
-        });
-      });
-      updates.rfis = newRfis;
-    }
-
-    updateProject(selectedProjectId, updates);
-
-    setTimeout(() => {
-      const indicator = document.getElementById('auto-save-indicator');
-      if (indicator) {
-        indicator.innerHTML = '<span style="font-size: 0.8rem; font-weight: bold; color: var(--text-success);">✅ Đã lưu</span>';
-        setTimeout(() => {
-          indicator.style.display = 'none';
-          indicator.innerHTML = `
-            <span class="spinner" style="width: 14px; height: 14px; border: 2px solid var(--accent-primary); border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
-            <span style="font-size: 0.8rem; font-weight: bold; color: var(--text-secondary);">Đang lưu...</span>
-          `;
-        }, 1500);
-      }
-    }, 400);
-  };
-
   if (isEditing) {
     const container = document.getElementById('page-content');
-    if (container && !container.dataset.hasSaveListener) {
-      container.dataset.hasSaveListener = "true";
-      let autoSaveTimeout;
+    if (container && !container.dataset.hasProjectDetailSaveListener) {
+      container.dataset.hasProjectDetailSaveListener = "true";
+      
       container.addEventListener('change', (e) => {
         if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') return;
         if (e.target.classList.contains('task-select-chk') || e.target.id === 'chk-select-all-tasks') return;
-        clearTimeout(autoSaveTimeout);
-        autoSaveTimeout = setTimeout(() => {
-          performSilentSave();
-        }, 500);
+        triggerProjectAutoSave();
+      });
+
+      // Lắng nghe realtime khi kéo thanh trượt (input event)
+      container.addEventListener('input', (e) => {
+        if (e.target.type === 'range') {
+          if (e.target.classList.contains('edit-subsegment-matrix-progress') || e.target.classList.contains('edit-segment-matrix-progress')) {
+            handleMatrixSliderInput(e.target);
+          } else if (e.target.classList.contains('edit-phase-progress')) {
+            handlePhaseSliderInput(e.target);
+          }
+        }
       });
     }
   }
@@ -2274,6 +2379,48 @@ function bindSegmentActions() {
       currentProj.segments[sIdx].subSegments.splice(subIdx, 1);
       updateProject(selectedProjectId, { segments: currentProj.segments });
       refreshDetail();
+    });
+  });
+
+  // Lắng nghe sự kiện kéo thanh trượt ma trận tiến độ trực tiếp (Realtime phản hồi 0ms)
+  document.querySelectorAll('.edit-subsegment-matrix-progress, input[type="range"].edit-segment-matrix-progress').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      handleMatrixSliderInput(e.target);
+    });
+    slider.addEventListener('change', (e) => {
+      handleMatrixSliderInput(e.target);
+      triggerProjectAutoSave();
+    });
+  });
+
+  // Cho phép nhấp vào số % để nhập trực tiếp giá trị (VD: gõ 50 thay vì phải kéo thanh trượt)
+  document.querySelectorAll('.matrix-progress-label').forEach(label => {
+    label.addEventListener('click', (e) => {
+      const container = e.currentTarget.parentElement;
+      const slider = container?.querySelector('input[type="range"]');
+      if (!slider) return;
+      const currentVal = slider.value || '0';
+      const inputVal = prompt('Nhập tiến độ mới (0 - 100%):', currentVal);
+      if (inputVal !== null && inputVal.trim() !== '') {
+        const num = Math.min(100, Math.max(0, parseInt(inputVal) || 0));
+        slider.value = num;
+        handleMatrixSliderInput(slider);
+        triggerProjectAutoSave();
+      }
+    });
+  });
+
+  // Lắng nghe thay đổi ngày hạn chót trong ma trận
+  document.querySelectorAll('.edit-segment-matrix-date, .edit-subsegment-matrix-date, .edit-milestone-date').forEach(dateInput => {
+    dateInput.addEventListener('change', () => {
+      triggerProjectAutoSave();
+    });
+  });
+
+  // Lắng nghe thay đổi tên mốc / phân đoạn
+  document.querySelectorAll('.edit-milestone-name, .edit-segment-name, .edit-subsegment-name').forEach(nameInput => {
+    nameInput.addEventListener('change', () => {
+      triggerProjectAutoSave();
     });
   });
 }

@@ -234,24 +234,7 @@ export const personnelItems = [
     status: 'active',
     joinDate: '2018-04-01'
   },
-  {
-    id: 'r_1789368276534',
-    name: 'Nguyễn Quốc Triệu',
-    role: 'BIM Modeler',
-    roleId: 'bim-modeler',
-    level: 'mid',
-    email: 'trieu.nguyen@vsibim.com',
-    phone: '0934-567-890',
-    avatar: 'NQT',
-    skills: ['Civil 3D', 'InfraWorks', 'Revit'],
-    certifications: ['Autodesk Certified Professional'],
-    allocation: [
-      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
-    ],
-    totalAllocation: 100,
-    status: 'active',
-    joinDate: '2023-01-10'
-  },
+
   {
     id: 'r_thien',
     name: 'Thân Nguyễn Thái Thiện',

@@ -580,3 +580,28 @@
   letter-spacing: 1px;
   white-space: nowrap;
 }
+
+/* ============================================
+   HOURS SUMMARY DASHBOARD
+   ============================================ */
+.hours-summary-card {
+  background: #14171f;
+  border: 1px solid #232834;
+  border-radius: 8px;
+  padding: 18px 20px;
+}
+
+@media (max-width: 1024px) {
+  .hours-summary-kpis {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .hours-summary-charts {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .hours-summary-kpis {
+    grid-template-columns: 1fr !important;
+  }
+}

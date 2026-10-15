@@ -509,6 +509,22 @@ export const projectItems = [
         dailyHours_actual: { '2026-09-14': 3, '2026-09-15': 3 }
       },
       {
+        id: 't_atgt_km5_km27',
+        name: 'An Toàn Giao Thông (Km5-Km27)',
+        assignee: 'Thân Nguyễn Thái Thiện',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km5-27',
+        status: 'active',
+        progress: 60,
+        dueDate: '2026-10-15',
+        segmentIdx: 0,
+        subSegmentIdx: 1,
+        milestoneIdx: 0,
+        dailyHours_planned: { '2026-10-15': 4, '2026-10-16': 4 },
+        dailyHours_actual: {}
+      },
+      {
         id: 't_1789354764016',
         name: 'An Toàn Giao Thông (Km34-Km35)',
         assignee: 'Thân Nguyễn Thái Thiện',
@@ -523,6 +539,54 @@ export const projectItems = [
         milestoneIdx: 1,
         dailyHours_planned: { '2026-10-12': 4, '2026-10-13': 4, '2026-10-14': 4 },
         dailyHours_actual: { '2026-10-12': 4, '2026-10-13': 4 }
+      },
+      {
+        id: 't_atgt_km40_km50',
+        name: 'An Toàn Giao Thông (Km40-Km50)',
+        assignee: 'Thân Nguyễn Thái Thiện',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km40-50',
+        status: 'active',
+        progress: 50,
+        dueDate: '2026-10-26',
+        segmentIdx: 2,
+        subSegmentIdx: 0,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-19': 4, '2026-10-20': 4 },
+        dailyHours_actual: {}
+      },
+      {
+        id: 't_atgt_km50_km62',
+        name: 'An Toàn Giao Thông (Km50-Km62)',
+        assignee: 'Thân Nguyễn Thái Thiện',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km50-62',
+        status: 'active',
+        progress: 40,
+        dueDate: '2026-10-26',
+        segmentIdx: 3,
+        subSegmentIdx: 0,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-21': 4, '2026-10-22': 4 },
+        dailyHours_actual: {}
+      },
+      {
+        id: 't_atgt_km62_km72',
+        name: 'An Toàn Giao Thông (Km62-Km72)',
+        assignee: 'Thân Nguyễn Thái Thiện',
+        phase: 'BVTC',
+        lod: 'LOD 300',
+        chainage: 'Km62-72',
+        status: 'active',
+        progress: 30,
+        dueDate: '2026-10-28',
+        segmentIdx: 4,
+        subSegmentIdx: 0,
+        milestoneIdx: 1,
+        dailyHours_planned: { '2026-10-23': 4, '2026-10-24': 4 },
+        dailyHours_actual: {}
       },
       {
         id: 't_1789354890001',
@@ -543,7 +607,7 @@ export const projectItems = [
       {
         id: 't_1789354890002',
         name: 'Mô hình Cống & Thoát nước (Km31-Km34: 12 cống)',
-        assignee: 'Thân Nguyễn Thái Thiện',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km31-34',
@@ -575,7 +639,7 @@ export const projectItems = [
       {
         id: 't_1789354890004',
         name: 'Bổ sung thang bậc nước & Tường chắn (Km44-Km46)',
-        assignee: 'Thân Nguyễn Thái Thiện',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km44-46',
@@ -617,7 +681,7 @@ export const projectItems = [
       {
         id: 't_1789354890007',
         name: 'Bổ sung thang bậc nước & Tường chắn (Km53-Km54)',
-        assignee: 'Thân Nguyễn Thái Thiện',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km53-54',
@@ -659,7 +723,7 @@ export const projectItems = [
       {
         id: 't_1789354890010',
         name: 'Mô hình 8 cống (Km70-Km72)',
-        assignee: 'Thân Nguyễn Thái Thiện',
+        assignee: 'Nguyễn Ngọc Thanh Tài',
         phase: 'BVTC',
         lod: 'LOD 300',
         chainage: 'Km70-72',

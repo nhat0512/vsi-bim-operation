@@ -330,13 +330,14 @@ export async function restoreFromGoogleSheets() {
         if (gTask.chainage === 'Km34-35') {
           segIdx = 1; subIdx = 2; mlIdx = 1;
         }
+        const defaultAssignee = (gTask.name && gTask.name.toLowerCase().includes('cầu')) ? 'Nguyễn Ngọc Thanh Tài' : 'Thân Nguyễn Thái Thiện';
         p14d.tasks.unshift({
           id: gTask.id || `t_${Date.now()}`,
           name: gTask.name ? `${gTask.name} (${gTask.chainage || ''})` : 'Hạng mục 14D',
           phase: gTask.phase || 'BVTC',
           lod: gTask.lod || 'LOD 300',
           chainage: gTask.chainage || 'Km0-5',
-          assignee: gTask.assignee || 'Nguyễn Quốc Triệu',
+          assignee: (gTask.assignee && gTask.assignee !== 'Nguyễn Quốc Triệu') ? gTask.assignee : defaultAssignee,
           progress: 75,
           status: 'active',
           dueDate: '2026-10-30',
@@ -352,10 +353,13 @@ export async function restoreFromGoogleSheets() {
       }
     });
 
-    // Đảm bảo team của 14D có Nguyễn Quốc Triệu
+    // Đảm bảo team của 14D có đầy đủ nhân sự chủ lực
     p14d.team = p14d.team || [];
-    if (!p14d.team.some(m => m.name === 'Nguyễn Quốc Triệu')) {
-      p14d.team.unshift({ name: 'Nguyễn Quốc Triệu', role: 'BIM Modeler' });
+    if (!p14d.team.some(m => m.name === 'Thân Nguyễn Thái Thiện')) {
+      p14d.team.unshift({ name: 'Thân Nguyễn Thái Thiện', role: 'BIM Modeler' });
+    }
+    if (!p14d.team.some(m => m.name === 'Nguyễn Ngọc Thanh Tài')) {
+      p14d.team.unshift({ name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' });
     }
     if (!p14d.team.some(m => m.name === 'Trần Minh Khoa')) {
       p14d.team.push({ name: 'Trần Minh Khoa', role: 'BIM Coordinator' });
@@ -366,14 +370,15 @@ export async function restoreFromGoogleSheets() {
 
     // 4. Phục hồi Timesheets (Giờ làm kỹ sư đã nhập) từ dailyHours_planned và dailyHours_actual
     let timesheets = [...(state.timesheets || [])];
-    const trieuPerson = personnel.find(p => p.name === 'Nguyễn Quốc Triệu');
-    const trieuId = trieuPerson ? trieuPerson.id : 'r_1789368276534';
 
     (p14d.tasks || []).forEach(gTask => {
       const taskId = gTask.id;
-      const taskAssignee = gTask.assignee || 'Nguyễn Quốc Triệu';
+      let taskAssignee = gTask.assignee;
+      if (!taskAssignee || taskAssignee === 'Nguyễn Quốc Triệu') {
+        taskAssignee = (gTask.name && gTask.name.toLowerCase().includes('cầu')) ? 'Nguyễn Ngọc Thanh Tài' : 'Thân Nguyễn Thái Thiện';
+      }
       const personObj = personnel.find(p => p.name === taskAssignee);
-      const uid = personObj ? personObj.id : trieuId;
+      const uid = personObj ? personObj.id : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'r_tai' : 'r_thien');
 
       // Kế hoạch giờ (dailyHours_planned)
       if (gTask.dailyHours_planned && typeof gTask.dailyHours_planned === 'object') {
@@ -1198,10 +1203,32 @@ export async function loadInitialData() {
                 cur.team.unshift({ name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' });
               }
             }
-            // Khôi phục danh sách tasks đầy đủ cho 14D nếu chỉ có mock tasks cũ (<= 2)
+            // Khôi phục danh sách tasks đầy đủ và đồng bộ Assignee chuẩn cho 14D
             if (!cur.tasks || cur.tasks.length <= 2) {
               cur.tasks = JSON.parse(JSON.stringify(default14D.tasks || []));
             } else {
+              // Cập nhật assignee chuẩn chuyên môn cho từng task
+              const dtMap = new Map((default14D.tasks || []).map(dt => [dt.id, dt]));
+              cur.tasks.forEach(t => {
+                const dt = dtMap.get(t.id) || (default14D.tasks || []).find(d => d.name === t.name);
+                if (dt) {
+                  // ATGT -> Thân Nguyễn Thái Thiện; Cầu/Cống/Thoát nước/Tường chắn -> Nguyễn Ngọc Thanh Tài
+                  const nameLower = (t.name || dt.name).toLowerCase();
+                  if (nameLower.includes('an toàn giao thông') || nameLower.includes('atgt')) {
+                    t.assignee = 'Thân Nguyễn Thái Thiện';
+                  } else if (nameLower.includes('cầu') || nameLower.includes('cống') || nameLower.includes('nước') || nameLower.includes('tường')) {
+                    t.assignee = 'Nguyễn Ngọc Thanh Tài';
+                  } else if (!t.assignee || t.assignee === 'Nguyễn Quốc Triệu') {
+                    t.assignee = dt.assignee;
+                  }
+                  if (t.segmentIdx === undefined && dt.segmentIdx !== undefined) t.segmentIdx = dt.segmentIdx;
+                  if (t.subSegmentIdx === undefined && dt.subSegmentIdx !== undefined) t.subSegmentIdx = dt.subSegmentIdx;
+                  if (t.milestoneIdx === undefined && dt.milestoneIdx !== undefined) t.milestoneIdx = dt.milestoneIdx;
+                  if (!t.phase && dt.phase) t.phase = dt.phase;
+                  if (!t.lod && dt.lod) t.lod = dt.lod;
+                }
+              });
+
               const existingIds = new Set(cur.tasks.map(t => t.id || t.name));
               (default14D.tasks || []).forEach(dt => {
                 if (!existingIds.has(dt.id) && !existingIds.has(dt.name)) {

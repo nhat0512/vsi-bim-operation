@@ -4,7 +4,7 @@
 import { getState, updateProject } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
-import { formatDisplayName } from '../utils/formatters.js';
+import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
 
 let hoursOverTimeChartInstance = null;
 let hoursByPhaseChartInstance = null;
@@ -1827,7 +1827,7 @@ function importTasksFromCSV(file, project) {
           name: row[1] || 'Công việc mới',
           assignee: row[2] || '',
           progress: parseInt(row[3]) || 0,
-          dueDate: row[4] || new Date().toISOString().split('T')[0],
+          dueDate: row[4] || formatLocalDate(new Date()),
           status: parseInt(row[3]) >= 100 ? 'completed' : 'active',
           phase: row[5] || 'BVTC',
           lod: row[6] || 'LOD 300',
@@ -2016,7 +2016,7 @@ function bindTaskActions() {
       name: 'Công việc mới', 
       assignee: currentProj.teamLead || '', 
       progress: 0, 
-      dueDate: new Date().toISOString().split('T')[0],
+      dueDate: formatLocalDate(new Date()),
       status: 'active',
       phase: 'BVTC',
       lod: 'LOD 300'
@@ -2218,7 +2218,7 @@ function bindSegmentActions() {
     currentProj.milestones.push({ 
       id: `M${Date.now()}`,
       name: 'Mốc giao nộp mới', 
-      date: new Date().toISOString().split('T')[0]
+      date: formatLocalDate(new Date())
     });
     updateProject(selectedProjectId, { milestones: currentProj.milestones });
     refreshDetail();
@@ -2295,7 +2295,7 @@ function bindRfiActions() {
       priority: 'Medium', 
       status: 'Open',
       assignee: '',
-      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      dueDate: formatLocalDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
     });
     updateProject(selectedProjectId, { rfis: currentProj.rfis });
     showToast('➕ Đã thêm yêu cầu RFI!');

@@ -2,6 +2,8 @@
 // STATE MANAGEMENT — BIM Transport PM Platform
 // ============================================
 
+import { formatLocalDate } from './utils/formatters.js';
+
 const listeners = new Set();
 
 let state = {
@@ -529,7 +531,7 @@ export function exportBackupJSON() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `BIM_TransPM_Backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.download = `BIM_TransPM_Backup_${formatLocalDate(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -935,8 +937,8 @@ function generateDefaultPhases(startDate, endDate) {
       id,
       status: i === 0 ? 'active' : 'planning',
       progress: 0,
-      startDate: phaseStart.toISOString().split('T')[0],
-      endDate: phaseEnd.toISOString().split('T')[0]
+      startDate: formatLocalDate(phaseStart),
+      endDate: formatLocalDate(phaseEnd)
     };
   });
 }

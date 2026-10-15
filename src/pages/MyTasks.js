@@ -3,7 +3,7 @@
 // ============================================
 import { getState, setState, subscribe, updateProject, deleteTimesheet, saveLocalSnapshot } from '../state.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
-import { formatDisplayName } from '../utils/formatters.js';
+import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
 import { openModal, closeModal } from '../components/Modal.js';
 
 let unsubscribe = null;
@@ -296,7 +296,7 @@ export function render() {
           <div class="flex gap-md items-end flex-wrap">
             <div style="flex: 1; min-width: 130px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Ngày làm</label>
-              <input type="date" class="form-input" id="ts-date" value="${new Date().toISOString().split('T')[0]}" style="width: 100%;">
+              <input type="date" class="form-input" id="ts-date" value="${formatLocalDate(new Date())}" style="width: 100%;">
             </div>
             <div style="flex: 2; min-width: 200px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Dự án</label>
@@ -326,7 +326,7 @@ export function render() {
             <button class="btn btn-primary" id="btn-log-time" style="white-space: nowrap; background: #10b981; border-color: #10b981;">
               ➕ Ghi nhận
             </button>
-            <button type="button" class="btn btn-outline btn-quick-fill-today" data-date="${new Date().toISOString().split('T')[0]}" style="white-space: nowrap; border-color: #10b981; color: #10b981; font-weight: 600;" title="Tự động ghi nhận giờ theo phân công kế hoạch hôm nay">
+            <button type="button" class="btn btn-outline btn-quick-fill-today" data-date="${formatLocalDate(new Date())}" style="white-space: nowrap; border-color: #10b981; color: #10b981; font-weight: 600;" title="Tự động ghi nhận giờ theo phân công kế hoạch hôm nay">
               ⚡ Ghi theo KH hôm nay
             </button>
           </div>
@@ -394,12 +394,12 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets) {
   
   let weekActualHours = 0;
   let weekPlannedHours = 0;
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = formatLocalDate(new Date());
 
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = formatLocalDate(d);
 
     const dayRecords = (timesheets || []).filter(ts => {
       const match = ts.userId === personId || ts.email === userEmail || ts.userName === userName;
@@ -540,7 +540,7 @@ function renderWeeklyTimesheetStrip(weekStats) {
  */
 function renderRecentTimesheets(email, displayName, personnelName, filter = 'week', personId = null) {
   const { timesheets, projects } = getState();
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = formatLocalDate(new Date());
 
   // Tính ngày đầu tuần (Thứ 2) và Chủ Nhật (Cuối tuần)
   const now = new Date();
@@ -549,12 +549,12 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
   const monday = new Date(now);
   monday.setDate(now.getDate() + diffToMonday);
   monday.setHours(0, 0, 0, 0);
-  const mondayStr = monday.toISOString().split('T')[0];
+  const mondayStr = formatLocalDate(monday);
 
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 6);
   sunday.setHours(23, 59, 59, 999);
-  const sundayStr = sunday.toISOString().split('T')[0];
+  const sundayStr = formatLocalDate(sunday);
 
   // Lọc chỉ những bản ghi DO CHÍNH NHÂN SỰ NÀY GHI (isActual === true)
   let myTimesheets = (timesheets || []).filter(ts => {
@@ -666,7 +666,12 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
 
 function formatDate(str) {
   if (!str) return '';
+  if (typeof str === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const parts = str.split('-');
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
   const d = new Date(str);
+  if (isNaN(d.getTime())) return str;
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
@@ -676,7 +681,7 @@ function formatDate(str) {
 function renderTimesheetCalendar(email, displayName, personnelName, personId, year, month) {
   const { timesheets, projects } = getState();
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = formatLocalDate(today);
 
   // Lọc tất cả giờ thực tế của user
   const myTimesheets = (timesheets || []).filter(ts => {
@@ -870,17 +875,17 @@ function exportTimesheetToExcel() {
     const monthPrefix = `${currentCalendarYear}-${String(currentCalendarMonth + 1).padStart(2, '0')}`;
     exportData = exportData.filter(t => (t.dateString || t.date || '').startsWith(monthPrefix));
   } else {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = formatLocalDate(new Date());
     const now = new Date();
     const currentDay = now.getDay();
     const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
     const monday = new Date(now);
     monday.setDate(now.getDate() + diffToMonday);
     monday.setHours(0, 0, 0, 0);
-    const mondayStr = monday.toISOString().split('T')[0];
+    const mondayStr = formatLocalDate(monday);
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
-    const sundayStr = sunday.toISOString().split('T')[0];
+    const sundayStr = formatLocalDate(sunday);
 
     if (currentTimesheetFilter === 'today') {
       exportData = exportData.filter(t => (t.dateString === todayStr || t.date === todayStr));
@@ -982,10 +987,10 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
   }).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const todayStr = formatLocalDate(now);
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayStr = formatLocalDate(yesterday);
 
   // Tìm xem ngày hôm nay đã có ghi chép thực tế nào cho task này chưa
   const existingActual = (timesheets || []).find(ts => {
@@ -1870,7 +1875,7 @@ export function init() {
   // 10. Ghi nhận timesheet từ form tổng quát
   document.getElementById('btn-log-time')?.addEventListener('click', () => {
     const tsDateEl = document.getElementById('ts-date');
-    const selectedDate = tsDateEl ? tsDateEl.value : new Date().toISOString().split('T')[0];
+    const selectedDate = tsDateEl ? tsDateEl.value : formatLocalDate(new Date());
     const projectId = document.getElementById('ts-project').value;
     const taskId = document.getElementById('ts-task').value || 't_general';
     const hours = parseFloat(document.getElementById('ts-hours').value);
@@ -1984,7 +1989,7 @@ export function init() {
   // 15. Nút ghi nhanh theo kế hoạch hôm nay (1-Click Fill by Plan)
   document.querySelectorAll('.btn-quick-fill-today').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      const targetDate = e.currentTarget.dataset.date || new Date().toISOString().split('T')[0];
+      const targetDate = e.currentTarget.dataset.date || formatLocalDate(new Date());
       handleQuickFillFromPlan(targetDate);
     });
   });

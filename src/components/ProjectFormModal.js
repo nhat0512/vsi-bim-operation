@@ -4,6 +4,7 @@
 import { addProject, updateProject, getState } from '../state.js';
 import { openModal, closeModal } from './Modal.js';
 import { DISCIPLINES, PROJECT_TYPES, LOD_LEVELS, PRIORITY_LEVELS } from '../data/constants.js';
+import { formatLocalDate } from '../utils/formatters.js';
 
 /**
  * Show toast notification
@@ -93,8 +94,8 @@ const PROJECT_TEMPLATES = {
  */
 function renderProjectForm(mode, project) {
   const p = project || {};
-  const today = new Date().toISOString().split('T')[0];
-  const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const today = formatLocalDate(new Date());
+  const nextYear = formatLocalDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000));
 
   return `
     <form id="project-form" autocomplete="off">
@@ -355,7 +356,7 @@ function handleFormSubmit(mode, project, onComplete) {
         return {
           id: `M${Date.now()}_${i}`,
           name: m.name,
-          date: mDate.toISOString().split('T')[0]
+          date: formatLocalDate(mDate)
         };
       });
 

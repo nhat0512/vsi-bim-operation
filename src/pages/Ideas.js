@@ -1,5 +1,6 @@
 import { getState, setState, subscribe } from '../state.js';
 import { PLATFORMS } from '../data/platforms.js';
+import { formatLocalDate } from '../utils/formatters.js';
 
 let unsubscribe = null;
 
@@ -280,7 +281,7 @@ export function init() {
         tags: tagsStr.split(',').map(t => t.trim()).filter(Boolean),
         category: category || 'Video',
         platform: platform || 'youtube',
-        createdDate: new Date().toISOString().split('T')[0]
+        createdDate: formatLocalDate(new Date())
       };
       ideas.unshift(newIdea);
       saveIdeas(ideas);

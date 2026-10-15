@@ -2,6 +2,7 @@
 // QUALITY — BIM Quality Control & Clash Detection
 // ============================================
 import { getState, updateProject, setState } from '../state.js';
+import { formatLocalDate } from '../utils/formatters.js';
 
 let clashChartInstance = null;
 
@@ -426,7 +427,7 @@ function attachTaskButtons() {
         assignee: e.target.dataset.assignee,
         status: 'active',
         progress: 0,
-        dueDate: new Date(Date.now() + 3*24*60*60*1000).toISOString().split('T')[0]
+        dueDate: formatLocalDate(new Date(Date.now() + 3*24*60*60*1000))
       };
       
       const updatedTasks = [...(proj.tasks || []), newTask];

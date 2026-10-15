@@ -1356,19 +1356,23 @@ export async function loadInitialData() {
           setState('timesheets', timesheetsToLoad, true);
           console.log("🔄 Dữ liệu Firestore đã kết nối real-time");
 
-          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets nếu phát hiện thiếu 14D hoặc thiếu modeler tasks ───
+          // ─── PHỤC HỒI (5): Tự động khôi phục từ Google Sheets chỉ khi dự án chưa tồn tại lần đầu ───
           const p14d = projectsToLoad.find(p => p.id === 'P007' || p.code === '14D' || (p.name && p.name.includes('14D')));
-          const has14DTasks = p14d && p14d.tasks && p14d.tasks.length > 5;
-          const hasModelerTs = timesheetsToLoad && timesheetsToLoad.some(ts => ts.userName === 'Thân Nguyễn Thái Thiện' || ts.userName === 'Nguyễn Ngọc Thanh Tài');
+          const isInitialSeeded = typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem('vsi_seeded_14d_v2');
 
-          if (!has14DTasks || !hasModelerTs) {
+          if (!p14d || (!isInitialSeeded && (!p14d.tasks || p14d.tasks.length === 0))) {
             console.log("ℹ️ Đang tự động kéo dữ liệu dự án 14D & timesheets từ Google Sheets...");
             restoreFromGoogleSheets().then(res => {
               if (res && res.success) {
+                if (typeof window !== 'undefined' && window.localStorage) {
+                  window.localStorage.setItem('vsi_seeded_14d_v2', 'true');
+                }
                 console.log("✅ Phục hồi hoàn tất từ Google Sheets!");
                 window.dispatchEvent(new Event('hashchange'));
               }
             });
+          } else if (typeof window !== 'undefined' && window.localStorage && !isInitialSeeded) {
+            window.localStorage.setItem('vsi_seeded_14d_v2', 'true');
           }
           
           if (typeof window !== 'undefined') {

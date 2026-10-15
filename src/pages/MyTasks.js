@@ -543,9 +543,12 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
           </tr>
         </thead>
         <tbody>
-          ${myTimesheets.slice(0, 15).map(ts => {
+          ${myTimesheets.map(ts => {
             const proj = (projects || []).find(p => p.id === ts.projectId);
             const isActual = ts.isActual !== false;
+            const { currentUserRole, currentUser } = getState();
+            const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
+            const canDelete = isActual || isManager;
             return `
               <tr>
                 <td class="text-sm font-semibold">${formatDate(ts.dateString || ts.date)}</td>
@@ -581,9 +584,15 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
                 </td>
                 <td class="text-sm text-muted">${ts.note || ts.comment || '—'}</td>
                 <td class="text-sm text-center">
-                  <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="Xóa bản ghi" style="padding: 2px 6px;">
-                    🗑️
-                  </button>
+                  ${canDelete ? `
+                    <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="${isActual ? 'Xóa bản ghi giờ thực tế' : 'Xóa bản ghi kế hoạch'}" style="padding: 2px 6px;">
+                      🗑️
+                    </button>
+                  ` : `
+                    <span title="Kế hoạch do Quản lý phân công (nhân sự không thể tự xóa)" style="font-size: 0.85rem; opacity: 0.35; cursor: not-allowed; display: inline-block;">
+                      🔒
+                    </span>
+                  `}
                 </td>
               </tr>
             `;
@@ -1166,12 +1175,55 @@ export function init() {
   document.querySelectorAll('.btn-delete-timesheet').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const tsId = e.currentTarget.dataset.id;
-      if (confirm('Bạn có chắc chắn muốn xóa bản ghi này? Số giờ ở General Planning cũng sẽ tự động được gỡ bỏ.')) {
-        const { timesheets } = getState();
-        const updated = (timesheets || []).filter(t => t.id !== tsId);
-        setState('timesheets', updated);
-        saveLocalSnapshot('Xóa bản ghi giờ làm việc');
-        showToast('🗑️ Đã xóa bản ghi giờ làm!');
+      const { timesheets, projects, currentUserRole, currentUser } = getState();
+      const targetTs = (timesheets || []).find(t => t.id === tsId);
+      if (!targetTs) return;
+
+      const isActual = targetTs.isActual !== false;
+      const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
+
+      // Chặn bảo vệ: Nếu là giờ kế hoạch và không phải cấp quản lý
+      if (!isActual && !isManager) {
+        showToast('⚠️ Bạn không thể tự xóa giờ Kế hoạch do Quản lý phân công!', 'warning');
+        return;
+      }
+
+      const dStr = targetTs.dateString || targetTs.date;
+      const confirmMsg = isActual 
+        ? `Bạn có chắc chắn muốn xóa bản ghi giờ thực tế (${targetTs.hours}h ngày ${formatDate(dStr)})?`
+        : `Bạn có chắc chắn muốn xóa bản ghi kế hoạch (${targetTs.hours}h ngày ${formatDate(dStr)})?`;
+
+      if (confirm(confirmMsg)) {
+        // 1. Cập nhật mảng timesheets trong state
+        const updatedTimesheets = (timesheets || []).filter(t => t.id !== tsId);
+        setState('timesheets', updatedTimesheets);
+
+        // 2. Đồng thời xóa giờ trong task của dự án (dailyHours_actual / dailyHours_planned)
+        if (targetTs.projectId && dStr) {
+          const project = (projects || []).find(p => p.id === targetTs.projectId);
+          if (project && project.tasks) {
+            let taskUpdated = false;
+            const updatedTasks = project.tasks.map(tsk => {
+              const matchTask = tsk.id === targetTs.taskId || tsk.name === targetTs.taskName;
+              if (matchTask) {
+                if (isActual && tsk.dailyHours_actual && tsk.dailyHours_actual[dStr] !== undefined) {
+                  delete tsk.dailyHours_actual[dStr];
+                  taskUpdated = true;
+                } else if (!isActual && tsk.dailyHours_planned && tsk.dailyHours_planned[dStr] !== undefined) {
+                  delete tsk.dailyHours_planned[dStr];
+                  taskUpdated = true;
+                }
+              }
+              return tsk;
+            });
+            if (taskUpdated) {
+              updateProject(project.id, { tasks: updatedTasks });
+            }
+          }
+        }
+
+        saveLocalSnapshot(isActual ? 'Xóa bản ghi giờ làm thực tế' : 'Xóa bản ghi giờ kế hoạch');
+        showToast('🗑️ Đã xóa bản ghi giờ làm thành công!');
         refreshPage();
       }
     });

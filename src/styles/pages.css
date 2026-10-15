@@ -251,6 +251,19 @@
   background: var(--bg-primary) !important;
 }
 
+.ts-input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.3;
+}
+
+.member-header-row:hover td {
+  background-color: var(--bg-card-hover) !important;
+}
+
+.project-header-row:hover td {
+  background-color: var(--bg-card-hover) !important;
+}
+
 /* ============================================
    KPI GRID
    ============================================ */

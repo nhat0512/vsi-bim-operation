@@ -8,6 +8,9 @@ import { openModal, closeModal } from '../components/Modal.js';
 
 let unsubscribe = null;
 let currentTimesheetFilter = 'week'; // 'all' | 'today' | 'week'
+let currentViewMode = 'table'; // 'table' | 'calendar'
+let currentCalendarMonth = new Date().getMonth(); // 0 - 11
+let currentCalendarYear = new Date().getFullYear();
 
 export function render() {
   const { currentUser, currentUserAuth, projects, personnel, timesheets } = getState();
@@ -312,12 +315,19 @@ export function render() {
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Số giờ</label>
               <input type="number" class="form-input" id="ts-hours" min="0.5" max="24" step="0.5" value="8" style="width: 100%; font-weight: bold;">
             </div>
+            <div style="flex: 1.5; min-width: 130px;">
+              <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">🏷️ Bản vẽ / Sheet</label>
+              <input type="text" class="form-input" id="ts-sheetno" placeholder="VD: DWG-14D-01" style="width: 100%;">
+            </div>
             <div style="flex: 2; min-width: 150px;">
               <label class="text-xs text-muted font-semibold" style="display: block; margin-bottom: 4px;">Ghi chú (tùy chọn)</label>
               <input type="text" class="form-input" id="ts-note" placeholder="VD: Rà soát mô hình dầm..." style="width: 100%;">
             </div>
             <button class="btn btn-primary" id="btn-log-time" style="white-space: nowrap; background: #10b981; border-color: #10b981;">
               ➕ Ghi nhận
+            </button>
+            <button type="button" class="btn btn-outline btn-quick-fill-today" data-date="${new Date().toISOString().split('T')[0]}" style="white-space: nowrap; border-color: #10b981; color: #10b981; font-weight: 600;" title="Tự động ghi nhận giờ theo phân công kế hoạch hôm nay">
+              ⚡ Ghi theo KH hôm nay
             </button>
           </div>
         </div>
@@ -326,14 +336,42 @@ export function render() {
       <!-- Lịch sử timesheet gần đây -->
       <div class="card">
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <h3 class="card-title">📋 Lịch sử ghi giờ gần đây</h3>
-          <div class="flex gap-xs" style="align-items: center;">
-            <button class="btn btn-sm ${currentTimesheetFilter === 'week' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="week">Tuần này</button>
-            <button class="btn btn-sm ${currentTimesheetFilter === 'today' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="today">Hôm nay</button>
-            <button class="btn btn-sm ${currentTimesheetFilter === 'all' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="all">Tất cả</button>
+          <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <h3 class="card-title" style="margin: 0;">📋 Lịch sử ghi giờ gần đây</h3>
+            <!-- Switch Bảng / Lịch -->
+            <div class="flex" style="background: var(--bg-tertiary); padding: 3px; border-radius: 8px; border: 1px solid var(--border-subtle); gap: 2px;">
+              <button type="button" class="btn btn-xs ${currentViewMode === 'table' ? 'btn-primary' : 'btn-ghost'} btn-view-mode" data-mode="table" style="font-size: 0.75rem; padding: 4px 10px; font-weight: 600;">
+                📋 Dạng Bảng
+              </button>
+              <button type="button" class="btn btn-xs ${currentViewMode === 'calendar' ? 'btn-primary' : 'btn-ghost'} btn-view-mode" data-mode="calendar" style="font-size: 0.75rem; padding: 4px 10px; font-weight: 600;">
+                🗓️ Dạng Lịch Tháng
+              </button>
+            </div>
+          </div>
+          <div class="flex gap-xs" style="align-items: center; flex-wrap: wrap;">
+            ${currentViewMode === 'table' ? `
+              <button class="btn btn-sm ${currentTimesheetFilter === 'week' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="week">Tuần này</button>
+              <button class="btn btn-sm ${currentTimesheetFilter === 'today' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="today">Hôm nay</button>
+              <button class="btn btn-sm ${currentTimesheetFilter === 'all' ? 'btn-primary' : 'btn-outline'} btn-filter-ts" data-filter="all">Tất cả</button>
+            ` : `
+              <button class="btn btn-outline btn-sm btn-cal-nav" data-dir="-1" title="Tháng trước">◀</button>
+              <span style="font-weight: 700; font-size: 0.85rem; min-width: 120px; text-align: center; color: var(--text-primary);">
+                Tháng ${currentCalendarMonth + 1}/${currentCalendarYear}
+              </span>
+              <button class="btn btn-outline btn-sm btn-cal-nav" data-dir="1" title="Tháng sau">▶</button>
+              <button class="btn btn-ghost btn-sm btn-cal-today" style="font-size: 0.75rem;">Hôm nay</button>
+            `}
+            <div style="width: 1px; height: 22px; background: var(--border-subtle); margin: 0 4px;"></div>
+            <!-- Nút Xuất Excel -->
+            <button class="btn btn-outline btn-sm" id="btn-export-ts-excel" style="color: #10b981; border-color: rgba(16, 185, 129, 0.4); display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Xuất dữ liệu chấm công ra file Excel/CSV">
+              📥 Xuất Excel
+            </button>
           </div>
         </div>
-        ${renderRecentTimesheets(userEmail, userName, myRecord?.name, currentTimesheetFilter)}
+        ${currentViewMode === 'table' 
+          ? renderRecentTimesheets(userEmail, userName, myRecord?.name, currentTimesheetFilter, personId)
+          : renderTimesheetCalendar(userEmail, userName, myRecord?.name, personId, currentCalendarYear, currentCalendarMonth)
+        }
       </div>
     </div>
   `;
@@ -406,6 +444,10 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets) {
  */
 function renderWeeklyTimesheetStrip(weekStats) {
   const { days, weekActualHours, weekPlannedHours, completionPct } = weekStats;
+  const todayDay = days.find(d => d.isToday);
+  const todayPlannedH = todayDay ? todayDay.plannedHours : 0;
+  const todayActualH = todayDay ? todayDay.actualHours : 0;
+  const canQuickFillToday = todayPlannedH > 0 && todayActualH < todayPlannedH;
 
   return `
     <div class="card mb-lg" style="padding: 16px 20px; border-radius: var(--radius-md); border: 1px solid var(--border-color); box-shadow: var(--shadow-sm); background: var(--bg-card);">
@@ -421,11 +463,18 @@ function renderWeeklyTimesheetStrip(weekStats) {
             Kế hoạch PM phân công: <strong>${weekPlannedHours}h</strong> · Mục tiêu chuẩn: <strong>40h/tuần</strong>
           </div>
         </div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <div class="progress-bar" style="width: 140px; height: 8px;">
-            <div class="progress-bar-fill ${weekActualHours >= 40 ? 'green' : ''}" style="width: ${completionPct}%;"></div>
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          ${canQuickFillToday ? `
+            <button class="btn btn-sm btn-quick-fill-today" data-date="${todayDay.dateStr}" style="background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; font-weight: 700; padding: 6px 14px; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35); cursor: pointer; border-radius: 6px; transition: transform 0.15s;" onmouseover="this.style.transform='translateY(-1px)'" onmouseout="this.style.transform='translateY(0)'" title="Ghi nhanh toàn bộ giờ làm theo phân công kế hoạch hôm nay (${todayPlannedH}h)">
+              ⚡ Ghi nhanh ${todayPlannedH}h theo KH hôm nay
+            </button>
+          ` : ''}
+          <div class="flex items-center gap-xs">
+            <div class="progress-bar" style="width: 120px; height: 8px;">
+              <div class="progress-bar-fill ${weekActualHours >= 40 ? 'green' : ''}" style="width: ${completionPct}%;"></div>
+            </div>
+            <span style="font-size: 0.8rem; font-weight: bold; color: ${weekActualHours >= 40 ? 'var(--text-success)' : 'var(--text-primary)'};">${completionPct}%</span>
           </div>
-          <span style="font-size: 0.8rem; font-weight: bold; color: ${weekActualHours >= 40 ? 'var(--text-success)' : 'var(--text-primary)'};">${completionPct}%</span>
         </div>
       </div>
 
@@ -487,13 +536,13 @@ function renderWeeklyTimesheetStrip(weekStats) {
 }
 
 /**
- * HIỂN THỊ DANH SÁCH TIMESHEET GẦN ĐÂY
+ * HIỂN THỊ DANH SÁCH TIMESHEET GẦN ĐÂY (Chỉ hiển thị giờ do chính nhân sự ghi nhận)
  */
-function renderRecentTimesheets(email, displayName, personnelName, filter = 'week') {
+function renderRecentTimesheets(email, displayName, personnelName, filter = 'week', personId = null) {
   const { timesheets, projects } = getState();
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Tính ngày đầu tuần (Thứ 2)
+  // Tính ngày đầu tuần (Thứ 2) và Chủ Nhật (Cuối tuần)
   const now = new Date();
   const currentDay = now.getDay();
   const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
@@ -502,33 +551,45 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
   monday.setHours(0, 0, 0, 0);
   const mondayStr = monday.toISOString().split('T')[0];
 
-  let myTimesheets = (timesheets || []).filter(ts => 
-    ts.email === email || ts.userName === displayName || ts.userName === personnelName
-  );
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+  const sundayStr = sunday.toISOString().split('T')[0];
 
-  // Áp dụng bộ lọc
+  // Lọc chỉ những bản ghi DO CHÍNH NHÂN SỰ NÀY GHI (isActual === true)
+  let myTimesheets = (timesheets || []).filter(ts => {
+    const matchUser = (personId && ts.userId === personId) || 
+      (email && ts.email === email) || 
+      (displayName && ts.userName === displayName) || 
+      (personnelName && ts.userName === personnelName);
+    
+    // Theo yêu cầu: Lịch ghi giờ của nhân sự chỉ nên thấy giờ thực tế do chính họ ghi
+    return matchUser && ts.isActual === true;
+  });
+
+  // Áp dụng bộ lọc thời gian
   if (filter === 'today') {
     myTimesheets = myTimesheets.filter(ts => (ts.dateString === todayStr || ts.date === todayStr));
   } else if (filter === 'week') {
     myTimesheets = myTimesheets.filter(ts => {
       const d = ts.dateString || ts.date;
-      return d >= mondayStr;
+      return d >= mondayStr && d <= sundayStr;
     });
   }
 
   // Sắp xếp ngày mới nhất lên đầu
   myTimesheets.sort((a, b) => new Date(b.dateString || b.date) - new Date(a.dateString || a.date));
 
-  const totalFilteredHours = myTimesheets.filter(t => t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+  const totalFilteredHours = myTimesheets.reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
   if (myTimesheets.length === 0) {
-    return `<div class="text-sm text-muted" style="padding: 24px; text-align: center;">Chưa có bản ghi nào trong mốc thời gian này. Hãy bấm <strong>⏱️ Ghi giờ</strong> trên công việc để bắt đầu!</div>`;
+    return `<div class="text-sm text-muted" style="padding: 24px; text-align: center;">Chưa có bản ghi giờ thực tế nào trong mốc thời gian này. Hãy bấm <strong>⏱️ Ghi giờ</strong> trên danh sách công việc để bắt đầu!</div>`;
   }
 
   return `
     <div>
       <div style="padding: 10px 16px; background: var(--bg-tertiary); font-size: 0.8rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color);">
-        <span style="color: var(--text-secondary);">Hiển thị <strong>${myTimesheets.length}</strong> bản ghi</span>
+        <span style="color: var(--text-secondary);">Hiển thị <strong>${myTimesheets.length}</strong> bản ghi thực tế đã ghi</span>
         <span style="font-weight: bold; color: #10b981;">Tổng giờ thực tế: ${totalFilteredHours}h</span>
       </div>
       <table class="data-table">
@@ -545,10 +606,6 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
         <tbody>
           ${myTimesheets.map(ts => {
             const proj = (projects || []).find(p => p.id === ts.projectId);
-            const isActual = ts.isActual !== false;
-            const { currentUserRole, currentUser } = getState();
-            const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
-            const canDelete = isActual || isManager;
             return `
               <tr>
                 <td class="text-sm font-semibold">${formatDate(ts.dateString || ts.date)}</td>
@@ -573,26 +630,30 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
                     }
                     return '<div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">↳ Công việc chung</div>';
                   })()}
+                  ${ts.sheetNo ? `
+                    <div style="margin-top: 3px;">
+                      <span class="badge" style="font-size: 0.68rem; padding: 1px 6px; background: rgba(14, 165, 233, 0.1); color: #0284c7; border: 1px solid rgba(14, 165, 233, 0.25);">
+                        🏷️ Sheet: ${ts.sheetNo}
+                      </span>
+                    </div>
+                  ` : ''}
                 </td>
                 <td class="text-sm">
-                  <span class="badge ${isActual ? 'green' : 'blue'}" style="font-size: 0.7rem;">
-                    ${isActual ? 'Thực tế' : 'Kế hoạch'} ${ts.isOT ? '(OT)' : ''}
+                  <span class="badge ${ts.isOT ? 'orange' : 'green'}" style="font-size: 0.7rem;">
+                    ${ts.isOT ? 'Ngoài giờ (OT)' : 'Thực tế'}
                   </span>
                 </td>
-                <td class="text-sm font-bold" style="color: ${isActual ? '#10b981' : 'var(--text-primary)'}; font-size: 0.95rem;">
+                <td class="text-sm font-bold" style="color: #10b981; font-size: 0.95rem;">
                   ${ts.hours}h
                 </td>
                 <td class="text-sm text-muted">${ts.note || ts.comment || '—'}</td>
-                <td class="text-sm text-center">
-                  ${canDelete ? `
-                    <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="${isActual ? 'Xóa bản ghi giờ thực tế' : 'Xóa bản ghi kế hoạch'}" style="padding: 2px 6px;">
-                      🗑️
-                    </button>
-                  ` : `
-                    <span title="Kế hoạch do Quản lý phân công (nhân sự không thể tự xóa)" style="font-size: 0.85rem; opacity: 0.35; cursor: not-allowed; display: inline-block;">
-                      🔒
-                    </span>
-                  `}
+                <td class="text-sm text-center" style="white-space: nowrap;">
+                  <button class="btn btn-ghost btn-sm text-primary btn-edit-timesheet" data-id="${ts.id}" title="Chỉnh sửa bản ghi giờ này" style="padding: 2px 6px; margin-right: 2px;">
+                    ✏️
+                  </button>
+                  <button class="btn btn-ghost btn-sm text-danger btn-delete-timesheet" data-id="${ts.id}" title="Xóa bản ghi giờ thực tế này" style="padding: 2px 6px;">
+                    🗑️
+                  </button>
                 </td>
               </tr>
             `;
@@ -607,6 +668,298 @@ function formatDate(str) {
   if (!str) return '';
   const d = new Date(str);
   return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+/**
+ * HIỂN THỊ TIMESHEET DẠNG LỊCH THÁNG (CALENDAR GRID VIEW)
+ */
+function renderTimesheetCalendar(email, displayName, personnelName, personId, year, month) {
+  const { timesheets, projects } = getState();
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+
+  // Lọc tất cả giờ thực tế của user
+  const myTimesheets = (timesheets || []).filter(ts => {
+    const matchUser = (personId && ts.userId === personId) || 
+      (email && ts.email === email) || 
+      (displayName && ts.userName === displayName) || 
+      (personnelName && ts.userName === personnelName);
+    return matchUser && ts.isActual === true;
+  });
+
+  // Số ngày trong tháng hiện tại và trước đó
+  const firstDay = new Date(year, month, 1);
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const prevMonthTotalDays = new Date(year, month, 0).getDate();
+  
+  // Thứ 2 là ngày bắt đầu tuần (0: T2, 1: T3 ... 6: CN)
+  let startDayOfWeek = firstDay.getDay(); // 0 = CN, 1 = T2
+  let startOffset = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+
+  // Thống kê trong tháng
+  const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const monthTs = myTimesheets.filter(t => (t.dateString || t.date || '').startsWith(currentMonthPrefix));
+  const monthTotalH = monthTs.reduce((s, t) => s + (Number(t.hours) || 0), 0);
+  const monthTotalOT = monthTs.filter(t => t.isOT).reduce((s, t) => s + (Number(t.hours) || 0), 0);
+  const activeDaysSet = new Set(monthTs.map(t => t.dateString || t.date));
+  const activeDaysCount = activeDaysSet.size;
+
+  const dayLabels = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'];
+
+  // Tạo các ô lịch (Cells)
+  const cells = [];
+
+  // 1. Ngày của tháng trước (Padding)
+  for (let i = startOffset - 1; i >= 0; i--) {
+    const dNum = prevMonthTotalDays - i;
+    cells.push({
+      dayNum: dNum,
+      isCurrentMonth: false,
+      dateStr: '',
+      hours: 0,
+      items: []
+    });
+  }
+
+  // 2. Ngày của tháng hiện tại
+  for (let d = 1; d <= totalDays; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dateObj = new Date(year, month, d);
+    const dayOfWeek = dateObj.getDay(); // 0 = CN, 6 = T7
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isToday = dateStr === todayStr;
+    const isPast = dateObj < today && !isToday;
+
+    const dayItems = monthTs.filter(t => (t.dateString === dateStr || t.date === dateStr));
+    const dayHours = dayItems.reduce((s, t) => s + (Number(t.hours) || 0), 0);
+    const dayOTHours = dayItems.filter(t => t.isOT).reduce((s, t) => s + (Number(t.hours) || 0), 0);
+
+    cells.push({
+      dayNum: d,
+      isCurrentMonth: true,
+      dateStr,
+      isToday,
+      isPast,
+      isWeekend,
+      hours: dayHours,
+      otHours: dayOTHours,
+      items: dayItems
+    });
+  }
+
+  // 3. Padding cuối tháng để đủ hàng (bội số của 7)
+  const remaining = (7 - (cells.length % 7)) % 7;
+  for (let i = 1; i <= remaining; i++) {
+    cells.push({
+      dayNum: i,
+      isCurrentMonth: false,
+      dateStr: '',
+      hours: 0,
+      items: []
+    });
+  }
+
+  return `
+    <div>
+      <!-- Thống kê tổng quan tháng -->
+      <div style="padding: 12px 18px; background: var(--bg-tertiary); font-size: 0.82rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+          <span style="color: var(--text-secondary);">Tháng <strong>${month + 1}/${year}</strong>:</span>
+          <span style="font-weight: 700; color: #10b981;">⏱️ Đã ghi: <strong>${monthTotalH}h</strong></span>
+          ${monthTotalOT > 0 ? `<span style="font-weight: 700; color: #f59e0b;">🔥 Làm ngoài (OT): <strong>${monthTotalOT}h</strong></span>` : ''}
+          <span style="color: var(--text-muted);">📅 Đã làm <strong>${activeDaysCount}</strong> ngày</span>
+        </div>
+        <div style="font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 10px;">
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span> Đủ 8h</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #f59e0b;"></span> Bán phần</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px;"><span style="width: 8px; height: 8px; border-radius: 50%; background: #ef4444;"></span> Chưa ghi</span>
+        </div>
+      </div>
+
+      <!-- Calendar Header -->
+      <div style="display: grid; grid-template-columns: repeat(7, 1fr); background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); text-align: center; font-weight: 700; font-size: 0.75rem; color: var(--text-secondary);">
+        ${dayLabels.map(l => `<div style="padding: 8px 4px;">${l}</div>`).join('')}
+      </div>
+
+      <!-- Calendar Grid -->
+      <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; background: var(--border-subtle);">
+        ${cells.map(c => {
+          if (!c.isCurrentMonth) {
+            return `
+              <div style="min-height: 105px; background: var(--bg-card); opacity: 0.35; padding: 6px; font-size: 0.75rem; color: var(--text-muted);">
+                ${c.dayNum}
+              </div>
+            `;
+          }
+
+          let badgeColor = '#64748b';
+          let badgeBg = 'var(--bg-tertiary)';
+          if (c.hours >= 8) {
+            badgeColor = '#10b981';
+            badgeBg = 'rgba(16, 185, 129, 0.12)';
+          } else if (c.hours > 0) {
+            badgeColor = '#f59e0b';
+            badgeBg = 'rgba(245, 158, 11, 0.12)';
+          } else if (c.isPast && !c.isWeekend) {
+            badgeColor = '#ef4444';
+            badgeBg = 'rgba(239, 68, 68, 0.08)';
+          }
+
+          return `
+            <div class="calendar-day-cell" data-date="${c.dateStr}" style="min-height: 105px; background: var(--bg-card); padding: 6px; position: relative; transition: background 0.15s; border: ${c.isToday ? '2px solid var(--accent-primary)' : 'none'}; display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span style="font-weight: 700; font-size: 0.8rem; color: ${c.isToday ? 'var(--accent-primary)' : 'var(--text-primary)'};">
+                    ${c.dayNum} ${c.isToday ? '<span class="badge blue" style="font-size: 0.55rem; padding: 1px 4px;">Hôm nay</span>' : ''}
+                  </span>
+                  ${c.hours > 0 ? `
+                    <span style="font-size: 0.72rem; font-weight: 800; color: ${badgeColor}; background: ${badgeBg}; padding: 1px 6px; border-radius: 4px;">
+                      ${c.hours}h ${c.otHours > 0 ? `<small style="color: #f59e0b;">(+${c.otHours} OT)</small>` : ''}
+                    </span>
+                  ` : (c.isPast && !c.isWeekend ? `
+                    <span style="font-size: 0.65rem; color: #ef4444; font-weight: 600;" title="Chưa ghi giờ ngày này">Chưa ghi ⚠️</span>
+                  ` : '')}
+                </div>
+
+                <!-- Chips của các công việc đã làm -->
+                <div style="display: flex; flex-direction: column; gap: 3px; max-height: 80px; overflow-y: auto;">
+                  ${c.items.map(t => {
+                    const p = (projects || []).find(proj => proj.id === t.projectId);
+                    return `
+                      <div class="cal-ts-chip btn-edit-timesheet" data-id="${t.id}" style="font-size: 0.68rem; background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 4px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 4px; transition: transform 0.1s;" onmouseover="this.style.borderColor='var(--accent-primary)'" onmouseout="this.style.borderColor='var(--border-subtle)'" title="Bấm để chỉnh sửa: ${t.taskName} (${t.hours}h)">
+                        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 78%;">
+                          <strong style="color: var(--accent-primary); font-size: 0.65rem;">[${p?.code || p?.name?.substring(0, 4) || 'DA'}]</strong> ${t.taskName || 'Việc chung'}
+                          ${t.sheetNo ? `<span style="color: #0284c7; font-size: 0.62rem; display: block;">🏷️ ${t.sheetNo}</span>` : ''}
+                        </div>
+                        <span style="font-weight: 700; color: #10b981; font-size: 0.7rem; white-space: nowrap;">${t.hours}h</span>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+
+              <!-- Nút thêm nhanh khi hover -->
+              <div style="margin-top: 4px; text-align: right;">
+                <button type="button" class="btn btn-ghost btn-xs btn-cal-add-log" data-date="${c.dateStr}" style="font-size: 0.65rem; padding: 1px 5px; opacity: 0.65; color: var(--accent-primary);" title="Ghi giờ cho ngày ${c.dayNum}">
+                  ➕ Ghi giờ
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * XUẤT BẢNG CHẤM CÔNG CÁ NHÂN RA FILE EXCEL / CSV (UTF-8 BOM)
+ */
+function exportTimesheetToExcel() {
+  const { timesheets, projects, personnel, currentUserAuth, currentUser } = getState();
+  const userEmail = currentUserAuth?.email || currentUser?.email || '';
+  const myRecord = (personnel || []).find(p => p.email === userEmail) || currentUser?.personnelRecord;
+  const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
+  const personId = myRecord ? myRecord.id : (currentUserAuth?.id || 'unknown');
+
+  const matchUser = (ts) => (personId && ts.userId === personId) || (userEmail && ts.email === userEmail) || (userName && ts.userName === userName);
+
+  let exportData = (timesheets || []).filter(ts => matchUser(ts) && ts.isActual === true);
+
+  if (currentViewMode === 'calendar') {
+    const monthPrefix = `${currentCalendarYear}-${String(currentCalendarMonth + 1).padStart(2, '0')}`;
+    exportData = exportData.filter(t => (t.dateString || t.date || '').startsWith(monthPrefix));
+  } else {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const currentDay = now.getDay();
+    const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    const mondayStr = monday.toISOString().split('T')[0];
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const sundayStr = sunday.toISOString().split('T')[0];
+
+    if (currentTimesheetFilter === 'today') {
+      exportData = exportData.filter(t => (t.dateString === todayStr || t.date === todayStr));
+    } else if (currentTimesheetFilter === 'week') {
+      exportData = exportData.filter(t => {
+        const d = t.dateString || t.date;
+        return d >= mondayStr && d <= sundayStr;
+      });
+    }
+  }
+
+  if (exportData.length === 0) {
+    showToast('⚠️ Không có dữ liệu giờ làm thực tế nào để xuất!', 'warning');
+    return;
+  }
+
+  // Sắp xếp ngày tăng dần để báo cáo mạch lạc
+  exportData.sort((a, b) => new Date(a.dateString || a.date) - new Date(b.dateString || b.date));
+
+  // Tạo nội dung CSV
+  const headers = [
+    'STT',
+    'Ngày làm việc',
+    'Mã dự án',
+    'Tên dự án',
+    'Nhiệm vụ / Công việc',
+    'Bản vẽ / Sheet No.',
+    'Loại giờ',
+    'Số giờ thực tế (h)',
+    'Làm thêm (OT)',
+    'Ghi chú nội dung',
+    'Thời gian ghi nhận'
+  ];
+
+  const escapeCSV = (val) => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const rows = exportData.map((ts, idx) => {
+    const proj = (projects || []).find(p => p.id === ts.projectId);
+    return [
+      idx + 1,
+      ts.dateString || ts.date,
+      proj?.code || ts.projectId || '',
+      proj?.name || ts.projectName || '',
+      ts.taskName || 'Công việc chung',
+      ts.sheetNo || '',
+      ts.isOT ? 'Ngoài giờ (OT)' : 'Giờ chuẩn',
+      ts.hours,
+      ts.isOT ? 'Có' : 'Không',
+      ts.note || ts.comment || '',
+      ts.createdAt ? new Date(ts.createdAt).toLocaleString('vi-VN') : ''
+    ].map(escapeCSV).join(',');
+  });
+
+  const totalHours = exportData.reduce((s, t) => s + (Number(t.hours) || 0), 0);
+  const totalOT = exportData.filter(t => t.isOT).reduce((s, t) => s + (Number(t.hours) || 0), 0);
+
+  // Thêm dòng tổng cộng
+  rows.push(['', 'TỔNG CỘNG', '', '', '', '', '', totalHours, `OT: ${totalOT}h`, '', ''].map(escapeCSV).join(','));
+
+  const csvContent = '\uFEFF' + [headers.map(escapeCSV).join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const sanitizedName = userName.replace(/[^a-zA-Z0-9_\u00C0-\u1EF9]/g, '_');
+  const dateSuffix = currentViewMode === 'calendar' 
+    ? `${currentCalendarYear}_${String(currentCalendarMonth + 1).padStart(2, '0')}`
+    : currentTimesheetFilter;
+  a.href = url;
+  a.download = `Bang_Cham_Cong_${sanitizedName}_${dateSuffix}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`📥 Đã xuất thành công ${exportData.length} bản ghi ra file Excel!`);
 }
 
 /**
@@ -751,6 +1104,18 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
         `}
 
         <!-- Ghi chú nội dung -->
+        <!-- Mã Bản vẽ / Sheet No. -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">
+            🏷️ Mã Bản vẽ / Sheet No. / Phân đoạn (tùy chọn)
+          </label>
+          <input type="text" id="ql-input-sheetno" class="form-input" list="ql-sheet-suggestions" placeholder="VD: DWG-14D-01, Km0-Km5, S-02..." value="${existingActual?.sheetNo || ''}" style="width: 100%;">
+          <datalist id="ql-sheet-suggestions">
+            ${(project.segments || []).map(s => `<option value="${s.name}">`).join('')}
+            ${(project.drawingData || []).filter(d => !d.isHeader).map(d => `<option value="${d.content}">`).join('')}
+          </datalist>
+        </div>
+
         <div>
           <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">
             📝 Ghi chú công việc đã làm
@@ -796,6 +1161,8 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
       hoursInput.value = act.hours;
       noteInput.value = act.note || act.comment || '';
       isotInput.checked = act.isOT || false;
+      const sheetEl = document.getElementById('ql-input-sheetno');
+      if (sheetEl) sheetEl.value = act.sheetNo || '';
     } else if (planH > 0) {
       hoursInput.value = planH;
     }
@@ -846,6 +1213,7 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
     const hoursNum = parseFloat(hoursInput.value);
     const isOT = isotInput.checked;
     const noteVal = noteInput.value.trim();
+    const sheetNoVal = document.getElementById('ql-input-sheetno')?.value.trim() || '';
 
     if (!selectedDate) {
       alert('Vui lòng chọn ngày làm việc');
@@ -872,6 +1240,7 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
         ...updatedTs[existingIdx],
         hours: hoursNum,
         isOT: isOT,
+        sheetNo: sheetNoVal,
         note: noteVal,
         comment: noteVal,
         updatedAt: new Date().toISOString()
@@ -886,6 +1255,7 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
         projectName: project.name,
         taskId: taskId,
         taskName: itemName,
+        sheetNo: sheetNoVal,
         dateString: selectedDate,
         date: selectedDate,
         hours: hoursNum,
@@ -931,6 +1301,355 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
     showToast(`✅ Đã lưu ${hoursNum}h làm việc cho "${itemName}"!`);
     refreshPage();
   });
+}
+
+/**
+ * MODAL CHỈNH SỬA GIỜ LÀM VIỆC (EDIT TIMESHEET MODAL)
+ */
+function openEditTimesheetModal(tsId) {
+  const { timesheets, projects } = getState();
+  const targetTs = (timesheets || []).find(t => t.id === tsId);
+  if (!targetTs) {
+    showToast('⚠️ Không tìm thấy bản ghi giờ làm!', 'warning');
+    return;
+  }
+
+  const proj = (projects || []).find(p => p.id === targetTs.projectId);
+  let task = null;
+  let isRfi = false;
+  if (proj) {
+    if (targetTs.taskId && targetTs.taskId.startsWith('rfi_')) {
+      isRfi = true;
+    } else {
+      task = (proj.tasks || []).find(t => t.id === targetTs.taskId || t.name === targetTs.taskName);
+      if (!task && targetTs.taskId && targetTs.taskId.startsWith('t_')) {
+        const idx = parseInt(targetTs.taskId.replace('t_', ''), 10);
+        if (!isNaN(idx)) task = proj.tasks[idx];
+      }
+    }
+  }
+
+  const currentDateVal = targetTs.dateString || targetTs.date;
+  const currentHours = targetTs.hours || 0;
+  const currentNote = targetTs.note || targetTs.comment || '';
+  const isOT = targetTs.isOT || false;
+
+  const contentHTML = `
+    <div class="edit-timesheet-modal" style="padding: 4px 0;">
+      <!-- Header Info Banner -->
+      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
+          <span class="badge blue" style="font-size: 0.72rem;">📁 ${proj ? proj.name : (targetTs.projectName || targetTs.projectId)}</span>
+          <span class="badge green" style="font-size: 0.72rem;">${isRfi ? 'Xử lý RFI' : 'Công việc'}</span>
+          ${targetTs.isOT ? '<span class="badge orange" style="font-size: 0.72rem;">Ngoài giờ (OT)</span>' : ''}
+        </div>
+        <div style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin-top: 6px;">
+          ${targetTs.taskName || task?.name || 'Công việc'}
+        </div>
+      </div>
+
+      <!-- Form Inputs -->
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <!-- Ngày -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">📅 Ngày làm việc</label>
+          <input type="date" id="edit-ts-date" class="form-input" value="${currentDateVal}" style="width: 100%;">
+        </div>
+
+        <!-- Số giờ -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">
+            ⏱️ Số giờ làm việc thực tế <span style="color: var(--text-danger);">*</span>
+          </label>
+          <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+            <input type="number" id="edit-ts-hours" class="form-input" min="0.5" max="24" step="0.5" value="${currentHours}" style="font-size: 1.15rem; font-weight: 700; width: 110px; text-align: center;">
+            <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);">giờ</span>
+            <div style="flex: 1;"></div>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 0.8rem; cursor: pointer; color: var(--text-secondary); background: var(--bg-tertiary); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border-subtle);">
+              <input type="checkbox" id="edit-ts-isot" ${isOT ? 'checked' : ''} style="accent-color: var(--accent-primary);">
+              <span>Làm ngoài giờ (OT)</span>
+            </label>
+          </div>
+
+          <!-- Nút chọn nhanh giờ -->
+          <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="1">1h</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="2">2h</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="3">3h</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="4">4h (Nửa ngày)</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="6">6h</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-hour-btn" data-hours="8" style="font-weight: bold; border-color: #10b981; color: #10b981;">8h (Cả ngày)</button>
+          </div>
+        </div>
+
+        <!-- Cập nhật Tiến độ Task nếu có task -->
+        ${task ? `
+          <div style="padding-top: 10px; border-top: 1px solid var(--border-subtle);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label class="text-xs font-semibold" style="color: var(--text-primary);">📊 Cập nhật tiến độ hoàn thành</label>
+              <span id="edit-ts-progress-val" style="font-size: 0.95rem; font-weight: 700; color: var(--accent-primary);">${task.progress || 0}%</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+              <input type="range" id="edit-ts-progress" min="0" max="100" step="5" value="${task.progress || 0}" style="flex: 1; accent-color: var(--accent-primary);">
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="10">+10%</button>
+              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="25">+25%</button>
+              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-set="100" style="color: #10b981; border-color: #10b981; font-weight: bold;">Hoàn thành 100% ✅</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Mã Bản vẽ / Sheet No. -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">
+            🏷️ Mã Bản vẽ / Sheet No. / Phân đoạn (tùy chọn)
+          </label>
+          <input type="text" id="edit-ts-sheetno" class="form-input" list="edit-sheet-suggestions" placeholder="VD: DWG-14D-01, S-02..." value="${targetTs.sheetNo || ''}" style="width: 100%;">
+          <datalist id="edit-sheet-suggestions">
+            ${(proj?.segments || []).map(s => `<option value="${s.name}">`).join('')}
+            ${(proj?.drawingData || []).filter(d => !d.isHeader).map(d => `<option value="${d.content}">`).join('')}
+          </datalist>
+        </div>
+
+        <!-- Ghi chú nội dung -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 6px;">
+            📝 Ghi chú công việc đã làm
+          </label>
+          <input type="text" id="edit-ts-note" class="form-input" placeholder="VD: Dựng mô hình bản vẽ phân đoạn A..." value="${currentNote}" style="width: 100%;">
+        </div>
+      </div>
+
+      <!-- Action buttons -->
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border-color);">
+        <button type="button" class="btn btn-outline" id="edit-ts-btn-cancel">Hủy</button>
+        <button type="button" class="btn btn-primary" id="edit-ts-btn-submit" style="background: #10b981; border-color: #10b981; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 8px 18px;">
+          💾 Lưu Thay Đổi
+        </button>
+      </div>
+    </div>
+  `;
+
+  openModal('✏️ Chỉnh Sửa Giờ Làm Việc', contentHTML, { size: 'normal' });
+
+  // Event handlers
+  const hoursInput = document.getElementById('edit-ts-hours');
+  const dateInput = document.getElementById('edit-ts-date');
+  const isotInput = document.getElementById('edit-ts-isot');
+  const noteInput = document.getElementById('edit-ts-note');
+  const progSlider = document.getElementById('edit-ts-progress');
+  const progVal = document.getElementById('edit-ts-progress-val');
+
+  // Quick hour buttons
+  document.querySelectorAll('.btn-edit-hour-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      hoursInput.value = e.currentTarget.dataset.hours;
+      document.querySelectorAll('.btn-edit-hour-btn').forEach(b => b.classList.remove('active'));
+      e.currentTarget.classList.add('active');
+    });
+  });
+
+  // Quick progress buttons
+  if (progSlider && progVal) {
+    progSlider.addEventListener('input', (e) => {
+      progVal.textContent = `${e.target.value}%`;
+    });
+    document.querySelectorAll('.btn-edit-prog-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        let current = parseInt(progSlider.value);
+        if (e.currentTarget.dataset.set) {
+          current = parseInt(e.currentTarget.dataset.set);
+        } else if (e.currentTarget.dataset.add) {
+          current = Math.min(100, current + parseInt(e.currentTarget.dataset.add));
+        }
+        progSlider.value = current;
+        progVal.textContent = `${current}%`;
+      });
+    });
+  }
+
+  // Cancel
+  document.getElementById('edit-ts-btn-cancel')?.addEventListener('click', closeModal);
+
+  // Submit
+  document.getElementById('edit-ts-btn-submit')?.addEventListener('click', () => {
+    const newDate = dateInput.value;
+    const newHours = parseFloat(hoursInput.value);
+    const newIsOT = isotInput.checked;
+    const newNote = noteInput.value.trim();
+    const newSheetNo = document.getElementById('edit-ts-sheetno')?.value.trim() || '';
+
+    if (!newDate) {
+      alert('Vui lòng chọn ngày làm việc');
+      return;
+    }
+    if (isNaN(newHours) || newHours <= 0) {
+      alert('Vui lòng nhập số giờ hợp lệ (> 0)');
+      return;
+    }
+
+    const { timesheets: curTs } = getState();
+    const updatedTs = [...(curTs || [])];
+    const tsIdx = updatedTs.findIndex(t => t.id === tsId);
+
+    if (tsIdx >= 0) {
+      const oldDate = updatedTs[tsIdx].dateString || updatedTs[tsIdx].date;
+      updatedTs[tsIdx] = {
+        ...updatedTs[tsIdx],
+        dateString: newDate,
+        date: newDate,
+        hours: newHours,
+        isOT: newIsOT,
+        sheetNo: newSheetNo,
+        note: newNote,
+        comment: newNote,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Cập nhật project tasks nếu có
+      if (proj && proj.tasks) {
+        let targetTask = proj.tasks.find(t => t.id === targetTs.taskId || t.name === targetTs.taskName);
+        if (targetTask) {
+          if (!targetTask.dailyHours_actual) targetTask.dailyHours_actual = {};
+          if (oldDate !== newDate && targetTask.dailyHours_actual[oldDate] !== undefined) {
+            delete targetTask.dailyHours_actual[oldDate];
+          }
+          targetTask.dailyHours_actual[newDate] = newHours;
+
+          if (progSlider) {
+            const newProgress = parseInt(progSlider.value);
+            targetTask.progress = newProgress;
+            targetTask.status = newProgress >= 100 ? 'completed' : 'active';
+          }
+          updateProject(proj.id, { tasks: proj.tasks });
+        }
+      }
+
+      setState('timesheets', updatedTs);
+      saveLocalSnapshot(`Chỉnh sửa giờ làm: ${newHours}h cho ${targetTs.taskName || 'công việc'}`);
+      closeModal();
+      showToast(`✅ Đã cập nhật thành công ${newHours} giờ làm việc!`);
+      refreshPage();
+    }
+  });
+}
+
+/**
+ * XỬ LÝ 1-CLICK GHI NHANH THEO KẾ HOẠCH (QUICK FILL FROM PLAN)
+ */
+function handleQuickFillFromPlan(targetDateStr) {
+  const { timesheets, projects, personnel, currentUserAuth, currentUser } = getState();
+  const userEmail = currentUserAuth?.email || currentUser?.email || '';
+  const myRecord = (personnel || []).find(p => p.email === userEmail) || currentUser?.personnelRecord;
+  const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
+  const personId = myRecord ? myRecord.id : (currentUserAuth?.id || 'unknown');
+
+  const matchUser = (ts) => (personId && ts.userId === personId) || (userEmail && ts.email === userEmail) || (userName && ts.userName === userName);
+
+  // 1. Quét các timesheet kế hoạch (isActual === false) của user vào ngày targetDateStr
+  const plannedTs = (timesheets || []).filter(ts => {
+    return matchUser(ts) && (ts.dateString === targetDateStr || ts.date === targetDateStr) && !ts.isActual && Number(ts.hours) > 0;
+  });
+
+  // 2. Quét thêm từ project.tasks nếu có dailyHours_planned vào targetDateStr mà chưa có trong plannedTs
+  const tasksToFill = [];
+  (projects || []).forEach(project => {
+    (project.tasks || []).forEach((task, tIdx) => {
+      const isAssigned = task.assignee === userName || task.assignee === userEmail || (myRecord && task.assignee === myRecord.name);
+      if (isAssigned && task.dailyHours_planned && Number(task.dailyHours_planned[targetDateStr]) > 0) {
+        const taskId = task.id || `t_${tIdx}`;
+        const alreadyInPlanTs = plannedTs.some(pt => pt.projectId === project.id && (pt.taskId === taskId || pt.taskId === task.id));
+        if (!alreadyInPlanTs) {
+          tasksToFill.push({
+            projectId: project.id,
+            projectName: project.name,
+            taskId: taskId,
+            taskName: task.name,
+            hours: Number(task.dailyHours_planned[targetDateStr]),
+            taskIdx: tIdx
+          });
+        }
+      }
+    });
+  });
+
+  const allPlannedItems = [
+    ...plannedTs.map(pt => ({
+      projectId: pt.projectId,
+      projectName: pt.projectName,
+      taskId: pt.taskId,
+      taskName: pt.taskName || pt.projectName,
+      hours: Number(pt.hours),
+      isRfi: pt.taskId?.startsWith('rfi_')
+    })),
+    ...tasksToFill
+  ];
+
+  if (allPlannedItems.length === 0) {
+    showToast(`⚠️ Không tìm thấy giờ kế hoạch được giao cho ngày ${formatDate(targetDateStr)}!`, 'warning');
+    return;
+  }
+
+  // Lọc ra các mục chưa được ghi nhận thực tế (hoặc ghi nhận chưa đủ)
+  let newlyLoggedCount = 0;
+  let totalHoursLogged = 0;
+  const updatedTs = [...(timesheets || [])];
+  const updatedProjects = [...(projects || [])];
+
+  allPlannedItems.forEach(item => {
+    // Kiểm tra xem đã có bản ghi thực tế chưa
+    const existingActualIdx = updatedTs.findIndex(t => {
+      return matchUser(t) && t.projectId === item.projectId && (t.taskId === item.taskId || t.taskName === item.taskName) && (t.dateString === targetDateStr || t.date === targetDateStr) && t.isActual === true;
+    });
+
+    if (existingActualIdx < 0) {
+      // Thêm bản ghi thực tế mới
+      updatedTs.unshift({
+        id: `ts-act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        userId: personId,
+        userName: userName,
+        email: userEmail,
+        projectId: item.projectId,
+        projectName: item.projectName,
+        taskId: item.taskId,
+        taskName: item.taskName,
+        dateString: targetDateStr,
+        date: targetDateStr,
+        hours: item.hours,
+        isActual: true,
+        isOT: false,
+        note: `Ghi nhanh theo kế hoạch (${item.taskName})`,
+        comment: `Ghi nhanh theo kế hoạch (${item.taskName})`,
+        createdAt: new Date().toISOString()
+      });
+      newlyLoggedCount++;
+      totalHoursLogged += item.hours;
+
+      // Cập nhật dailyHours_actual trên project task
+      const proj = updatedProjects.find(p => p.id === item.projectId);
+      if (proj && proj.tasks) {
+        let task = proj.tasks.find(t => t.id === item.taskId);
+        if (!task && item.taskIdx !== undefined) task = proj.tasks[item.taskIdx];
+        if (task) {
+          if (!task.dailyHours_actual) task.dailyHours_actual = {};
+          task.dailyHours_actual[targetDateStr] = item.hours;
+        }
+      }
+    }
+  });
+
+  if (newlyLoggedCount === 0) {
+    showToast(`ℹ️ Các công việc trong kế hoạch ngày ${formatDate(targetDateStr)} đều đã được ghi nhận giờ rồi.`, 'info');
+    return;
+  }
+
+  // Cập nhật state & lưu snapshot
+  setState('timesheets', updatedTs);
+  setState('projects', updatedProjects);
+  saveLocalSnapshot(`Ghi nhanh ${totalHoursLogged}h theo kế hoạch ngày ${targetDateStr}`);
+  showToast(`⚡ Đã ghi nhận thành công ${totalHoursLogged}h thực tế (${newlyLoggedCount} đầu việc) theo kế hoạch!`);
+  refreshPage();
 }
 
 export function init() {
@@ -1125,6 +1844,7 @@ export function init() {
     const taskId = document.getElementById('ts-task').value || 't_general';
     const hours = parseFloat(document.getElementById('ts-hours').value);
     const note = document.getElementById('ts-note').value.trim();
+    const sheetNo = document.getElementById('ts-sheetno')?.value.trim() || '';
 
     if (!projectId) {
       showToast('⚠️ Vui lòng chọn dự án!', 'warning');
@@ -1154,6 +1874,7 @@ export function init() {
       projectId: projectId,
       projectName: proj?.name || '',
       taskId: taskId,
+      sheetNo: sheetNo,
       dateString: selectedDate,
       date: selectedDate,
       hours: hours,
@@ -1242,6 +1963,71 @@ export function init() {
     refreshPage();
     showToast('🔄 Đã cập nhật lại dữ liệu!');
   });
+
+  // 14. Nút chỉnh sửa giờ làm việc (Edit timesheet)
+  document.querySelectorAll('.btn-edit-timesheet').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tsId = e.currentTarget.dataset.id;
+      openEditTimesheetModal(tsId);
+    });
+  });
+
+  // 15. Nút ghi nhanh theo kế hoạch hôm nay (1-Click Fill by Plan)
+  document.querySelectorAll('.btn-quick-fill-today').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const targetDate = e.currentTarget.dataset.date || new Date().toISOString().split('T')[0];
+      handleQuickFillFromPlan(targetDate);
+    });
+  });
+
+  // 16. Chuyển đổi chế độ xem Lịch / Bảng
+  document.querySelectorAll('.btn-view-mode').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      currentViewMode = e.currentTarget.dataset.mode;
+      refreshPage();
+    });
+  });
+
+  // 17. Điều hướng tháng trên Lịch
+  document.querySelectorAll('.btn-cal-nav').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const dir = parseInt(e.currentTarget.dataset.dir);
+      currentCalendarMonth += dir;
+      if (currentCalendarMonth < 0) {
+        currentCalendarMonth = 11;
+        currentCalendarYear -= 1;
+      } else if (currentCalendarMonth > 11) {
+        currentCalendarMonth = 0;
+        currentCalendarYear += 1;
+      }
+      refreshPage();
+    });
+  });
+
+  // 18. Nút Hôm nay trên Lịch
+  document.querySelector('.btn-cal-today')?.addEventListener('click', () => {
+    const now = new Date();
+    currentCalendarMonth = now.getMonth();
+    currentCalendarYear = now.getFullYear();
+    refreshPage();
+  });
+
+  // 19. Nút ghi giờ trực tiếp từ ô ngày trên Lịch
+  document.querySelectorAll('.btn-cal-add-log').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const targetDate = e.currentTarget.dataset.date;
+      const tsDateEl = document.getElementById('ts-date');
+      if (tsDateEl) {
+        tsDateEl.value = targetDate;
+        tsDateEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        tsDateEl.style.boxShadow = '0 0 0 3px rgba(16, 185, 129, 0.4)';
+        setTimeout(() => { tsDateEl.style.boxShadow = ''; }, 1500);
+      }
+    });
+  });
+
+  // 20. Nút Xuất Excel chấm công cá nhân
+  document.getElementById('btn-export-ts-excel')?.addEventListener('click', exportTimesheetToExcel);
 }
 
 function refreshPage() {

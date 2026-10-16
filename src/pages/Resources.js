@@ -1066,6 +1066,8 @@ function openPersonnelDetailModal(person) {
   };
 
   // Find logged hours for this person
+  const { deletedTimesheetIds } = getState();
+  const delSet = new Set(deletedTimesheetIds || []);
   const userTimesheets = (timesheets || []).filter(ts => {
     return personMatcher(ts.userId) || personMatcher(ts.email) || personMatcher(ts.userEmail) || personMatcher(ts.userName);
   });
@@ -1078,7 +1080,11 @@ function openPersonnelDetailModal(person) {
         if (t.dailyHours_actual && typeof t.dailyHours_actual === 'object') {
           Object.entries(t.dailyHours_actual).forEach(([dStr, hrs]) => {
             const h = Number(hrs) || 0;
-            if (h > 0 && !userTimesheets.some(ts => ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
+            const isDel = delSet.has(`syn-res-act-${t.id}-${dStr}`) ||
+                          delSet.has(`syn-act-${t.id}-${dStr}`) ||
+                          delSet.has(`ts-act-${t.id}-${dStr}`) ||
+                          delSet.has(`${person.id}_${proj.id}_${t.id}_${dStr}_true`);
+            if (!isDel && h > 0 && !userTimesheets.some(ts => ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
               userTimesheets.push({
                 id: `syn-res-act-${t.id}-${dStr}`,
                 userId: person.id,
@@ -1100,7 +1106,11 @@ function openPersonnelDetailModal(person) {
         if (t.dailyHours_planned && typeof t.dailyHours_planned === 'object') {
           Object.entries(t.dailyHours_planned).forEach(([dStr, hrs]) => {
             const h = Number(hrs) || 0;
-            if (h > 0 && !userTimesheets.some(ts => !ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
+            const isDel = delSet.has(`syn-res-plan-${t.id}-${dStr}`) ||
+                          delSet.has(`syn-plan-${t.id}-${dStr}`) ||
+                          delSet.has(`ts-plan-${t.id}-${dStr}`) ||
+                          delSet.has(`${person.id}_${proj.id}_${t.id}_${dStr}_false`);
+            if (!isDel && h > 0 && !userTimesheets.some(ts => !ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
               userTimesheets.push({
                 id: `syn-res-plan-${t.id}-${dStr}`,
                 userId: person.id,

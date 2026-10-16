@@ -491,6 +491,9 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, match
   let weekPlannedHours = 0;
   const todayStr = formatLocalDate(new Date());
 
+  const { deletedTimesheetIds } = getState();
+  const delSet = new Set(deletedTimesheetIds || []);
+
   for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
@@ -504,20 +507,28 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, match
     let actual = dayRecords.filter(t => t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
     let planned = dayRecords.filter(t => !t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
 
-    // Bổ sung thêm giờ từ các tasks được phân công cho nhân sự này
+    // Bổ sung thêm giờ từ các tasks được phân công cho nhân sự này (loại trừ giờ đã xóa)
     (myAssignments || []).forEach(({ project, tasks }) => {
       (tasks || []).forEach(task => {
         if (task.dailyHours_actual && task.dailyHours_actual[dateStr] !== undefined) {
           const h = Number(task.dailyHours_actual[dateStr]) || 0;
+          const isDel = delSet.has(`syn-act-${task.id}-${dateStr}`) ||
+                        delSet.has(`ts-act-${task.id}-${dateStr}`) ||
+                        delSet.has(`syn-res-act-${task.id}-${dateStr}`) ||
+                        delSet.has(`${personId || 'u_thien'}_${project.id}_${task.id}_${dateStr}_true`);
           const already = dayRecords.some(t => t.isActual && (t.taskId === task.id || t.taskName === task.name));
-          if (!already && h > 0) {
+          if (!isDel && !already && h > 0) {
             actual += h;
           }
         }
         if (task.dailyHours_planned && task.dailyHours_planned[dateStr] !== undefined) {
           const h = Number(task.dailyHours_planned[dateStr]) || 0;
+          const isDel = delSet.has(`syn-plan-${task.id}-${dateStr}`) ||
+                        delSet.has(`ts-plan-${task.id}-${dateStr}`) ||
+                        delSet.has(`syn-res-plan-${task.id}-${dateStr}`) ||
+                        delSet.has(`${personId || 'u_thien'}_${project.id}_${task.id}_${dateStr}_false`);
           const already = dayRecords.some(t => !t.isActual && (t.taskId === task.id || t.taskName === task.name));
-          if (!already && h > 0) {
+          if (!isDel && !already && h > 0) {
             planned += h;
           }
         }
@@ -654,7 +665,8 @@ function renderWeeklyTimesheetStrip(weekStats) {
  * HIỂN THỊ DANH SÁCH TIMESHEET GẦN ĐÂY (Chỉ hiển thị giờ do chính nhân sự ghi nhận)
  */
 function renderRecentTimesheets(email, displayName, personnelName, filter = 'week', personId = null, matcher = null, myAssignments = []) {
-  const { timesheets, projects } = getState();
+  const { timesheets, projects, deletedTimesheetIds } = getState();
+  const delSet = new Set(deletedTimesheetIds || []);
   const todayStr = formatLocalDate(new Date());
 
   // Tính ngày đầu tuần (Thứ 2) và Chủ Nhật (Cuối tuần)
@@ -686,10 +698,17 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
         Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
           const h = Number(hrs);
           if (h > 0) {
+            const synId = `syn-act-${task.id}-${dStr}`;
+            const tsActId = `ts-act-${task.id}-${dStr}`;
+            const synResId = `syn-res-act-${task.id}-${dStr}`;
+            const cKey = `${personId || 'u_thien'}_${project.id}_${task.id}_${dStr}_true`;
+            if (delSet.has(synId) || delSet.has(tsActId) || delSet.has(synResId) || delSet.has(cKey)) {
+              return;
+            }
             const already = myTimesheets.some(ts => (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === task.id || ts.taskName === task.name));
             if (!already) {
               myTimesheets.push({
-                id: `syn-act-${task.id}-${dStr}`,
+                id: synId,
                 userId: personId || 'u_thien',
                 userName: displayName || personnelName || 'Nhân sự',
                 email: email,
@@ -823,7 +842,8 @@ function formatDate(str) {
  * HIỂN THỊ TIMESHEET DẠNG LỊCH THÁNG (CALENDAR GRID VIEW)
  */
 function renderTimesheetCalendar(email, displayName, personnelName, personId, year, month, matcher = null, myAssignments = []) {
-  const { timesheets, projects } = getState();
+  const { timesheets, projects, deletedTimesheetIds } = getState();
+  const delSet = new Set(deletedTimesheetIds || []);
   const today = new Date();
   const todayStr = formatLocalDate(today);
   const isMatch = matcher || createMemberMatcher(email, displayName, null);
@@ -841,10 +861,17 @@ function renderTimesheetCalendar(email, displayName, personnelName, personId, ye
         Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
           const h = Number(hrs);
           if (h > 0) {
+            const synId = `syn-act-${task.id}-${dStr}`;
+            const tsActId = `ts-act-${task.id}-${dStr}`;
+            const synResId = `syn-res-act-${task.id}-${dStr}`;
+            const cKey = `${personId || 'u_thien'}_${project.id}_${task.id}_${dStr}_true`;
+            if (delSet.has(synId) || delSet.has(tsActId) || delSet.has(synResId) || delSet.has(cKey)) {
+              return;
+            }
             const already = myTimesheets.some(ts => (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === task.id || ts.taskName === task.name));
             if (!already) {
               myTimesheets.push({
-                id: `syn-act-${task.id}-${dStr}`,
+                id: synId,
                 userId: personId || 'u_thien',
                 userName: displayName || personnelName || 'Nhân sự',
                 email: email,
@@ -1485,12 +1512,47 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
  * MODAL CHỈNH SỬA GIỜ LÀM VIỆC (EDIT TIMESHEET MODAL)
  */
 function openEditTimesheetModal(tsId) {
-  const { timesheets, projects } = getState();
-  const targetTs = (timesheets || []).find(t => {
+  const { timesheets, projects, currentUserAuth, currentUser, personnel } = getState();
+  const userEmail = currentUserAuth?.email || currentUser?.email || '';
+  const myRecord = (personnel || []).find(p => p.email === userEmail) || currentUser?.personnelRecord;
+  const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
+  const personId = myRecord ? myRecord.id : (currentUserAuth?.id || 'unknown');
+
+  let targetTs = (timesheets || []).find(t => {
     if (t.id === tsId) return true;
     const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
     return compKey === tsId;
   });
+
+  // Nếu targetTs chưa có (do synthetic ID), tìm từ projects
+  if (!targetTs && (tsId.startsWith('syn-act-') || tsId.startsWith('syn-res-act-') || tsId.startsWith('ts-act-'))) {
+    const dMatch = tsId.match(/\d{4}-\d{2}-\d{2}$/);
+    const dStr = dMatch ? dMatch[0] : '';
+    const taskId = tsId.replace(/^(syn-act-|syn-res-act-|ts-act-)/, '').replace(new RegExp(`-${dStr}$`), '');
+    for (const p of (projects || [])) {
+      const tsk = (p.tasks || []).find(t => t.id === taskId || t.name === taskId);
+      if (tsk) {
+        targetTs = {
+          id: tsId,
+          userId: personId,
+          userName: userName,
+          email: userEmail,
+          projectId: p.id,
+          projectName: p.name,
+          taskId: tsk.id,
+          taskName: tsk.name,
+          dateString: dStr,
+          date: dStr,
+          hours: Number(tsk.dailyHours_actual?.[dStr]) || 0,
+          isActual: true,
+          isOT: false,
+          note: `Thực tế: ${tsk.name}`
+        };
+        break;
+      }
+    }
+  }
+
   if (!targetTs) {
     showToast('⚠️ Không tìm thấy bản ghi giờ làm!', 'warning');
     return;
@@ -1715,32 +1777,54 @@ function openEditTimesheetModal(tsId) {
         comment: newNote,
         updatedAt: new Date().toISOString()
       };
-
-      // Cập nhật project tasks nếu có
-      if (proj && proj.tasks) {
-        let targetTask = proj.tasks.find(t => t.id === targetTs.taskId || t.name === targetTs.taskName);
-        if (targetTask) {
-          if (!targetTask.dailyHours_actual) targetTask.dailyHours_actual = {};
-          if (oldDate !== newDate && targetTask.dailyHours_actual[oldDate] !== undefined) {
-            delete targetTask.dailyHours_actual[oldDate];
-          }
-          targetTask.dailyHours_actual[newDate] = newHours;
-
-          if (progSlider) {
-            const newProgress = parseInt(progSlider.value);
-            targetTask.progress = newProgress;
-            targetTask.status = newProgress >= 100 ? 'completed' : 'active';
-          }
-          updateProject(proj.id, { tasks: proj.tasks });
-        }
-      }
-
-      setState('timesheets', updatedTs);
-      saveLocalSnapshot(`Chỉnh sửa giờ làm: ${newHours}h cho ${targetTs.taskName || 'công việc'}`);
-      closeModal();
-      showToast(`✅ Đã cập nhật thành công ${newHours} giờ làm việc!`);
-      refreshPage();
+    } else {
+      updatedTs.unshift({
+        id: `ts-act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        userId: targetTs.userId || personId,
+        userName: targetTs.userName || userName,
+        email: targetTs.email || userEmail,
+        projectId: targetTs.projectId,
+        projectName: targetTs.projectName,
+        taskId: targetTs.taskId,
+        taskName: targetTs.taskName,
+        dateString: newDate,
+        date: newDate,
+        hours: newHours,
+        isActual: true,
+        isOT: newIsOT,
+        sheetNo: newSheetNo,
+        note: newNote,
+        comment: newNote,
+        createdAt: new Date().toISOString()
+      });
     }
+
+    // Cập nhật project tasks nếu có
+    const targetProj = proj || (projects || []).find(p => p.id === targetTs.projectId);
+    if (targetProj && targetProj.tasks) {
+      let targetTask = targetProj.tasks.find(t => t.id === targetTs.taskId || t.name === targetTs.taskName);
+      if (targetTask) {
+        if (!targetTask.dailyHours_actual) targetTask.dailyHours_actual = {};
+        const oldDate = targetTs.dateString || targetTs.date;
+        if (oldDate !== newDate && targetTask.dailyHours_actual[oldDate] !== undefined) {
+          delete targetTask.dailyHours_actual[oldDate];
+        }
+        targetTask.dailyHours_actual[newDate] = newHours;
+
+        if (progSlider) {
+          const newProgress = parseInt(progSlider.value);
+          targetTask.progress = newProgress;
+          targetTask.status = newProgress >= 100 ? 'completed' : 'active';
+        }
+        updateProject(targetProj.id, { tasks: targetProj.tasks });
+      }
+    }
+
+    setState('timesheets', updatedTs);
+    saveLocalSnapshot(`Chỉnh sửa giờ làm: ${newHours}h cho ${targetTs.taskName || 'công việc'}`);
+    closeModal();
+    showToast(`✅ Đã cập nhật thành công ${newHours} giờ làm việc!`);
+    refreshPage();
   });
 }
 
@@ -2107,14 +2191,39 @@ export function init() {
       const tsId = e.currentTarget.dataset.id;
       if (!tsId) return;
 
-      const { timesheets, currentUserRole, currentUser } = getState();
-      const targetTs = (timesheets || []).find(t => {
+      const { timesheets, currentUserRole, currentUser, projects } = getState();
+      let targetTs = (timesheets || []).find(t => {
         if (t.id === tsId) return true;
         const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
         return compKey === tsId;
       });
 
-      const isActual = targetTs ? targetTs.isActual !== false : true;
+      // Nếu targetTs chưa có trong timesheets (do là synthetic item từ dailyHours_actual), tìm từ projects
+      if (!targetTs && (tsId.startsWith('syn-act-') || tsId.startsWith('syn-res-act-') || tsId.startsWith('ts-act-'))) {
+        const dMatch = tsId.match(/\d{4}-\d{2}-\d{2}$/);
+        const dStr = dMatch ? dMatch[0] : '';
+        const taskId = tsId.replace(/^(syn-act-|syn-res-act-|ts-act-)/, '').replace(new RegExp(`-${dStr}$`), '');
+        for (const proj of (projects || [])) {
+          const tsk = (proj.tasks || []).find(t => t.id === taskId || t.name === taskId);
+          if (tsk) {
+            targetTs = {
+              id: tsId,
+              projectId: proj.id,
+              projectName: proj.name,
+              taskId: tsk.id,
+              taskName: tsk.name,
+              dateString: dStr,
+              date: dStr,
+              hours: Number(tsk.dailyHours_actual?.[dStr]) || 0,
+              isActual: true
+            };
+            break;
+          }
+        }
+      }
+
+      // Bản ghi ở danh sách lịch sử gần đây của MyTasks luôn là giờ thực tế do nhân sự ghi
+      const isActual = targetTs ? (targetTs.isActual !== false && targetTs.isActual !== 'false') : true;
       const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole || currentUser?.role);
 
       // Chặn bảo vệ: Nếu là giờ kế hoạch và không phải cấp quản lý
@@ -2124,10 +2233,10 @@ export function init() {
       }
 
       const dStr = targetTs ? (targetTs.dateString || targetTs.date) : '';
-      const hStr = targetTs ? `${targetTs.hours}h` : '';
+      const hStr = targetTs?.hours ? `${targetTs.hours}h` : '';
       const confirmMsg = targetTs
         ? `Bạn có chắc chắn muốn xóa vĩnh viễn bản ghi ${isActual ? 'giờ thực tế' : 'giờ kế hoạch'} (${hStr} ngày ${formatDate(dStr)})?`
-        : `Bạn có chắc chắn muốn xóa bản ghi này?`;
+        : `Bạn có chắc chắn muốn xóa bản ghi giờ làm này?`;
 
       if (confirm(confirmMsg)) {
         deleteTimesheet(tsId);

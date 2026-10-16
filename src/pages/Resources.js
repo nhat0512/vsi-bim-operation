@@ -319,22 +319,8 @@ function renderPersonnelTableView(personnel) {
                     <div class="font-semibold text-sm" style="color: var(--text-primary); margin-bottom: 3px;">
                       ${p.role || 'Chưa phân vai trò'}
                     </div>
-                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                    <div>
                       ${getLevelBadge(p.level)}
-                      ${(() => {
-                        const defaultRateMap = {
-                          'BIM Manager': 350000,
-                          'Project Manager': 350000,
-                          'BIM Coordinator': 250000,
-                          'BIM Engineer': 200000,
-                          'BIM Modeler': 150000
-                        };
-                        const effRate = p.hourlyRate || defaultRateMap[p.role] || 150000;
-                        const isCustom = !!p.hourlyRate;
-                        return `<span class="badge" style="font-size: 0.68rem; padding: 1px 6px; background: var(--bg-tertiary); color: var(--text-secondary); font-weight: 600;" title="Đơn giá theo giờ tính chi phí thực tế EVM">
-                          💰 ${(effRate / 1000).toFixed(0)}k/h ${isCustom ? '<span style="color:var(--accent-primary); font-weight:bold;">(Riêng)</span>' : ''}
-                        </span>`;
-                      })()}
                     </div>
                   </td>
 
@@ -831,15 +817,9 @@ function openPersonnelFormModal(person = null) {
           <input type="text" id="p-phone" class="form-input" placeholder="0901-234-567" value="${person?.phone || ''}">
         </div>
         <div>
-          <label class="form-label" style="font-weight: 600; margin-bottom: 4px; display: block;">Đơn giá theo giờ (VNĐ/h)</label>
-          <input type="number" id="p-hourly-rate" class="form-input" min="0" step="10000" placeholder="Mặc định theo vai trò (150k - 350k/h)" value="${person?.hourlyRate || ''}">
-          <span class="text-xs text-muted" style="font-size: 0.7rem; margin-top: 2px; display: block;">Để trống = tự động kế thừa theo chức danh.</span>
+          <label class="form-label" style="font-weight: 600; margin-bottom: 4px; display: block;">Chứng chỉ BIM / Giấy phép</label>
+          <input type="text" id="p-certifications" class="form-input" placeholder="Autodesk Certified, openBIM..." value="${(person?.certifications || []).join(', ')}">
         </div>
-      </div>
-
-      <div>
-        <label class="form-label" style="font-weight: 600; margin-bottom: 4px; display: block;">Chứng chỉ BIM / Giấy phép</label>
-        <input type="text" id="p-certifications" class="form-input" placeholder="Autodesk Certified, openBIM..." value="${(person?.certifications || []).join(', ')}">
       </div>
 
       <div>
@@ -976,8 +956,6 @@ function openPersonnelFormModal(person = null) {
       const role = document.getElementById('p-role')?.value;
       const level = document.getElementById('p-level')?.value;
       const phone = document.getElementById('p-phone')?.value?.trim();
-      const hourlyRateVal = document.getElementById('p-hourly-rate')?.value;
-      const hourlyRate = (hourlyRateVal && !isNaN(parseFloat(hourlyRateVal)) && parseFloat(hourlyRateVal) > 0) ? parseFloat(hourlyRateVal) : null;
       const certRaw = document.getElementById('p-certifications')?.value || '';
       const skillsRaw = document.getElementById('p-skills')?.value || '';
 
@@ -1020,7 +998,6 @@ function openPersonnelFormModal(person = null) {
             role,
             level,
             phone,
-            hourlyRate,
             skills,
             certifications,
             allocation,
@@ -1043,7 +1020,6 @@ function openPersonnelFormModal(person = null) {
           role,
           level,
           phone,
-          hourlyRate,
           avatar: getAvatarText(name),
           skills,
           certifications,

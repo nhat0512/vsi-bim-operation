@@ -595,17 +595,20 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
       <table class="data-table">
         <thead>
           <tr>
-            <th style="width: 15%;">Ngày</th>
-            <th style="width: 35%;">Dự án & Nhiệm vụ</th>
-            <th style="width: 15%;">Loại giờ</th>
-            <th style="width: 12%;">Số giờ</th>
-            <th style="width: 18%;">Ghi chú</th>
+            <th style="width: 14%;">Ngày</th>
+            <th style="width: 32%;">Dự án & Nhiệm vụ</th>
+            <th style="width: 12%;">Loại giờ</th>
+            <th style="width: 10%;">Số giờ</th>
+            <th style="width: 14%;">Trạng thái</th>
+            <th style="width: 13%;">Ghi chú</th>
             <th style="width: 5%;"></th>
           </tr>
         </thead>
         <tbody>
           ${myTimesheets.map(ts => {
             const proj = (projects || []).find(p => p.id === ts.projectId);
+            const isPending = ts.approvalStatus === 'pending';
+            const isRejected = ts.approvalStatus === 'rejected';
             return `
               <tr>
                 <td class="text-sm font-semibold">${formatDate(ts.dateString || ts.date)}</td>
@@ -645,6 +648,9 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
                 </td>
                 <td class="text-sm font-bold" style="color: #10b981; font-size: 0.95rem;">
                   ${ts.hours}h
+                </td>
+                <td class="text-sm">
+                  <span class="badge green" style="font-size: 0.68rem; padding: 2px 6px; font-weight: 600;">✅ Đã ghi nhận</span>
                 </td>
                 <td class="text-sm text-muted">${ts.note || ts.comment || '—'}</td>
                 <td class="text-sm text-center" style="white-space: nowrap;">
@@ -1251,6 +1257,7 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
         updatedAt: new Date().toISOString()
       };
     } else {
+      const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(getState().currentUserRole);
       updatedTs.unshift({
         id: `ts-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         userId: personId,
@@ -1266,6 +1273,7 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
         hours: hoursNum,
         isActual: true,
         isOT: isOT,
+        approvalStatus: 'approved',
         note: noteVal,
         comment: noteVal,
         createdAt: new Date().toISOString()
@@ -1655,6 +1663,7 @@ function handleQuickFillFromPlan(targetDateStr) {
         hours: item.hours,
         isActual: true,
         isOT: false,
+        approvalStatus: 'approved',
         note: `Ghi nhanh theo kế hoạch (${item.taskName})`,
         comment: `Ghi nhanh theo kế hoạch (${item.taskName})`,
         createdAt: new Date().toISOString()
@@ -1917,6 +1926,7 @@ export function init() {
       note: note,
       comment: note,
       isActual: true,
+      approvalStatus: 'approved',
       createdAt: new Date().toISOString()
     };
 
@@ -1983,6 +1993,30 @@ export function init() {
     btn.addEventListener('click', (e) => {
       const tsId = e.currentTarget.dataset.id;
       openEditTimesheetModal(tsId);
+    });
+  });
+
+  // 14.1. Nút phê duyệt nhanh giờ làm việc (Quick Approve Timesheet)
+  document.querySelectorAll('.btn-quick-approve-ts').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tsId = btn.dataset.tsId;
+      if (!tsId) return;
+      const { timesheets, currentUser } = getState();
+      const updated = (timesheets || []).map(ts => {
+        if (ts.id === tsId) {
+          return {
+            ...ts,
+            approvalStatus: 'approved',
+            approvedAt: new Date().toISOString(),
+            approvedBy: currentUser?.name || 'Quản lý'
+          };
+        }
+        return ts;
+      });
+      setState('timesheets', updated);
+      showToast('✅ Đã phê duyệt giờ làm này thành công!');
+      refreshPage();
     });
   });
 

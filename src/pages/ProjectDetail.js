@@ -1,10 +1,11 @@
 // ============================================
 // PROJECT DETAIL — Single project view
 // ============================================
-import { getState, updateProject } from '../state.js';
+import { getState, setState, updateProject } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
 import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
+import { openModal, closeModal } from '../components/Modal.js';
 
 let hoursOverTimeChartInstance = null;
 let hoursByPhaseChartInstance = null;
@@ -81,16 +82,63 @@ function computeProjectMetrics(project, personnel, timesheets) {
     'BIM Modeler': 150000
   };
 
-  projectTimesheets.forEach(t => {
-     const hrs = Number(t.hours) || 0;
-     totalHours += hrs;
-     const person = (personnel || []).find(p => p.id === t.userId || p.email === t.email || p.name === t.userName);
-     const role = person ? person.role : 'BIM Modeler';
-     const rate = rateMap[role] || 150000;
-     laborCost += hrs * rate;
+  const laborMap = new Map();
+
+  const getPersonMeta = (id, email, name) => {
+    let person = (personnel || []).find(p => (id && p.id === id) || (email && p.email === email) || (name && p.name === name));
+    const role = person ? person.role : 'BIM Modeler';
+    const rate = (person && person.hourlyRate && !isNaN(Number(person.hourlyRate)) && Number(person.hourlyRate) > 0)
+      ? Number(person.hourlyRate)
+      : (rateMap[role] || 150000);
+    const key = person ? person.id : (email || name || 'unknown');
+    return {
+      person,
+      key,
+      personId: person ? person.id : key,
+      name: person?.name || name || 'Kỹ sư BIM',
+      email: person?.email || email || '',
+      role,
+      rate,
+      isCustomRate: !!(person && person.hourlyRate && !isNaN(Number(person.hourlyRate)) && Number(person.hourlyRate) > 0)
+    };
+  };
+
+  // 1. Khởi tạo danh sách kỹ sư thuộc team dự án hoặc phân bổ cho dự án
+  (personnel || []).forEach(p => {
+    const isAlloc = (p.allocation || []).some(a => a.projectId === project.id) ||
+      (project.team || []).some(m => m.id === p.id || m.name === p.name || m.email === p.email) ||
+      project.teamLead === p.name;
+    if (isAlloc) {
+      const meta = getPersonMeta(p.id, p.email, p.name);
+      laborMap.set(meta.key, {
+        ...meta,
+        hours: 0,
+        cost: 0
+      });
+    }
   });
 
-  // Bổ sung thêm giờ thực tế từ tasks nếu có
+  // 2. Cộng dồn giờ thực tế từ timesheets của dự án
+  projectTimesheets.forEach(t => {
+     if (t.approvalStatus === 'rejected') return;
+     const hrs = Number(t.hours) || 0;
+     totalHours += hrs;
+     const meta = getPersonMeta(t.userId, t.email, t.userName);
+     
+     if (!laborMap.has(meta.key)) {
+       laborMap.set(meta.key, {
+         ...meta,
+         hours: 0,
+         cost: 0
+       });
+     }
+     const entry = laborMap.get(meta.key);
+     entry.hours += hrs;
+     entry.cost += hrs * meta.rate;
+     laborCost += hrs * meta.rate;
+  });
+
+  // 3. Bổ sung thêm giờ thực tế từ tasks nếu có
   (project.tasks || []).forEach(task => {
     if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
       Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
@@ -103,10 +151,18 @@ function computeProjectMetrics(project, personnel, timesheets) {
           );
           if (!inTs) {
             totalHours += hNum;
-            const person = (personnel || []).find(p => p.name === task.assignee);
-            const role = person ? person.role : 'BIM Modeler';
-            const rate = rateMap[role] || 150000;
-            laborCost += hNum * rate;
+            const meta = getPersonMeta(null, null, task.assignee);
+            if (!laborMap.has(meta.key)) {
+              laborMap.set(meta.key, {
+                ...meta,
+                hours: 0,
+                cost: 0
+              });
+            }
+            const entry = laborMap.get(meta.key);
+            entry.hours += hNum;
+            entry.cost += hNum * meta.rate;
+            laborCost += hNum * meta.rate;
           }
         }
       });
@@ -114,6 +170,13 @@ function computeProjectMetrics(project, personnel, timesheets) {
   });
 
   totalHours = Math.round(totalHours * 10) / 10;
+  laborCost = Math.round(laborCost);
+  const laborBreakdown = Array.from(laborMap.values()).map(item => ({
+    ...item,
+    hours: Math.round(item.hours * 10) / 10,
+    cost: Math.round(item.cost)
+  })).sort((a, b) => b.hours - a.hours || b.cost - a.cost);
+
   let AC = laborCost + (BAC * 0.4 * (project.progress / 100));
   if (AC === 0 && EV > 0) AC = EV * 0.95; 
   
@@ -122,7 +185,7 @@ function computeProjectMetrics(project, personnel, timesheets) {
   const EAC = CPI > 0 ? (BAC / CPI) : BAC;
   const ETC = Math.max(0, EAC - AC);
 
-  return { BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, projectTimesheets };
+  return { BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, laborCost, laborBreakdown, projectTimesheets };
 }
 
 export function render() {
@@ -234,13 +297,13 @@ function renderTabContentHTML(tabName, project) {
   const isEditing = getIsEditing();
   const typeInfo = PROJECT_TYPES[project.type] || {};
   const metrics = computeProjectMetrics(project, personnel, timesheets);
-  const { BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, projectTimesheets } = metrics;
+  const { BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, laborCost, laborBreakdown, projectTimesheets } = metrics;
 
   switch (tabName) {
     case 'overview':
       return `
         ${renderHoursSummary(project, projectTimesheets)}
-        ${renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency)}
+        ${renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency, laborCost, laborBreakdown)}
         <div class="grid-2 mb-lg" style="grid-template-columns: 3fr 2fr;">
           <div class="card">
             <div class="card-header"><h3 class="card-title">📅 Giai đoạn dự án</h3></div>
@@ -263,7 +326,7 @@ function renderTabContentHTML(tabName, project) {
     default:
       return `
         ${renderHoursSummary(project, projectTimesheets)}
-        ${renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency)}
+        ${renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency, laborCost, laborBreakdown)}
         <div class="grid-2 mb-lg" style="grid-template-columns: 3fr 2fr;">
           <div class="card">
             <div class="card-header"><h3 class="card-title">📅 Giai đoạn dự án</h3></div>
@@ -1071,7 +1134,7 @@ function renderRfisSection(project, isEditing, personnel, formatDate) {
 /**
  * QUẢN LÝ CHI PHÍ (5D BIM & EVM)
  */
-function renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency) {
+function renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHours, formatCurrency, laborCost = 0, laborBreakdown = []) {
   return `
     <div class="card mb-lg" style="background: var(--bg-card); border-left: 4px solid var(--accent-primary); border-top: 1px solid var(--border-color); border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); box-shadow: var(--shadow-sm);">
       <div class="card-header" style="border-bottom: 1px dashed var(--border-subtle); display: flex; justify-content: space-between; align-items: center;">
@@ -1093,7 +1156,9 @@ function renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHou
           <div>
             <div class="text-sm text-muted mb-xs font-semibold">Chi phí Thực tế (AC)</div>
             <div style="font-size: 1.5rem; font-weight: bold; color: var(--accent-warning);">${formatCurrency(AC)}</div>
-            <div class="text-xs text-muted mt-xs">Giờ làm (${totalHours}h) + Khác</div>
+            <div class="text-xs text-muted mt-xs">
+              Nhân công: <strong>${formatCurrency(laborCost)}</strong> (${totalHours}h) + Khác
+            </div>
           </div>
         </div>
         
@@ -1134,6 +1199,129 @@ function renderEvmSection(project, BAC, PV, EV, AC, SPI, CPI, EAC, ETC, totalHou
 
         <!-- Chẩn đoán Thông minh 5D BIM -->
         ${renderEvmDiagnostic(SPI, CPI, BAC, EV, PV, AC, EAC, totalHours, formatCurrency)}
+
+        <!-- Bảng Chi tiết Chi phí Nhân công theo Kỹ sư -->
+        ${renderLaborBreakdownTable(laborBreakdown, formatCurrency)}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * BẢNG CHI TIẾT CHI PHÍ NHÂN CÔNG THEO KỸ SƯ
+ */
+function renderLaborBreakdownTable(laborBreakdown = [], formatCurrency) {
+  if (!laborBreakdown || laborBreakdown.length === 0) {
+    return `
+      <div style="margin-top: 20px; padding: 16px; background: var(--bg-tertiary); border-radius: 8px; border: 1px dashed var(--border-color); text-align: center;">
+        <span class="text-sm text-muted">Chưa có dữ liệu nhân sự hoặc giờ làm cho dự án này.</span>
+      </div>
+    `;
+  }
+
+  const totalHours = laborBreakdown.reduce((sum, item) => sum + (item.hours || 0), 0);
+  const totalCost = laborBreakdown.reduce((sum, item) => sum + (item.cost || 0), 0);
+
+  return `
+    <div style="margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border-subtle);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin: 0; display: flex; align-items: center; gap: 6px;">
+            <span>👷</span> Bảng Thống kê Chi phí Nhân công theo Kỹ sư
+          </h4>
+          <div class="text-xs text-muted" style="margin-top: 3px;">
+            Tính tự động: <strong>Giờ làm × Đơn giá/giờ</strong>. Quản lý có thể nhấn <strong>✏️ Đổi đơn giá</strong> để chủ động điều chỉnh trực tiếp bất kỳ lúc nào.
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); font-weight: 700; font-size: 0.85rem; padding: 4px 10px;">
+            Tổng chi phí nhân công: ${formatCurrency(totalCost)}
+          </span>
+        </div>
+      </div>
+
+      <div style="overflow-x: auto; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-subtle);">
+        <table class="table" style="width: 100%; margin-bottom: 0; font-size: 0.85rem;">
+          <thead>
+            <tr style="background: var(--bg-tertiary);">
+              <th style="padding: 10px 14px; text-align: left;">Kỹ sư & Vai trò</th>
+              <th style="padding: 10px 14px; text-align: center; width: 120px;">Số giờ đã nhập</th>
+              <th style="padding: 10px 14px; text-align: right; width: 180px;">Đơn giá / giờ</th>
+              <th style="padding: 10px 14px; text-align: right; width: 180px;">Thành tiền (AC Nhân công)</th>
+              <th style="padding: 10px 14px; text-align: center; width: 130px;">Hành động</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${laborBreakdown.map((item) => {
+              const hasHours = item.hours > 0;
+              return `
+                <tr style="border-bottom: 1px solid var(--border-subtle); ${hasHours ? '' : 'opacity: 0.75;'}">
+                  <td style="padding: 10px 14px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                      <div class="avatar avatar-sm" style="width: 32px; height: 32px; font-size: 0.75rem; font-weight: 700; border-radius: 50%; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color);">
+                        ${(item.name || 'U').split(' ').map(n => n[0]).slice(-2).join('').toUpperCase()}
+                      </div>
+                      <div>
+                        <div style="font-weight: 600; color: var(--text-primary);">${item.name}</div>
+                        <div class="text-xs text-muted" style="display: flex; gap: 6px; align-items: center;">
+                          <span class="badge" style="padding: 1px 6px; font-size: 0.7rem; background: var(--bg-tertiary);">${item.role || 'Chưa gán'}</span>
+                          ${item.department ? `<span>• ${item.department}</span>` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td style="padding: 10px 14px; text-align: center;">
+                    <span style="font-weight: 700; font-size: 0.95rem; color: ${hasHours ? '#10b981' : 'var(--text-muted)'};">
+                      ${item.hours}h
+                    </span>
+                  </td>
+                  <td style="padding: 10px 14px; text-align: right;">
+                    <div style="font-weight: 600; color: var(--text-primary);">
+                      ${Number(item.hourlyRate || 0).toLocaleString('vi-VN')} ₫/h
+                    </div>
+                    <div class="text-xs text-muted">
+                      ${item.isCustomRate ? '<span style="color: #10b981; font-weight: 600;">Đơn giá riêng</span>' : '<span>Mặc định vai trò</span>'}
+                    </div>
+                  </td>
+                  <td style="padding: 10px 14px; text-align: right;">
+                    <span style="font-weight: 700; font-size: 0.95rem; color: ${hasHours ? 'var(--accent-warning)' : 'var(--text-muted)'};">
+                      ${formatCurrency(item.cost)}
+                    </span>
+                  </td>
+                  <td style="padding: 10px 14px; text-align: center;">
+                    <button class="btn btn-ghost btn-sm btn-edit-labor-rate" 
+                            data-person-id="${item.personId}" 
+                            data-person-name="${item.name}" 
+                            data-person-rate="${item.hourlyRate}" 
+                            style="padding: 4px 10px; font-size: 0.78rem; border: 1px solid var(--border-color); border-radius: 4px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;" 
+                            title="Điều chỉnh đơn giá cho kỹ sư ${item.name}">
+                      ✏️ Đổi đơn giá
+                    </button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: var(--bg-tertiary); font-weight: 700; border-top: 2px solid var(--border-color);">
+              <td style="padding: 10px 14px;">
+                Tổng cộng (${laborBreakdown.length} nhân sự)
+              </td>
+              <td style="padding: 10px 14px; text-align: center; color: #10b981; font-size: 1rem;">
+                ${totalHours}h
+              </td>
+              <td style="padding: 10px 14px; text-align: right; color: var(--text-muted); font-size: 0.8rem;">
+                Trung bình ~${totalHours > 0 ? Math.round(totalCost / totalHours).toLocaleString('vi-VN') : 0} ₫/h
+              </td>
+              <td style="padding: 10px 14px; text-align: right; color: var(--accent-warning); font-size: 1.05rem;">
+                ${formatCurrency(totalCost)}
+              </td>
+              <td style="padding: 10px 14px; text-align: center;">
+                <span class="text-xs text-muted">✅ Tự động tính</span>
+              </td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   `;
@@ -1477,6 +1665,143 @@ function bindOverviewActions() {
       triggerProjectAutoSave();
     });
   });
+
+  // Sự kiện Phê duyệt tất cả chấm công chờ duyệt của dự án
+  document.querySelectorAll('.btn-approve-all-ts').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const projId = btn.dataset.projectId;
+      const { timesheets, currentUser } = getState();
+      let approvedCount = 0;
+      let approvedHours = 0;
+      const updated = (timesheets || []).map(ts => {
+        if (ts.projectId === projId && ts.approvalStatus === 'pending') {
+          approvedCount++;
+          approvedHours += (Number(ts.hours) || 0);
+          return {
+            ...ts,
+            approvalStatus: 'approved',
+            approvedAt: new Date().toISOString(),
+            approvedBy: currentUser?.name || 'Quản lý'
+          };
+        }
+        return ts;
+      });
+
+      if (approvedCount > 0) {
+        setState('timesheets', updated);
+        showToast(`✅ Đã phê duyệt thành công ${approvedCount} bản ghi chấm công (${approvedHours}h)!`);
+        switchProjectTab(currentProjectTab);
+      }
+    });
+  });
+
+  // Sự kiện Thay đổi đơn giá kỹ sư theo giờ trực tiếp
+  document.querySelectorAll('.btn-edit-labor-rate').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const personId = btn.dataset.personId;
+      const personName = btn.dataset.personName;
+      const currentRate = parseInt(btn.dataset.personRate, 10) || 150000;
+      openEditLaborRateModal(personId, personName, currentRate);
+    });
+  });
+}
+
+/**
+ * MODAL THAY ĐỔI ĐƠN GIÁ THEO GIỜ CỦA KỸ SƯ
+ */
+function openEditLaborRateModal(personId, personName, currentRate) {
+  const modalHTML = `
+    <div style="padding: 10px 0;">
+      <div style="margin-bottom: 16px; padding: 12px; background: rgba(59, 130, 246, 0.08); border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.2); font-size: 0.85rem; color: var(--text-primary); line-height: 1.5;">
+        💡 <strong>Chủ động định giá nhân công:</strong> Đơn giá theo giờ này được dùng để nhân trực tiếp với số giờ làm của <strong>${personName}</strong>, tự động hạch toán chi phí nhân công thực tế (AC) và tính toán lại toàn bộ chỉ số tài chính (CPI, EAC, ETC) của dự án.
+      </div>
+
+      <div class="form-group mb-md">
+        <label class="form-label" for="input-edit-labor-rate" style="font-weight: 700; margin-bottom: 6px; display: block;">
+          Đơn giá theo giờ mới (VNĐ / giờ):
+        </label>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <input type="number" id="input-edit-labor-rate" class="form-input" min="0" step="5000" value="${currentRate || 150000}" style="font-size: 1.15rem; font-weight: 700; color: #10b981; flex: 1;">
+          <span style="font-weight: 600; color: var(--text-muted); font-size: 0.9rem;">VNĐ/h</span>
+        </div>
+        <div class="text-xs text-muted mt-xs">Hiện tại: <strong>${Number(currentRate || 0).toLocaleString('vi-VN')} ₫/h</strong></div>
+      </div>
+
+      <div class="mb-lg">
+        <label class="form-label" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; display: block;">
+          Hoặc chọn nhanh theo cấp bậc:
+        </label>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <button type="button" class="btn btn-ghost btn-sm btn-quick-rate" data-rate="120000" style="border: 1px solid var(--border-color); font-size: 0.78rem;">120.000 (Junior)</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-quick-rate" data-rate="150000" style="border: 1px solid var(--border-color); font-size: 0.78rem;">150.000 (Modeler)</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-quick-rate" data-rate="180000" style="border: 1px solid var(--border-color); font-size: 0.78rem;">180.000 (Senior)</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-quick-rate" data-rate="220000" style="border: 1px solid var(--border-color); font-size: 0.78rem;">220.000 (Coordinator)</button>
+          <button type="button" class="btn btn-ghost btn-sm btn-quick-rate" data-rate="300000" style="border: 1px solid var(--border-color); font-size: 0.78rem;">300.000 (Manager)</button>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-sm" style="margin-top: 20px; border-top: 1px solid var(--border-subtle); padding-top: 16px;">
+        <button type="button" class="btn btn-ghost" id="btn-cancel-labor-rate">Hủy</button>
+        <button type="button" class="btn btn-primary" id="btn-save-labor-rate" style="font-weight: 700;">💾 Lưu đơn giá & Tính lại chi phí</button>
+      </div>
+    </div>
+  `;
+
+  openModal(`✏️ Đổi Đơn giá Kỹ sư: ${personName}`, modalHTML);
+
+  const rateInput = document.getElementById('input-edit-labor-rate');
+  if (rateInput) {
+    rateInput.focus();
+    rateInput.select();
+  }
+
+  document.querySelectorAll('.btn-quick-rate').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (rateInput) rateInput.value = btn.dataset.rate;
+    });
+  });
+
+  const cancelBtn = document.getElementById('btn-cancel-labor-rate');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', closeModal);
+  }
+
+  const saveBtn = document.getElementById('btn-save-labor-rate');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', () => {
+      const newRate = parseInt(rateInput?.value, 10);
+      if (isNaN(newRate) || newRate < 0) {
+        showToast('Vui lòng nhập đơn giá hợp lệ lớn hơn hoặc bằng 0', 'warning');
+        return;
+      }
+
+      const { personnel } = getState();
+      let found = false;
+      const updated = (personnel || []).map(p => {
+        if (p.id === personId || p.name === personName) {
+          found = true;
+          return { ...p, hourlyRate: newRate };
+        }
+        return p;
+      });
+
+      if (!found && personName) {
+        updated.push({
+          id: personId || `P_${Date.now()}`,
+          name: personName,
+          role: 'BIM Modeler',
+          hourlyRate: newRate
+        });
+      }
+
+      setState('personnel', updated);
+      closeModal();
+      showToast(`✅ Đã cập nhật đơn giá cho ${personName}: ${newRate.toLocaleString('vi-VN')} ₫/h!`);
+      switchProjectTab(currentProjectTab);
+    });
+  }
 }
 
 function performSilentSave() {

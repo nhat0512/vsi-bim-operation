@@ -26,12 +26,13 @@ export function renderGanttChart(projects, scale = 'month') {
 /**
  * Initialize Frappe Gantt with Drag & Drop events
  */
-export function initGanttEvents(onRefresh) {
+export function initGanttEvents(onRefresh, customProjects = null) {
   const container = document.getElementById('gantt-main-container');
   const svgEl = document.getElementById('frappe-gantt-chart');
   if (!container || !svgEl) return;
 
-  const { projects = [], currentUserRole } = getState();
+  const { currentUserRole } = getState();
+  const projects = customProjects || getState().projects || [];
   const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(currentUserRole);
 
   if (projects.length === 0) return;

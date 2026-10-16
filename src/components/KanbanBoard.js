@@ -24,10 +24,17 @@ export function renderKanbanBoard(projects) {
               <span class="kanban-col-count">${colProjects.length}</span>
             </div>
             <div class="kanban-dropzone" data-status="${status}">
-              ${colProjects.map(p => `
-                <div class="kanban-card" draggable="true" data-project-id="${p.id}">
+              ${colProjects.map(p => {
+                const isRisk = (p.modelHealth && p.modelHealth < 70) || 
+                               (((p.clashesTotal || 0) - (p.clashesResolved || 0)) > 60) || 
+                               p.status === 'overdue';
+                return `
+                <div class="kanban-card" draggable="true" data-project-id="${p.id}" style="${isRisk ? 'border-left: 3.5px solid var(--accent-danger); box-shadow: var(--shadow-sm);' : ''}">
                   <div class="flex justify-between mb-xs">
-                    <span class="kanban-card-code">${p.code}</span>
+                    <div class="flex items-center gap-xs">
+                      <span class="kanban-card-code">${p.code}</span>
+                      ${isRisk ? '<span class="badge red" style="font-size: 0.6rem; padding: 1px 4px;">⚠️ Rủi ro</span>' : ''}
+                    </div>
                     <span class="text-xs text-muted">LOD ${p.lodTarget}</span>
                   </div>
                   <div class="kanban-card-title">${p.name}</div>
@@ -41,7 +48,7 @@ export function renderKanbanBoard(projects) {
                     <span class="text-xs text-muted">${p.teamSize} nhân sự</span>
                   </div>
                 </div>
-              `).join('')}
+              `;}).join('')}
               ${colProjects.length === 0 ? '<div class="kanban-empty">Kéo dự án vào đây</div>' : ''}
             </div>
           </div>

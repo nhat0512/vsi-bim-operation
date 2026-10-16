@@ -19,25 +19,52 @@ let isFocusMode = false; // Filter only at-risk projects
 let activeChartTab = 'health'; // 'health' | 'progress' | 'timesheet'
 
 /**
- * Kiểm tra xem dự án có thuộc diện rủi ro / cần chú ý không
+ * Lấy danh sách các lý do rủi ro / cảnh báo cụ thể của dự án
+ * @param {Object} p - Dự án
+ * @returns {Array<{ type: string, text: string, severity: 'danger'|'warning', icon: string }>}
  */
-function isProjectAtRisk(p) {
-  if (!p) return false;
-  if (p.status === 'overdue') return true;
+function getProjectRiskReasons(p) {
+  if (!p) return [];
+  const reasons = [];
+
+  // 1. Quá hạn tiến độ
+  if (p.status === 'overdue') {
+    reasons.push({ type: 'overdue', text: 'Trạng thái dự án quá hạn', severity: 'danger', icon: '🚨' });
+  }
 
   const now = new Date();
   if (p.endDate) {
     const end = new Date(p.endDate);
-    if (p.status !== 'completed' && end < now) return true;
-    const daysLeft = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
-    if (daysLeft <= 45 && (p.progress || 0) < 65) return true;
+    if (p.status !== 'completed' && end < now) {
+      const daysOver = Math.ceil((now - end) / (1000 * 60 * 60 * 24));
+      reasons.push({ type: 'overdue', text: `Đã quá hạn ${daysOver} ngày`, severity: 'danger', icon: '⚠️' });
+    } else if (p.status !== 'completed') {
+      const daysLeft = Math.ceil((end - now) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 45 && (p.progress || 0) < 65) {
+        reasons.push({ type: 'progress_lag', text: `Hạn chót còn ${daysLeft} ngày (Tiến độ ${p.progress || 0}% < 65%)`, severity: 'warning', icon: '⏳' });
+      }
+    }
   }
 
-  if (typeof p.modelHealth === 'number' && p.modelHealth < 70) return true;
-  const unresolvedClashes = (p.clashesTotal || 0) - (p.clashesResolved || 0);
-  if (unresolvedClashes > 60) return true;
+  // 2. Model Health dưới ngưỡng an toàn (< 70%)
+  if (typeof p.modelHealth === 'number' && p.modelHealth < 70) {
+    reasons.push({ type: 'low_health', text: `BIM Health thấp (${p.modelHealth}% < 70%)`, severity: 'danger', icon: '⚡' });
+  }
 
-  return false;
+  // 3. Xung đột mô hình (Clash) tồn đọng cao (> 60)
+  const unresolvedClashes = Math.max(0, (p.clashesTotal || 0) - (p.clashesResolved || 0));
+  if (unresolvedClashes > 60) {
+    reasons.push({ type: 'high_clash', text: `${unresolvedClashes} Clash tồn đọng (> 60)`, severity: 'warning', icon: '💥' });
+  }
+
+  return reasons;
+}
+
+/**
+ * Kiểm tra xem dự án có thuộc diện rủi ro / cần chú ý không
+ */
+function isProjectAtRisk(p) {
+  return getProjectRiskReasons(p).length > 0;
 }
 
 /**
@@ -112,8 +139,13 @@ export function render() {
   // Thống kê nhanh
   const overdueCount = projects.filter(p => isProjectOverdue(p)).length;
   const atRiskCount = projects.filter(p => isProjectAtRisk(p)).length;
-  const deadlineSoonCount = projects.filter(p => isDeadlineSoon(p)).length;
+  const deadlineSoonCount = projects.filter(p => {
+    if (!p || p.status === 'completed' || !p.endDate) return false;
+    const diff = Math.ceil((new Date(p.endDate) - new Date()) / (1000 * 60 * 60 * 24));
+    return diff > 0 && diff <= 45 && (p.progress || 0) < 65;
+  }).length;
   const lowHealthCount = projects.filter(p => (p.modelHealth || 0) < 70).length;
+  const highClashCount = projects.filter(p => ((p.clashesTotal || 0) - (p.clashesResolved || 0)) > 60).length;
   const totalClashes = qualityData?.clashSummary?.reduce((s, c) => s + (c.newClashes || 0), 0) || 
                        projects.reduce((s, p) => s + ((p.clashesTotal || 0) - (p.clashesResolved || 0)), 0);
   const avgProgress = projects.length ? Math.round(projects.reduce((s, p) => s + (p.progress || 0), 0) / projects.length) : 0;
@@ -206,7 +238,7 @@ export function render() {
         </div>
 
         <!-- Executive Smart Alert Banner -->
-        ${renderExecutiveBanner(projects, overdueCount, atRiskCount, deadlineSoonCount, lowHealthCount)}
+        ${renderExecutiveBanner(projects, overdueCount, atRiskCount, deadlineSoonCount, lowHealthCount, highClashCount)}
       </div>
     `,
 
@@ -247,17 +279,19 @@ export function render() {
     `,
 
     // 3. Projects List / Kanban Board
-    projects: () => `
+    projects: () => {
+      const filteredProjects = getFilteredProjects(projects);
+      return `
       <div class="card widget ${dashboardView === 'kanban' ? 'col-span-3' : `col-span-${widgetSpans.projects}`}" data-id="projects" draggable="${isEditingLayout}" style="${isEditingLayout ? 'border: 2px dashed var(--accent-primary); cursor: grab; position: relative;' : ''}">
         ${isEditingLayout ? `<div class="resize-handle" data-target="projects">⇹</div>` : ''}
         
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
           <div style="display: flex; align-items: center; gap: 8px;">
             <h3 class="card-title" style="margin: 0;">🏗️ Dự án đang triển khai</h3>
-            <span class="badge" id="project-count-badge" style="background: var(--bg-tertiary); font-size: 0.72rem; padding: 2px 7px;">
-              ${projects.length} dự án
+            <span class="badge ${isFocusMode ? 'red' : ''}" id="project-count-badge" style="${isFocusMode ? 'background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 700;' : 'background: var(--bg-tertiary);'} font-size: 0.72rem; padding: 2px 7px;">
+              ${isFocusMode ? `${filteredProjects.length} / ${projects.length} dự án trọng tâm` : `${filteredProjects.length} dự án`}
             </span>
-            ${isFocusMode ? '<span class="badge red" style="font-size: 0.7rem;">🎯 Đang bật Chế độ tập trung</span>' : ''}
+            ${isFocusMode ? '<span class="badge red" style="font-size: 0.7rem; background: var(--accent-danger); color: #fff;">🎯 Đang bật Chế độ tập trung</span>' : ''}
             ${activeKPIFilter !== 'all' ? `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: var(--accent-primary); font-size: 0.7rem;">Lọc theo KPI</span>` : ''}
           </div>
 
@@ -311,10 +345,11 @@ export function render() {
         </div>
 
         <div id="projects-list" class="stagger-list">
-          ${dashboardView === 'kanban' ? renderKanbanBoard(projects) : renderProjectsList(getFilteredProjects(projects))}
+          ${dashboardView === 'kanban' ? renderKanbanBoard(filteredProjects) : renderProjectsList(filteredProjects)}
         </div>
       </div>
-    `,
+      `;
+    },
 
     // 4. Right Sidebar: Quick Resources & Real-time Activities
     sidebar: () => dashboardView === 'list' ? `
@@ -357,11 +392,16 @@ export function render() {
     ` : '',
 
     // 5. Gantt Timeline Chart
-    gantt: () => `
+    gantt: () => {
+      const ganttProjects = isFocusMode ? projects.filter(p => isProjectAtRisk(p)) : projects;
+      return `
       <div class="card widget col-span-${widgetSpans.gantt || 3}" data-id="gantt" draggable="${isEditingLayout}" style="${isEditingLayout ? 'border: 2px dashed var(--accent-primary); cursor: grab; position: relative;' : ''}">
         ${isEditingLayout ? `<div class="resize-handle" data-target="gantt" title="Kéo để co giãn độ rộng">⇹</div>` : ''}
         <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
-          <h3 class="card-title">📅 Timeline tổng quan (Kéo thả để dời lịch)</h3>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 class="card-title">📅 Timeline tổng quan</h3>
+            ${isFocusMode ? `<span class="badge red" style="font-size: 0.7rem; background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 700;">🎯 ${ganttProjects.length} Dự án trọng tâm</span>` : '<span class="text-xs text-muted">(Kéo thả để dời lịch)</span>'}
+          </div>
           <div class="flex items-center gap-sm">
             <select id="gantt-scale-select" class="form-select" style="width: 120px; padding: 4px 10px; font-size: 0.8rem; font-weight: 600;">
               <option value="day" ${ganttScale === 'day' ? 'selected' : ''}>DAY</option>
@@ -371,9 +411,10 @@ export function render() {
             </select>
           </div>
         </div>
-        ${renderGanttChart(projects, ganttScale)}
+        ${renderGanttChart(ganttProjects, ganttScale)}
       </div>
-    `
+      `;
+    }
   };
 
   return `
@@ -410,8 +451,8 @@ export function render() {
 /**
  * Render Executive Smart Alert Banner
  */
-function renderExecutiveBanner(projects, overdueCount, atRiskCount, deadlineSoonCount, lowHealthCount) {
-  if (overdueCount === 0 && atRiskCount === 0 && deadlineSoonCount === 0 && lowHealthCount === 0) {
+function renderExecutiveBanner(projects, overdueCount, atRiskCount, deadlineSoonCount, lowHealthCount, highClashCount = 0) {
+  if (overdueCount === 0 && atRiskCount === 0 && deadlineSoonCount === 0 && lowHealthCount === 0 && highClashCount === 0) {
     return '';
   }
 
@@ -419,31 +460,46 @@ function renderExecutiveBanner(projects, overdueCount, atRiskCount, deadlineSoon
   const p14D = projects.find(p => p.id === 'P007' || p.name.includes('14D'));
   let p14DText = '';
   if (p14D) {
-    p14DText = `· 📐 <strong>Bản vẽ 14D:</strong> Tiến độ ${p14D.progress || 0}%`;
+    p14DText = `📐 <strong>Bản vẽ 14D:</strong> Tiến độ ${p14D.progress || 0}%`;
+  }
+
+  const highlightParts = [];
+  if (overdueCount > 0) {
+    highlightParts.push(`<span style="color: #f87171; font-weight: 600;">⚠️ ${overdueCount} dự án quá hạn</span>`);
+  }
+  if (lowHealthCount > 0) {
+    highlightParts.push(`<span style="color: #fca5a5; font-weight: 600;">⚡ ${lowHealthCount} dự án có Model Health &lt; 70%</span>`);
+  }
+  if (highClashCount > 0) {
+    highlightParts.push(`<span style="color: #fdba74; font-weight: 600;">💥 ${highClashCount} dự án Clash tồn đọng (&gt;60)</span>`);
+  }
+  if (deadlineSoonCount > 0) {
+    highlightParts.push(`<span style="color: #fde047; font-weight: 600;">⏳ ${deadlineSoonCount} dự án chậm tiến độ so với hạn nộp</span>`);
+  }
+  if (p14DText) {
+    highlightParts.push(p14DText);
   }
 
   return `
-    <div class="card mb-md" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.75), rgba(15, 23, 42, 0.85)); border-left: 4px solid ${overdueCount > 0 ? 'var(--accent-danger)' : 'var(--accent-warning)'}; padding: 12px 18px; border-radius: var(--radius-sm); border-top: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle);">
-      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <div style="font-size: 1.3rem;">🎯</div>
+    <div class="card mb-md" style="background: linear-gradient(135deg, rgba(30, 41, 59, 0.85), rgba(15, 23, 42, 0.95)); border-left: 4px solid ${overdueCount > 0 ? 'var(--accent-danger)' : 'var(--accent-warning)'}; padding: 12px 18px; border-radius: var(--radius-sm); border-top: 1px solid var(--border-subtle); border-right: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); box-shadow: var(--shadow-sm);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="font-size: 1.4rem; background: rgba(239, 68, 68, 0.15); width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;">🎯</div>
           <div>
-            <div style="font-weight: 700; font-size: 0.85rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+            <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
               <span>Thông tin điều hành trọng tâm (Executive Highlights)</span>
-              ${overdueCount > 0 ? '<span class="badge red" style="font-size: 0.65rem;">Cần can thiệp</span>' : '<span class="badge orange" style="font-size: 0.65rem;">Chú ý</span>'}
+              ${overdueCount > 0 ? '<span class="badge red" style="font-size: 0.65rem;">Cần can thiệp gấp</span>' : '<span class="badge orange" style="font-size: 0.65rem;">Chú ý</span>'}
+              ${isFocusMode ? '<span class="badge red" style="font-size: 0.65rem; background: var(--accent-danger); color: #fff;">Đang bật Chế độ tập trung</span>' : ''}
             </div>
-            <div class="text-xs text-muted" style="margin-top: 3px; line-height: 1.4;">
-              ${overdueCount > 0 ? `<span style="color: #f87171; font-weight: 600;">⚠️ ${overdueCount} dự án quá hạn</span> · ` : ''}
-              ${deadlineSoonCount > 0 ? `<span style="color: #fbbf24;">⏳ ${deadlineSoonCount} dự án sắp đến hạn nộp (&le;30 ngày)</span> · ` : ''}
-              ${lowHealthCount > 0 ? `<span style="color: #fca5a5;">⚡ ${lowHealthCount} dự án có Model Health &lt; 70%</span> ` : ''}
-              ${p14DText}
+            <div class="text-xs text-muted" style="margin-top: 4px; line-height: 1.45;">
+              ${highlightParts.join(' · ')}
             </div>
           </div>
         </div>
 
         <div style="display: flex; gap: 8px; align-items: center;">
-          <button class="btn btn-sm ${isFocusMode ? 'btn-primary' : 'btn-outline'}" id="btn-banner-focus" style="font-size: 0.78rem; padding: 4px 12px;">
-            ${isFocusMode ? '👁️ Xem toàn bộ' : `🎯 Bật Chế độ tập trung (${atRiskCount})`}
+          <button class="btn btn-sm ${isFocusMode ? 'btn-primary' : 'btn-outline'}" id="btn-banner-focus" style="font-size: 0.8rem; padding: 5px 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; ${isFocusMode ? 'box-shadow: 0 0 12px rgba(59, 130, 246, 0.4);' : ''}">
+            ${isFocusMode ? '👁️ Xem toàn bộ dự án' : `🎯 Bật Chế độ tập trung (${atRiskCount})`}
           </button>
         </div>
       </div>
@@ -536,11 +592,12 @@ function renderProjectsList(projects) {
         const statusInfo = PROJECT_STATUSES[p.status] || {};
         const progressColor = p.progress >= 70 ? 'green' : p.progress >= 40 ? '' : 'orange';
         const isRisk = isProjectAtRisk(p);
+        const riskReasons = getProjectRiskReasons(p);
         const deadlineBadge = getDeadlineBadge(p);
         const is14D = p.id === 'P007' || p.name.includes('14D');
 
         return `
-          <div class="project-card ${p.type}" data-project-id="${p.id}" style="${isRisk ? 'border-top: 3px solid var(--accent-warning);' : ''}">
+          <div class="project-card ${p.type}" data-project-id="${p.id}" style="${isRisk ? (isFocusMode ? 'border-top: 3.5px solid var(--accent-danger); box-shadow: 0 4px 16px rgba(239, 68, 68, 0.15);' : 'border-top: 3px solid var(--accent-warning);') : ''}">
             <!-- Action buttons (visible on hover) -->
             ${['BIM Manager', 'Project Manager', 'Admin'].includes(getState().currentUserRole) ? `
               <div class="project-card-actions">
@@ -554,7 +611,7 @@ function renderProjectsList(projects) {
               <div>
                 <div class="project-card-name" style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                   <span>${p.name}</span>
-                  ${isRisk ? '<span title="Dự án có rủi ro hoặc cần chú ý" style="font-size: 0.8rem;">⚠️</span>' : ''}
+                  ${isRisk ? '<span class="badge red" style="font-size: 0.65rem; padding: 1px 5px;" title="Dự án có rủi ro hoặc cần chú ý">⚠️ Rủi ro</span>' : ''}
                 </div>
                 <div class="project-card-code" style="display: flex; gap: 6px; align-items: center; margin-top: 2px;">
                   <span>${p.code || p.id}</span>
@@ -563,6 +620,20 @@ function renderProjectsList(projects) {
               </div>
               <div class="project-card-icon">${typeInfo.icon || '📁'}</div>
             </div>
+
+            <!-- Risk reasons alert box if project has risks -->
+            ${riskReasons.length > 0 ? `
+              <div class="project-risk-reasons mb-sm" style="background: rgba(239, 68, 68, 0.08); border-left: 3px solid var(--accent-danger); padding: 6px 10px; border-radius: 4px; font-size: 0.72rem;">
+                <div style="font-weight: 700; color: #ef4444; margin-bottom: 3px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.3px;">
+                  ⚠️ Yếu tố rủi ro cần xử lý:
+                </div>
+                ${riskReasons.map(r => `
+                  <div style="display: flex; align-items: center; gap: 5px; color: ${r.severity === 'danger' ? '#ef4444' : '#f59e0b'}; font-weight: 600; line-height: 1.35;">
+                    <span>${r.icon}</span> <span>${r.text}</span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
 
             <!-- Badges Row -->
             <div class="flex items-center gap-sm mb-sm" style="flex-wrap: wrap;">
@@ -757,15 +828,16 @@ function initAnalyticsCharts() {
     window.resChartInstance = null;
   }
 
-  // Lấy danh sách tên viết tắt của các dự án thực tế
-  const projectLabels = projects.map(p => {
+  // Lấy danh sách tên viết tắt của các dự án thực tế (thu hẹp vào dự án trọng tâm nếu đang ở Focus Mode)
+  const chartProjects = isFocusMode ? projects.filter(p => isProjectAtRisk(p)) : projects;
+  const projectLabels = chartProjects.map(p => {
     const name = p.name || p.id;
     return name.length > 15 ? name.substring(0, 14) + '…' : name;
   });
 
   if (activeChartTab === 'health') {
     // 1A. Model Health Bar Chart for each project
-    const healthData = projects.map(p => p.modelHealth || 75);
+    const healthData = chartProjects.map(p => p.modelHealth || 75);
     window.healthChartInstance = new window.Chart(ctx1, {
       type: 'bar',
       data: {
@@ -783,7 +855,7 @@ function initAnalyticsCharts() {
         responsive: true,
         plugins: {
           legend: { labels: { color: textColor, font: { size: 11 } } },
-          title: { display: true, text: 'Chỉ số Sức khỏe Mô hình (Model Health) theo Dự án', color: textColor, font: { size: 13, weight: 'bold' } }
+          title: { display: true, text: isFocusMode ? `Chỉ số Sức khỏe Mô hình (${chartProjects.length} Dự án Trọng tâm)` : 'Chỉ số Sức khỏe Mô hình (Model Health) theo Dự án', color: textColor, font: { size: 13, weight: 'bold' } }
         },
         scales: {
           x: { ticks: { color: textMutedColor, font: { size: 10 } }, grid: { color: gridColor } },
@@ -793,7 +865,7 @@ function initAnalyticsCharts() {
     });
 
     // 1B. Unresolved Clashes per project
-    const clashesData = projects.map(p => Math.max(0, (p.clashesTotal || 0) - (p.clashesResolved || 0)));
+    const clashesData = chartProjects.map(p => Math.max(0, (p.clashesTotal || 0) - (p.clashesResolved || 0)));
     window.resChartInstance = new window.Chart(ctx2, {
       type: 'bar',
       data: {
@@ -811,7 +883,7 @@ function initAnalyticsCharts() {
         responsive: true,
         plugins: {
           legend: { labels: { color: textColor, font: { size: 11 } } },
-          title: { display: true, text: 'Xung đột mô hình (Clashes) cần rà soát', color: textColor, font: { size: 13, weight: 'bold' } }
+          title: { display: true, text: isFocusMode ? `Xung đột mô hình (${chartProjects.length} Dự án Trọng tâm)` : 'Xung đột mô hình (Clashes) cần rà soát', color: textColor, font: { size: 13, weight: 'bold' } }
         },
         scales: {
           x: { ticks: { color: textMutedColor, font: { size: 10 } }, grid: { color: gridColor } },
@@ -822,7 +894,7 @@ function initAnalyticsCharts() {
 
   } else if (activeChartTab === 'progress') {
     // 2A. Project Progress vs Target
-    const progressData = projects.map(p => p.progress || 0);
+    const progressData = chartProjects.map(p => p.progress || 0);
     window.healthChartInstance = new window.Chart(ctx1, {
       type: 'line',
       data: {
@@ -843,7 +915,7 @@ function initAnalyticsCharts() {
         responsive: true,
         plugins: {
           legend: { labels: { color: textColor, font: { size: 11 } } },
-          title: { display: true, text: 'Tiến độ Thực tế Dự án (%)', color: textColor, font: { size: 13, weight: 'bold' } }
+          title: { display: true, text: isFocusMode ? `Tiến độ Thực tế (${chartProjects.length} Dự án Trọng tâm)` : 'Tiến độ Thực tế Dự án (%)', color: textColor, font: { size: 13, weight: 'bold' } }
         },
         scales: {
           x: { ticks: { color: textMutedColor, font: { size: 10 } }, grid: { color: gridColor } },
@@ -854,11 +926,11 @@ function initAnalyticsCharts() {
 
     // 2B. Status Distribution (Doughnut)
     const statusCounts = {
-      active: projects.filter(p => p.status === 'active').length,
-      planning: projects.filter(p => p.status === 'planning').length,
-      'on-hold': projects.filter(p => p.status === 'on-hold').length,
-      completed: projects.filter(p => p.status === 'completed').length,
-      overdue: projects.filter(p => isProjectOverdue(p)).length
+      active: chartProjects.filter(p => p.status === 'active').length,
+      planning: chartProjects.filter(p => p.status === 'planning').length,
+      'on-hold': chartProjects.filter(p => p.status === 'on-hold').length,
+      completed: chartProjects.filter(p => p.status === 'completed').length,
+      overdue: chartProjects.filter(p => isProjectOverdue(p)).length
     };
     window.resChartInstance = new window.Chart(ctx2, {
       type: 'doughnut',
@@ -875,7 +947,7 @@ function initAnalyticsCharts() {
         responsive: true,
         plugins: {
           legend: { position: 'bottom', labels: { color: textColor, font: { size: 10 } } },
-          title: { display: true, text: 'Phân bố Trạng thái Portfolio', color: textColor, font: { size: 13, weight: 'bold' } }
+          title: { display: true, text: isFocusMode ? `Phân bố Trạng thái (${chartProjects.length} Dự án Trọng tâm)` : 'Phân bố Trạng thái Portfolio', color: textColor, font: { size: 13, weight: 'bold' } }
         }
       }
     });
@@ -883,14 +955,14 @@ function initAnalyticsCharts() {
   } else if (activeChartTab === 'timesheet') {
     // 3A. Real Hours Logged per Project from state.timesheets
     const projHoursMap = {};
-    projects.forEach(p => { projHoursMap[p.id] = 0; });
+    chartProjects.forEach(p => { projHoursMap[p.id] = 0; });
     (timesheets || []).forEach(ts => {
       if (ts.isActual && ts.projectId) {
         projHoursMap[ts.projectId] = (projHoursMap[ts.projectId] || 0) + (parseFloat(ts.hours) || 0);
       }
     });
 
-    const hoursData = projects.map(p => projHoursMap[p.id] || 0);
+    const hoursData = chartProjects.map(p => projHoursMap[p.id] || 0);
     window.healthChartInstance = new window.Chart(ctx1, {
       type: 'bar',
       data: {
@@ -908,7 +980,7 @@ function initAnalyticsCharts() {
         responsive: true,
         plugins: {
           legend: { labels: { color: textColor, font: { size: 11 } } },
-          title: { display: true, text: 'Số giờ làm việc thực tế từ Timesheets (theo Dự án)', color: textColor, font: { size: 13, weight: 'bold' } }
+          title: { display: true, text: isFocusMode ? `Số giờ làm việc (${chartProjects.length} Dự án Trọng tâm)` : 'Số giờ làm việc thực tế từ Timesheets (theo Dự án)', color: textColor, font: { size: 13, weight: 'bold' } }
         },
         scales: {
           x: { ticks: { color: textMutedColor, font: { size: 10 } }, grid: { color: gridColor } },
@@ -965,7 +1037,7 @@ export function init() {
   // Initialize animations, context menu and gantt chart
   initCounters();
   initContextMenu(refreshDashboard);
-  initGanttEvents(refreshDashboard);
+  initGanttEvents(refreshDashboard, isFocusMode ? (getState().projects || []).filter(p => isProjectAtRisk(p)) : null);
 
   const { dashboardView, projects = [] } = getState();
   if (dashboardView === 'list') {
@@ -975,13 +1047,29 @@ export function init() {
 
   // Common function to apply all filters & sorting
   const applyFilters = () => {
-    const { dashboardView } = getState();
-    if (dashboardView === 'list') {
-      const filtered = getFilteredProjects(getState().projects || []);
-      const list = document.getElementById('projects-list');
-      const countBadge = document.getElementById('project-count-badge');
-      if (countBadge) countBadge.textContent = `${filtered.length} dự án`;
-      if (list) {
+    const { dashboardView, projects = [] } = getState();
+    const filtered = getFilteredProjects(projects);
+    const countBadge = document.getElementById('project-count-badge');
+    if (countBadge) {
+      countBadge.textContent = isFocusMode ? `${filtered.length} / ${projects.length} dự án trọng tâm` : `${filtered.length} dự án`;
+      if (isFocusMode) {
+        countBadge.classList.add('red');
+        countBadge.style.background = 'rgba(239, 68, 68, 0.15)';
+        countBadge.style.color = '#ef4444';
+        countBadge.style.fontWeight = '700';
+      } else {
+        countBadge.classList.remove('red');
+        countBadge.style.background = 'var(--bg-tertiary)';
+        countBadge.style.color = '';
+        countBadge.style.fontWeight = '';
+      }
+    }
+    const list = document.getElementById('projects-list');
+    if (list) {
+      if (dashboardView === 'kanban') {
+        list.innerHTML = renderKanbanBoard(filtered);
+        initKanbanEvents(refreshDashboard);
+      } else {
         list.innerHTML = renderProjectsList(filtered);
         staggerFadeIn(document.querySelectorAll('.project-card'));
         bindCardActions();

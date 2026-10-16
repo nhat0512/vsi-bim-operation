@@ -58,7 +58,7 @@ export function render() {
     : 0;
 
   // Tính toán thống kê tuần (Weekly Timesheet Strip)
-  const weekStats = getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher);
+  const weekStats = getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher, myAssignments);
 
   return `
     <div class="animate-fade-in-up">
@@ -191,12 +191,29 @@ export function render() {
                   const isComplete = task.progress >= 100;
                   
                   // Tính tổng giờ thực tế đã làm cho task này
-                  const totalTaskActual = (timesheets || []).filter(ts => {
-                    const matchUser = ts.userId === personId || ts.email === userEmail || ts.userName === userName;
+                  let totalTaskActual = (timesheets || []).filter(ts => {
+                    const matchUser = matcher(ts.userId) || matcher(ts.email) || matcher(ts.userName);
                     const matchProj = ts.projectId === project.id;
                     const matchTask = ts.taskId === (task.id || `t_${trueTaskIdx}`) || (task.id && ts.taskId === task.id) || ts.taskId === `t_${trueTaskIdx}`;
                     return matchUser && matchProj && matchTask && ts.isActual;
                   }).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+
+                  // Bổ sung thêm giờ từ task.dailyHours_actual nếu chưa được tính trong timesheets
+                  if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
+                    Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
+                      const h = Number(hrs) || 0;
+                      if (h > 0) {
+                        const inTs = (timesheets || []).some(ts => 
+                          (matcher(ts.userId) || matcher(ts.email) || matcher(ts.userName)) &&
+                          ts.projectId === project.id &&
+                          (ts.taskId === task.id || ts.taskId === `t_${trueTaskIdx}`) &&
+                          (ts.dateString === dStr || ts.date === dStr) &&
+                          ts.isActual
+                        );
+                        if (!inTs) totalTaskActual += h;
+                      }
+                    });
+                  }
 
                   return `
                     <tr style="transition: background 0.2s;" ${isComplete ? 'class="completed-row"' : ''}>
@@ -359,6 +376,11 @@ export function render() {
               <button class="btn btn-ghost btn-sm btn-cal-today" style="font-size: 0.75rem;">Hôm nay</button>
             `}
             <div style="width: 1px; height: 22px; background: var(--border-subtle); margin: 0 4px;"></div>
+            <!-- Nút Nạp file Sao lưu JSON -->
+            <label class="btn btn-outline btn-sm" style="color: #f59e0b; border-color: rgba(245, 158, 11, 0.5); display: flex; align-items: center; gap: 4px; font-weight: 600; cursor: pointer; margin: 0;" title="Nạp file sao lưu BIM_TransPM_Backup_2026-10-15.json để khôi phục toàn bộ dữ liệu">
+              📂 Nạp sao lưu JSON
+              <input type="file" id="input-mytasks-import-backup" accept=".json" style="display: none;">
+            </label>
             <!-- Nút Xuất Excel -->
             <button class="btn btn-outline btn-sm" id="btn-export-ts-excel" style="color: #10b981; border-color: rgba(16, 185, 129, 0.4); display: flex; align-items: center; gap: 4px; font-weight: 600;" title="Xuất dữ liệu chấm công ra file Excel/CSV">
               📥 Xuất Excel
@@ -366,8 +388,8 @@ export function render() {
           </div>
         </div>
         ${currentViewMode === 'table' 
-          ? renderRecentTimesheets(userEmail, userName, myRecord?.name, currentTimesheetFilter, personId)
-          : renderTimesheetCalendar(userEmail, userName, myRecord?.name, personId, currentCalendarYear, currentCalendarMonth)
+          ? renderRecentTimesheets(userEmail, userName, myRecord?.name, currentTimesheetFilter, personId, matcher, myAssignments)
+          : renderTimesheetCalendar(userEmail, userName, myRecord?.name, personId, currentCalendarYear, currentCalendarMonth, matcher, myAssignments)
         }
       </div>
     </div>
@@ -375,29 +397,74 @@ export function render() {
 }
 
 /**
- * TÍNH TOÁN DỮ LIỆU TUẦN CHO BẢNG CHẤM CÔNG (T2 -> CN)
- */
-/**
- * TẠO BỘ SO KHỚP ĐỊNH DANH NHÂN SỰ TOÀN DIỆN (Hỗ trợ Email, Tên đầy đủ, Biệt danh)
+ * TẠO BỘ SO KHỚP ĐỊNH DANH NHÂN SỰ TOÀN DIỆN (Hỗ trợ Email, Tên đầy đủ, Biệt danh, User ID)
  */
 function createMemberMatcher(userEmail, userName, myRecord) {
+  const emailLower = (userEmail || '').toLowerCase().trim();
+  const nameLower = (userName || '').toLowerCase().trim();
+  const recordEmail = (myRecord?.email || '').toLowerCase().trim();
+  const recordName = (myRecord?.name || '').toLowerCase().trim();
+
   const myAliases = new Set([
-    (userName || '').toLowerCase().trim(),
-    (userEmail || '').toLowerCase().trim(),
-    (myRecord?.email || '').toLowerCase().trim(),
+    nameLower,
+    emailLower,
+    recordName,
+    recordEmail,
     ...(myRecord?.secondaryEmails || []).map(e => (e || '').toLowerCase().trim())
   ]);
-  if (userName?.includes('Thiện')) myAliases.add('thiện');
-  if (userName?.includes('Tài')) myAliases.add('tài');
-  if (userName?.includes('Thuận')) myAliases.add('thuận');
-  if (userName?.includes('Nhật')) myAliases.add('nhật');
-  if (userName?.includes('An')) myAliases.add('an');
+
+  const isThien = emailLower.includes('thienthan') || emailLower.includes('thien.than') || nameLower.includes('thiện') || recordName.includes('thiện');
+  const isTai = emailLower.includes('tainguyen') || emailLower.includes('tai.nguyen') || nameLower.includes('tài') || recordName.includes('tài');
+  const isThuan = emailLower.includes('minhthuan') || nameLower.includes('thuận') || recordName.includes('thuận');
+  const isAn = emailLower.includes('an.nguyen') || nameLower.includes('nguyễn văn an') || recordName.includes('nguyễn văn an');
+  const isNhat = emailLower.includes('nhattedisouth') || emailLower === 'admin@vsibim.com' || nameLower.includes('nhật') || recordName.includes('nhật');
+
+  if (isThien) {
+    myAliases.add('thiện');
+    myAliases.add('thân nguyễn thái thiện');
+    myAliases.add('thái thiện');
+    myAliases.add('thienthannguyenthai');
+    myAliases.add('thienthannguyenthai@gmail.com');
+    myAliases.add('thien.than@vsibim.com');
+    myAliases.add('u_thien');
+  }
+  if (isTai) {
+    myAliases.add('tài');
+    myAliases.add('nguyễn ngọc thanh tài');
+    myAliases.add('thanh tài');
+    myAliases.add('tainguyen6628@gmail.com');
+    myAliases.add('tai.nguyen@vsibim.com');
+    myAliases.add('u_tai');
+  }
+  if (isThuan) {
+    myAliases.add('thuận');
+    myAliases.add('minh thuận');
+    myAliases.add('minhthuan.uah@gmail.com');
+    myAliases.add('u_thuan');
+  }
+  if (isAn) {
+    myAliases.add('an');
+    myAliases.add('nguyễn văn an');
+    myAliases.add('an.nguyen@bimvn.com');
+    myAliases.add('u_an');
+  }
+  if (isNhat) {
+    myAliases.add('nhật');
+    myAliases.add('nguyễn thanh nhật');
+    myAliases.add('thanh nhật');
+    myAliases.add('admin@vsibim.com');
+    myAliases.add('nhattedisouth@gmail.com');
+    myAliases.add('u_nhat');
+    myAliases.add('u_admin');
+  }
 
   return (val) => {
     if (!val) return false;
     const v = val.toLowerCase().trim();
     if (myAliases.has(v)) return true;
-    if (userName && (v.includes(userName.toLowerCase()) || userName.toLowerCase().includes(v))) return true;
+    for (const alias of myAliases) {
+      if (alias && alias.length >= 3 && (v.includes(alias) || alias.includes(v))) return true;
+    }
     return false;
   };
 }
@@ -405,7 +472,7 @@ function createMemberMatcher(userEmail, userName, myRecord) {
 /**
  * TÍNH TOÁN DỮ LIỆU TUẦN CHO BẢNG CHẤM CÔNG (T2 -> CN)
  */
-function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher = null) {
+function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher = null, myAssignments = []) {
   const isMatch = matcher || createMemberMatcher(userEmail, userName, null);
   const now = new Date();
   const currentDay = now.getDay(); // 0 = CN, 1 = T2
@@ -428,12 +495,32 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, match
     const dateStr = formatLocalDate(d);
 
     const dayRecords = (timesheets || []).filter(ts => {
-      const match = ts.userId === personId || isMatch(ts.email) || isMatch(ts.userName);
+      const match = ts.userId === personId || isMatch(ts.userId) || isMatch(ts.email) || isMatch(ts.userName);
       return match && (ts.dateString === dateStr || ts.date === dateStr);
     });
 
-    const actual = dayRecords.filter(t => t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
-    const planned = dayRecords.filter(t => !t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    let actual = dayRecords.filter(t => t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    let planned = dayRecords.filter(t => !t.isActual).reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+
+    // Bổ sung thêm giờ từ các tasks được phân công cho nhân sự này
+    (myAssignments || []).forEach(({ project, tasks }) => {
+      (tasks || []).forEach(task => {
+        if (task.dailyHours_actual && task.dailyHours_actual[dateStr] !== undefined) {
+          const h = Number(task.dailyHours_actual[dateStr]) || 0;
+          const already = dayRecords.some(t => t.isActual && (t.taskId === task.id || t.taskName === task.name));
+          if (!already && h > 0) {
+            actual += h;
+          }
+        }
+        if (task.dailyHours_planned && task.dailyHours_planned[dateStr] !== undefined) {
+          const h = Number(task.dailyHours_planned[dateStr]) || 0;
+          const already = dayRecords.some(t => !t.isActual && (t.taskId === task.id || t.taskName === task.name));
+          if (!already && h > 0) {
+            planned += h;
+          }
+        }
+      });
+    });
 
     weekActualHours += actual;
     weekPlannedHours += planned;
@@ -564,7 +651,7 @@ function renderWeeklyTimesheetStrip(weekStats) {
 /**
  * HIỂN THỊ DANH SÁCH TIMESHEET GẦN ĐÂY (Chỉ hiển thị giờ do chính nhân sự ghi nhận)
  */
-function renderRecentTimesheets(email, displayName, personnelName, filter = 'week', personId = null) {
+function renderRecentTimesheets(email, displayName, personnelName, filter = 'week', personId = null, matcher = null, myAssignments = []) {
   const { timesheets, projects } = getState();
   const todayStr = formatLocalDate(new Date());
 
@@ -582,15 +669,44 @@ function renderRecentTimesheets(email, displayName, personnelName, filter = 'wee
   sunday.setHours(23, 59, 59, 999);
   const sundayStr = formatLocalDate(sunday);
 
+  const isMatch = matcher || createMemberMatcher(email, displayName, null);
+
   // Lọc chỉ những bản ghi DO CHÍNH NHÂN SỰ NÀY GHI (isActual === true)
   let myTimesheets = (timesheets || []).filter(ts => {
-    const matchUser = (personId && ts.userId === personId) || 
-      (email && ts.email === email) || 
-      (displayName && ts.userName === displayName) || 
-      (personnelName && ts.userName === personnelName);
-    
-    // Theo yêu cầu: Lịch ghi giờ của nhân sự chỉ nên thấy giờ thực tế do chính họ ghi
-    return matchUser && ts.isActual === true;
+    const matchUser = isMatch(ts.userId) || isMatch(ts.email) || isMatch(ts.userName);
+    return matchUser && (ts.isActual === true || ts.isActual === 'true' || ts.isActual === 1);
+  });
+
+  // Bổ sung các bản ghi thực tế từ dailyHours_actual của các tasks nếu chưa có trong timesheets
+  (myAssignments || []).forEach(({ project, tasks }) => {
+    (tasks || []).forEach(task => {
+      if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
+        Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
+          const h = Number(hrs);
+          if (h > 0) {
+            const already = myTimesheets.some(ts => (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === task.id || ts.taskName === task.name));
+            if (!already) {
+              myTimesheets.push({
+                id: `syn-act-${task.id}-${dStr}`,
+                userId: personId || 'u_thien',
+                userName: displayName || personnelName || 'Nhân sự',
+                email: email,
+                projectId: project.id,
+                projectName: project.name,
+                taskId: task.id,
+                taskName: task.name,
+                dateString: dStr,
+                date: dStr,
+                hours: h,
+                isActual: true,
+                isOT: false,
+                note: `Thực tế: ${task.name}`
+              });
+            }
+          }
+        });
+      }
+    });
   });
 
   // Áp dụng bộ lọc thời gian
@@ -704,18 +820,48 @@ function formatDate(str) {
 /**
  * HIỂN THỊ TIMESHEET DẠNG LỊCH THÁNG (CALENDAR GRID VIEW)
  */
-function renderTimesheetCalendar(email, displayName, personnelName, personId, year, month) {
+function renderTimesheetCalendar(email, displayName, personnelName, personId, year, month, matcher = null, myAssignments = []) {
   const { timesheets, projects } = getState();
   const today = new Date();
   const todayStr = formatLocalDate(today);
+  const isMatch = matcher || createMemberMatcher(email, displayName, null);
 
   // Lọc tất cả giờ thực tế của user
-  const myTimesheets = (timesheets || []).filter(ts => {
-    const matchUser = (personId && ts.userId === personId) || 
-      (email && ts.email === email) || 
-      (displayName && ts.userName === displayName) || 
-      (personnelName && ts.userName === personnelName);
-    return matchUser && ts.isActual === true;
+  let myTimesheets = (timesheets || []).filter(ts => {
+    const matchUser = isMatch(ts.userId) || isMatch(ts.email) || isMatch(ts.userName);
+    return matchUser && (ts.isActual === true || ts.isActual === 'true' || ts.isActual === 1);
+  });
+
+  // Bổ sung các bản ghi thực tế từ dailyHours_actual của các tasks nếu chưa có trong timesheets
+  (myAssignments || []).forEach(({ project, tasks }) => {
+    (tasks || []).forEach(task => {
+      if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
+        Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
+          const h = Number(hrs);
+          if (h > 0) {
+            const already = myTimesheets.some(ts => (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === task.id || ts.taskName === task.name));
+            if (!already) {
+              myTimesheets.push({
+                id: `syn-act-${task.id}-${dStr}`,
+                userId: personId || 'u_thien',
+                userName: displayName || personnelName || 'Nhân sự',
+                email: email,
+                projectId: project.id,
+                projectName: project.name,
+                taskId: task.id,
+                taskName: task.name,
+                dateString: dStr,
+                date: dStr,
+                hours: h,
+                isActual: true,
+                isOT: false,
+                note: `Thực tế: ${task.name}`
+              });
+            }
+          }
+        });
+      }
+    });
   });
 
   // Số ngày trong tháng hiện tại và trước đó
@@ -893,9 +1039,8 @@ function exportTimesheetToExcel() {
   const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
   const personId = myRecord ? myRecord.id : (currentUserAuth?.id || 'unknown');
 
-  const matchUser = (ts) => (personId && ts.userId === personId) || (userEmail && ts.email === userEmail) || (userName && ts.userName === userName);
-
-  let exportData = (timesheets || []).filter(ts => matchUser(ts) && ts.isActual === true);
+  const matcher = createMemberMatcher(userEmail, userName, myRecord);
+  let exportData = (timesheets || []).filter(ts => (matcher(ts.userId) || matcher(ts.email) || matcher(ts.userName)) && (ts.isActual === true || ts.isActual === 'true' || ts.isActual === 1));
 
   if (currentViewMode === 'calendar') {
     const monthPrefix = `${currentCalendarYear}-${String(currentCalendarMonth + 1).padStart(2, '0')}`;
@@ -2068,6 +2213,32 @@ export function init() {
 
   // 20. Nút Xuất Excel chấm công cá nhân
   document.getElementById('btn-export-ts-excel')?.addEventListener('click', exportTimesheetToExcel);
+
+  // 21. Nút Nạp file Sao lưu JSON trực tiếp từ trang MyTasks
+  const mytasksImportInput = document.getElementById('input-mytasks-import-backup');
+  if (mytasksImportInput) {
+    mytasksImportInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!confirm(`Bạn có chắc muốn nạp dữ liệu từ file sao lưu "${file.name}" không?\nToàn bộ dữ liệu thành viên, nhiệm vụ và giờ làm sẽ được khôi phục nguyên vẹn và đồng bộ an toàn lên Cloud.`)) {
+        mytasksImportInput.value = '';
+        return;
+      }
+      try {
+        const { importBackupJSON } = await import('../state.js');
+        const res = await importBackupJSON(file);
+        if (res && res.success) {
+          showToast(`✅ Phục hồi hoàn tất từ file "${file.name}"! (${res.timesheetsCount} bản ghi giờ làm)`);
+          refreshPage();
+          window.location.reload();
+        }
+      } catch(err) {
+        alert('❌ Lỗi khi nạp file sao lưu: ' + err.message);
+      } finally {
+        mytasksImportInput.value = '';
+      }
+    });
+  }
 }
 
 function refreshPage() {

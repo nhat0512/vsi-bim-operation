@@ -26,6 +26,21 @@ export function renderTopbar() {
                   currentUser?.role === 'Project Manager' ||
                   currentUserAuth?.email === 'admin@vsibim.com';
 
+  // Lấy tên hiển thị chuẩn tiếng Việt từ hồ sơ nhân sự
+  const userEmail = (currentUserAuth?.email || currentUser?.email || '').toLowerCase().trim();
+  const matchedPerson = (state.personnel || []).find(p => 
+    (p.email || '').toLowerCase() === userEmail || 
+    (p.secondaryEmails || []).some(e => e.toLowerCase() === userEmail)
+  );
+  let displayUserName = matchedPerson?.name || currentUser?.name || currentUserAuth?.name || 'User';
+  if (displayUserName === userEmail.split('@')[0]) {
+    if (userEmail.includes('thienthan') || userEmail.includes('thien.than')) displayUserName = 'Thân Nguyễn Thái Thiện';
+    else if (userEmail.includes('tainguyen') || userEmail.includes('tai.nguyen')) displayUserName = 'Nguyễn Ngọc Thanh Tài';
+    else if (userEmail.includes('minhthuan')) displayUserName = 'Minh Thuận';
+    else if (userEmail.includes('an.nguyen')) displayUserName = 'Nguyễn Văn An';
+    else if (userEmail.includes('nhattedisouth') || userEmail === 'admin@vsibim.com') displayUserName = 'Nguyễn Thanh Nhật';
+  }
+
   return `
     <div class="topbar-page-info">
       <span class="topbar-page-title" id="topbar-title">Dashboard</span>
@@ -40,7 +55,7 @@ export function renderTopbar() {
       <input type="text" placeholder="Tìm kiếm dự án, nhân sự..." id="search-input" />
     </div>
     <div class="topbar-actions" style="display: flex; align-items: center; gap: 8px;">
-      <!-- Khôi phục & Sao lưu dữ liệu an toàn (CHỈ HIỂN THỊ VỚI ADMIN / BIM MANAGER) -->
+      <!-- Khôi phục & Sao lưu dữ liệu an toàn -->
       ${isAdmin ? `
         <button id="btn-snapshots" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; border-color: var(--accent-secondary); color: var(--accent-secondary);" title="Xem các điểm phục hồi tự động gần nhất (Chỉ Quản trị viên)">
           🕒 Điểm phục hồi
@@ -51,20 +66,21 @@ export function renderTopbar() {
         <button id="btn-backup-json" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px;" title="Tải file sao lưu JSON về máy tính (Chỉ Quản trị viên)">
           💾 Sao lưu
         </button>
-        <label id="label-topbar-import-backup" class="btn btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid #f59e0b; cursor: pointer; font-weight: 600; margin: 0;" title="Nạp file sao lưu JSON từ máy tính để khôi phục toàn bộ dữ liệu">
-          📂 Nạp sao lưu
-          <input type="file" id="input-topbar-import-backup" accept=".json" style="display: none;">
-        </label>
       ` : ''}
+
+      <label id="label-topbar-import-backup" class="btn btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid #f59e0b; cursor: pointer; font-weight: 600; margin: 0;" title="Nạp file sao lưu JSON từ máy tính để khôi phục toàn bộ dữ liệu">
+        📂 Nạp sao lưu
+        <input type="file" id="input-topbar-import-backup" accept=".json" style="display: none;">
+      </label>
 
       <!-- User Profile & Logout -->
       <div class="topbar-role-selector" style="display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; border: 1px solid var(--border-color);">
         <div style="width: 24px; height: 24px; background: var(--accent-primary); color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold;">
-          ${getState().currentUser?.name?.charAt(0) || 'U'}
+          ${displayUserName.charAt(0) || 'U'}
         </div>
         <div style="display: flex; flex-direction: column; line-height: 1.2;">
-          <span style="font-weight: bold; color: var(--text-primary);">${getState().currentUser?.name || 'User'}</span>
-          <span style="font-size: 0.7rem; color: var(--text-muted);">${getState().currentUser?.role || 'Guest'}</span>
+          <span style="font-weight: bold; color: var(--text-primary);">${displayUserName}</span>
+          <span style="font-size: 0.7rem; color: var(--text-muted);">${matchedPerson?.role || getState().currentUser?.role || 'BIM Modeler'}</span>
         </div>
         <button id="btn-logout" class="btn btn-ghost btn-sm" style="margin-left: 4px; padding: 2px 6px; color: var(--text-danger);" title="Đăng xuất">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>

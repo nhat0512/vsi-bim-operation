@@ -3,6 +3,7 @@
 // ============================================
 
 import { formatLocalDate } from './utils/formatters.js';
+import { memberTimesheetsSeed } from './data/projects.js';
 
 const listeners = new Set();
 
@@ -13,7 +14,7 @@ let state = {
   softwareAssets: [],
   hardwareAssets: [],
   activityLog: [],
-  timesheets: [],
+  timesheets: [...(memberTimesheetsSeed || [])],
   deletedTimesheetIds: [], // Danh sách tombstone chống hồi sinh timesheet đã xóa
   qualityData: null,
   selectedProjectId: null,
@@ -65,6 +66,25 @@ if (savedState) {
       state.timesheets = (state.timesheets || []).filter(ts => {
         const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
         return !dSet.has(ts.id) && !dSet.has(key);
+      });
+    }
+
+    // Đảm bảo 10 bản ghi vàng thực tế của thành viên (Dự án 14D) luôn có mặt
+    if (memberTimesheetsSeed && Array.isArray(memberTimesheetsSeed)) {
+      const dSet = new Set(state.deletedTimesheetIds || []);
+      memberTimesheetsSeed.forEach(seedTs => {
+        if (!dSet.has(seedTs.id)) {
+          const exists = (state.timesheets || []).some(t => 
+            t.id === seedTs.id || 
+            ((t.dateString === seedTs.dateString || t.date === seedTs.date) && 
+             t.taskId === seedTs.taskId && 
+             t.isActual === seedTs.isActual)
+          );
+          if (!exists) {
+            state.timesheets = state.timesheets || [];
+            state.timesheets.push({ ...seedTs });
+          }
+        }
       });
     }
     
@@ -210,7 +230,18 @@ export async function syncToFirestore(forceResetTombstones = false) {
         });
       }
 
-      // 2. Gộp timesheets hiện tại ở State
+      // 2. Gộp timesheets hiện tại ở State & Seed Timesheets (10 mục thực tế 14D)
+      if (memberTimesheetsSeed && Array.isArray(memberTimesheetsSeed)) {
+        memberTimesheetsSeed.forEach(seedTs => {
+          if (!isTsDeleted(seedTs)) {
+            const key = seedTs.id || `${seedTs.userId}_${seedTs.projectId}_${seedTs.taskId || ''}_${seedTs.dateString || seedTs.date}_${!!seedTs.isActual}`;
+            if (!tsMap.has(key)) {
+              tsMap.set(key, seedTs);
+            }
+          }
+        });
+      }
+
       (state.timesheets || []).forEach(ts => {
         if (!isTsDeleted(ts)) {
           const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
@@ -570,7 +601,20 @@ export function importBackupJSON(fileOrData) {
         // 2. Nạp dữ liệu toàn bộ các module từ file backup
         if (data.projects && Array.isArray(data.projects)) setState('projects', data.projects);
         if (data.personnel && Array.isArray(data.personnel)) setState('personnel', data.personnel);
-        if (data.timesheets && Array.isArray(data.timesheets)) setState('timesheets', data.timesheets);
+        
+        let tsToRestore = (data.timesheets && Array.isArray(data.timesheets)) ? [...data.timesheets] : [];
+        if (memberTimesheetsSeed && Array.isArray(memberTimesheetsSeed)) {
+          memberTimesheetsSeed.forEach(seedTs => {
+            const hasIt = tsToRestore.some(t => 
+              t.id === seedTs.id || 
+              ((t.dateString === seedTs.dateString || t.date === seedTs.date) && 
+               (t.taskId === seedTs.taskId || t.note === seedTs.note || t.comment === seedTs.comment) && 
+               t.isActual === seedTs.isActual)
+            );
+            if (!hasIt) tsToRestore.push({ ...seedTs });
+          });
+        }
+        setState('timesheets', tsToRestore);
         if (data.softwareAssets && Array.isArray(data.softwareAssets)) setState('softwareAssets', data.softwareAssets);
         if (data.hardwareAssets && Array.isArray(data.hardwareAssets)) setState('hardwareAssets', data.hardwareAssets);
         if (data.activityLog && Array.isArray(data.activityLog)) setState('activityLog', data.activityLog);
@@ -767,19 +811,34 @@ export function recalculateUserRole() {
     return;
   }
   
-  const person = state.personnel.find(p => p.email === authUser.email);
-  let role = person ? person.role : 'Member'; // Mặc định là Member
+  const authEmail = (authUser.email || '').toLowerCase().trim();
+  const person = (state.personnel || []).find(p => 
+    (p.email || '').toLowerCase() === authEmail ||
+    (p.secondaryEmails || []).some(e => e.toLowerCase() === authEmail)
+  );
+
+  let canonicalName = person?.name || authUser.name;
+  if (!canonicalName || canonicalName === authEmail.split('@')[0]) {
+    if (authEmail.includes('thienthan') || authEmail.includes('thien.than')) canonicalName = 'Thân Nguyễn Thái Thiện';
+    else if (authEmail.includes('tainguyen') || authEmail.includes('tai.nguyen')) canonicalName = 'Nguyễn Ngọc Thanh Tài';
+    else if (authEmail.includes('minhthuan')) canonicalName = 'Minh Thuận';
+    else if (authEmail.includes('an.nguyen')) canonicalName = 'Nguyễn Văn An';
+    else if (authEmail.includes('nhattedisouth') || authEmail === 'admin@vsibim.com') canonicalName = 'Nguyễn Thanh Nhật';
+  }
+
+  let role = person ? person.role : 'BIM Modeler';
   let allocation = person ? (person.allocation || []) : [];
   
   // Hardcode admin default account to prevent lockout
-  if (authUser.email === 'admin@vsibim.com') {
+  if (authUser.email === 'admin@vsibim.com' || authUser.email === 'nhattedisouth@gmail.com') {
     role = 'BIM Manager';
   }
 
   // Prevent infinite loop if already set to same values (shallow check)
-  if (!state.currentUser || state.currentUser.role !== role || state.currentUser.allocation?.length !== allocation.length) {
+  if (!state.currentUser || state.currentUser.role !== role || state.currentUser.name !== canonicalName || state.currentUser.allocation?.length !== allocation.length) {
     setState('currentUser', {
       ...authUser,
+      name: canonicalName,
       role: role,
       personnelRecord: person || null,
       allocation: allocation
@@ -1559,42 +1618,56 @@ export async function loadInitialData() {
             } catch(err) {}
           }
 
-          // Chuẩn hóa toàn bộ timesheets về email & ID thật của Firebase
-          timesheetsToLoad = timesheetsToLoad.map(ts => {
-            if (ts.email === 'thien.than@vsibim.com' || ts.userName === 'Thân Nguyễn Thái Thiện') {
-              return { ...ts, email: 'thienthannguyenthai@gmail.com', userName: 'Thân Nguyễn Thái Thiện', userId: 'u_thien' };
+          // Helper tra cứu định danh chuẩn cho nhân sự thật của hệ thống
+          const getCanonicalUserInfo = (val) => {
+            const s = (val || '').toLowerCase().trim();
+            if (s.includes('thiện') || s.includes('thienthan') || s.includes('thien.than') || s === 'u_thien') {
+              return { uid: 'u_thien', name: 'Thân Nguyễn Thái Thiện', email: 'thienthannguyenthai@gmail.com' };
             }
-            if (ts.email === 'tai.nguyen@vsibim.com' || ts.userName === 'Nguyễn Ngọc Thanh Tài') {
-              return { ...ts, email: 'tainguyen6628@gmail.com', userName: 'Nguyễn Ngọc Thanh Tài', userId: 'u_tai' };
+            if (s.includes('tài') || s.includes('tainguyen') || s.includes('tai.nguyen') || s === 'u_tai') {
+              return { uid: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com' };
             }
-            if (ts.email?.includes('minhthuan')) {
-              return { ...ts, email: 'minhthuan.uah@gmail.com', userName: 'Minh Thuận', userId: 'u_thuan' };
+            if (s.includes('thuận') || s.includes('minhthuan') || s === 'u_thuan') {
+              return { uid: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com' };
             }
-            return ts;
-          });
+            if (s.includes('an') || s.includes('an.nguyen') || s === 'u_an') {
+              return { uid: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com' };
+            }
+            if (s.includes('nhật') || s.includes('nhatte') || s.includes('admin@vsibim.com') || s === 'u_nhat' || s === 'u_admin') {
+              return { uid: 'u_nhat', name: 'Nguyễn Thanh Nhật', email: 'nhattedisouth@gmail.com' };
+            }
+            const p = loadedPersonnel.find(x => x.name === val || x.email === val || x.id === val);
+            return { uid: p?.id || val || 'unknown', name: p?.name || val || 'Nhân viên', email: p?.email || '' };
+          };
 
-          // Tự động bổ sung giờ làm của Modeler từ tasks nếu timesheetsToLoad đang thiếu (CHỈ THÊM NẾU CHƯA TỪNG BỊ XÓA)
-          if (default14D && default14D.tasks) {
-            default14D.tasks.forEach(task => {
+          // Tự động bổ sung giờ làm của Modeler từ tasks trên TẤT CẢ các dự án
+          const allProjectsToScan = [...projectsToLoad];
+          if (default14D && !allProjectsToScan.some(p => p.id === default14D.id)) {
+            allProjectsToScan.push(default14D);
+          }
+
+          allProjectsToScan.forEach(proj => {
+            (proj.tasks || []).forEach(task => {
               const taskId = task.id;
               const taskAssignee = task.assignee || 'Thân Nguyễn Thái Thiện';
-              const pObj = loadedPersonnel.find(p => p.name === taskAssignee);
-              const uid = pObj ? pObj.id : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'u_tai' : 'u_thien');
-              const email = pObj ? pObj.email : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'tainguyen6628@gmail.com' : 'thienthannguyenthai@gmail.com');
+              const canonical = getCanonicalUserInfo(taskAssignee);
+              const uid = canonical.uid;
+              const email = canonical.email;
+              const userName = canonical.name;
               
               if (task.dailyHours_planned && typeof task.dailyHours_planned === 'object') {
                 Object.entries(task.dailyHours_planned).forEach(([dStr, hrs]) => {
                   const hNum = Number(hrs);
                   const planId = `ts-plan-${taskId}-${dStr}`;
-                  const planKey = `${uid}_P007_${taskId}_${dStr}_false`;
+                  const planKey = `${uid}_${proj.id}_${taskId}_${dStr}_false`;
                   if (hNum > 0 && !deletedIds.has(planId) && !deletedIds.has(planKey) && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && !ts.isActual)) {
                     timesheetsToLoad.push({
                       id: planId,
                       userId: uid,
-                      userName: taskAssignee,
+                      userName: userName,
                       email: email,
-                      projectId: 'P007',
-                      projectName: default14D.name,
+                      projectId: proj.id,
+                      projectName: proj.name,
                       taskId: taskId,
                       taskName: task.name,
                       dateString: dStr,
@@ -1612,15 +1685,15 @@ export async function loadInitialData() {
                 Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
                   const hNum = Number(hrs);
                   const actId = `ts-act-${taskId}-${dStr}`;
-                  const actKey = `${uid}_P007_${taskId}_${dStr}_true`;
+                  const actKey = `${uid}_${proj.id}_${taskId}_${dStr}_true`;
                   if (hNum > 0 && !deletedIds.has(actId) && !deletedIds.has(actKey) && !timesheetsToLoad.some(ts => ts.taskId === taskId && ts.dateString === dStr && ts.isActual)) {
                     timesheetsToLoad.push({
                       id: actId,
                       userId: uid,
-                      userName: taskAssignee,
+                      userName: userName,
                       email: email,
-                      projectId: 'P007',
-                      projectName: default14D.name,
+                      projectId: proj.id,
+                      projectName: proj.name,
                       taskId: taskId,
                       taskName: task.name,
                       dateString: dStr,
@@ -1634,7 +1707,36 @@ export async function loadInitialData() {
                 });
               }
             });
+          });
+
+          // Bảo vệ các bản ghi thực tế của thành viên (10 bản ghi vàng từ dự án 14D)
+          if (memberTimesheetsSeed && Array.isArray(memberTimesheetsSeed)) {
+            memberTimesheetsSeed.forEach(seedTs => {
+              if (!isTsDeleted(seedTs)) {
+                const exists = timesheetsToLoad.some(t => 
+                  t.id === seedTs.id || 
+                  ((t.dateString === seedTs.dateString || t.date === seedTs.date) && 
+                   (t.taskId === seedTs.taskId || t.note === seedTs.note || t.comment === seedTs.comment) && 
+                   t.isActual === seedTs.isActual)
+                );
+                if (!exists) {
+                  timesheetsToLoad.push({ ...seedTs });
+                }
+              }
+            });
           }
+
+          // Chuẩn hóa toàn bộ timesheets về định danh nhất quán (canonical)
+          timesheetsToLoad = timesheetsToLoad.map(ts => {
+            const canonical = getCanonicalUserInfo(ts.email || ts.userName || ts.userId);
+            return {
+              ...ts,
+              userId: canonical.uid,
+              userName: canonical.name,
+              email: canonical.email,
+              isActual: Boolean(ts.isActual === true || ts.isActual === 'true' || ts.isActual === 1)
+            };
+          });
 
           setState('timesheets', timesheetsToLoad, true);
           console.log("🔄 Dữ liệu Firestore đã kết nối real-time");

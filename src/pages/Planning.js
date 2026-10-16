@@ -77,9 +77,29 @@ export function render() {
   const standardHours = targetPersonnel.length * 10 * 8; // 10 work days * 8h
   const teamCapacityPct = standardHours > 0 ? Math.round((totalPeriodHours / standardHours) * 100) : 0;
 
+  // Helper match user in timesheet
+  const matchUserTs = (t, userId) => {
+    if (!t) return false;
+    if (t.userId === userId) return true;
+    const person = (state.personnel || []).find(p => p.id === userId);
+    if (!person) return false;
+    const pName = (person.name || '').toLowerCase();
+    const pEmail = (person.email || '').toLowerCase();
+    const tEmail = (t.email || '').toLowerCase();
+    const tName = (t.userName || '').toLowerCase();
+    if (tEmail && (tEmail === pEmail || (person.secondaryEmails || []).some(e => e.toLowerCase() === tEmail))) return true;
+    if (tName && pName && (tName.includes(pName) || pName.includes(tName))) return true;
+    if (pName.includes('thiện') && (tName.includes('thiện') || tEmail.includes('thienthan') || t.userId === 'u_thien')) return true;
+    if (pName.includes('tài') && (tName.includes('tài') || tEmail.includes('tainguyen') || t.userId === 'u_tai')) return true;
+    if (pName.includes('thuận') && (tName.includes('thuận') || tEmail.includes('minhthuan') || t.userId === 'u_thuan')) return true;
+    if (pName.includes('an') && (tName.includes('an') || tEmail.includes('an.nguyen') || t.userId === 'u_an')) return true;
+    if (pName.includes('nhật') && (tName.includes('nhật') || tEmail.includes('nhatte') || t.userId === 'u_nhat')) return true;
+    return false;
+  };
+
   // Helper match timesheet
   const matchTaskTs = (t, userId, taskId, projId) => {
-    if (t.userId !== userId) return false;
+    if (!matchUserTs(t, userId)) return false;
     if (projId && t.projectId && t.projectId !== projId) return false;
     if (t.taskId === taskId) return true;
     const proj = (state.projects || []).find(p => p.id === (projId || t.projectId));
@@ -110,24 +130,24 @@ export function render() {
   };
 
   const getUserDayTotal = (userId, dateStr) => {
-    return timesheets.filter(t => t.userId === userId && t.dateString === dateStr && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId) && t.dateString === dateStr && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getUserWeekTotal = (userId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && weekDates.includes(t.dateString) && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId) && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getProjectDayTotal = (userId, projectId, dateStr) => {
-    return timesheets.filter(t => t.userId === userId && t.projectId === projectId && t.dateString === dateStr && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId) && t.projectId === projectId && t.dateString === dateStr && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getProjectWeekTotal = (userId, projectId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => t.userId === userId && t.projectId === projectId && weekDates.includes(t.dateString) && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId) && t.projectId === projectId && weekDates.includes(t.dateString) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
@@ -157,10 +177,14 @@ export function render() {
   const rawHierarchy = targetPersonnel.map(person => {
     const userProjects = [];
     (state.projects || []).forEach(proj => {
-      const userTasks = (proj.tasks || []).filter(t => t.assignee === person.name);
+      const userTasks = (proj.tasks || []).filter(t => {
+        const a = (t.assignee || '').toLowerCase();
+        const p = (person.name || '').toLowerCase();
+        return a === p || (p.includes('thiện') && a.includes('thiện')) || (p.includes('tài') && a.includes('tài'));
+      });
       const userRfis = (proj.rfis || []).filter(r => r.assignee === person.name);
       const isMember = (proj.team || []).some(m => m.name === person.name) || proj.teamLead === person.name;
-      const loggedTaskIds = [...new Set((state.timesheets || []).filter(ts => ts.userId === person.id && ts.projectId === proj.id).map(ts => ts.taskId))];
+      const loggedTaskIds = [...new Set((state.timesheets || []).filter(ts => matchUserTs(ts, person.id) && ts.projectId === proj.id).map(ts => ts.taskId))];
       
       if (userTasks.length > 0 || userRfis.length > 0 || loggedTaskIds.length > 0 || isMember) {
         userProjects.push({ project: proj, tasks: userTasks, rfis: userRfis, loggedTaskIds });

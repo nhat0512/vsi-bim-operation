@@ -1049,11 +1049,78 @@ function openPersonnelDetailModal(person) {
   if (!person) return;
   const { timesheets, projects } = getState();
 
+  // Bộ so khớp toàn diện cho nhân sự này
+  const personMatcher = (val) => {
+    if (!val) return false;
+    const v = val.toLowerCase().trim();
+    if (v === person.id?.toLowerCase() || v === person.name?.toLowerCase() || v === person.email?.toLowerCase()) return true;
+    if ((person.secondaryEmails || []).some(e => e.toLowerCase() === v)) return true;
+    const pName = (person.name || '').toLowerCase();
+    if (pName && (v.includes(pName) || pName.includes(v))) return true;
+    if (pName.includes('thiện') && (v.includes('thiện') || v.includes('thienthan') || v === 'u_thien')) return true;
+    if (pName.includes('tài') && (v.includes('tài') || v.includes('tainguyen') || v === 'u_tai')) return true;
+    if (pName.includes('thuận') && (v.includes('thuận') || v.includes('minhthuan') || v === 'u_thuan')) return true;
+    if (pName.includes('an') && (v.includes('an') || v.includes('an.nguyen') || v === 'u_an')) return true;
+    if (pName.includes('nhật') && (v.includes('nhật') || v.includes('nhatte') || v === 'u_nhat' || v === 'admin@vsibim.com')) return true;
+    return false;
+  };
+
   // Find logged hours for this person
   const userTimesheets = (timesheets || []).filter(ts => {
-    return (ts.userId && ts.userId === person.id) ||
-           (ts.userEmail && ts.userEmail.toLowerCase() === (person.email || '').toLowerCase()) ||
-           (ts.userName && ts.userName.toLowerCase() === (person.name || '').toLowerCase());
+    return personMatcher(ts.userId) || personMatcher(ts.email) || personMatcher(ts.userEmail) || personMatcher(ts.userName);
+  });
+
+  // Bổ sung các giờ thực tế và kế hoạch từ tasks của các dự án nếu chưa có trong timesheets
+  (projects || []).forEach(proj => {
+    (proj.tasks || []).forEach(t => {
+      const match = personMatcher(t.assignee) || personMatcher(t.assignedTo);
+      if (match) {
+        if (t.dailyHours_actual && typeof t.dailyHours_actual === 'object') {
+          Object.entries(t.dailyHours_actual).forEach(([dStr, hrs]) => {
+            const h = Number(hrs) || 0;
+            if (h > 0 && !userTimesheets.some(ts => ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
+              userTimesheets.push({
+                id: `syn-res-act-${t.id}-${dStr}`,
+                userId: person.id,
+                userName: person.name,
+                email: person.email,
+                projectId: proj.id,
+                projectName: proj.name,
+                taskId: t.id,
+                taskName: t.name,
+                dateString: dStr,
+                date: dStr,
+                hours: h,
+                isActual: true,
+                isOT: false
+              });
+            }
+          });
+        }
+        if (t.dailyHours_planned && typeof t.dailyHours_planned === 'object') {
+          Object.entries(t.dailyHours_planned).forEach(([dStr, hrs]) => {
+            const h = Number(hrs) || 0;
+            if (h > 0 && !userTimesheets.some(ts => !ts.isActual && (ts.dateString === dStr || ts.date === dStr) && (ts.taskId === t.id || ts.taskName === t.name))) {
+              userTimesheets.push({
+                id: `syn-res-plan-${t.id}-${dStr}`,
+                userId: person.id,
+                userName: person.name,
+                email: person.email,
+                projectId: proj.id,
+                projectName: proj.name,
+                taskId: t.id,
+                taskName: t.name,
+                dateString: dStr,
+                date: dStr,
+                hours: h,
+                isActual: false,
+                isOT: false
+              });
+            }
+          });
+        }
+      }
+    });
   });
 
   const totalActualHours = userTimesheets.filter(ts => ts.isActual).reduce((sum, ts) => sum + (parseFloat(ts.hours) || 0), 0);
@@ -1063,8 +1130,7 @@ function openPersonnelDetailModal(person) {
   const assignedTasks = [];
   (projects || []).forEach(proj => {
     (proj.tasks || []).forEach(t => {
-      const match = (t.assignee && t.assignee.toLowerCase() === person.name.toLowerCase()) ||
-                    (t.assignedTo && (t.assignedTo === person.id || t.assignedTo.toLowerCase() === person.name.toLowerCase()));
+      const match = personMatcher(t.assignee) || personMatcher(t.assignedTo);
       if (match) {
         assignedTasks.push({ ...t, projectName: proj.name, projectId: proj.id });
       }

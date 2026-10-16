@@ -507,7 +507,7 @@ export const projectItems = [
         subSegmentIdx: 0,
         milestoneIdx: 0,
         dailyHours_planned: { '2026-09-14': 3, '2026-09-15': 3, '2026-09-16': 3, '2026-09-17': 3, '2026-09-18': 3 },
-        dailyHours_actual: { '2026-09-14': 3, '2026-09-15': 3 }
+        dailyHours_actual: { '2026-09-14': 3, '2026-09-15': 3, '2026-10-14': 2 }
       },
       {
         id: 't_atgt_km5_km27',
@@ -523,7 +523,7 @@ export const projectItems = [
         subSegmentIdx: 1,
         milestoneIdx: 0,
         dailyHours_planned: { '2026-10-15': 4, '2026-10-16': 4 },
-        dailyHours_actual: {}
+        dailyHours_actual: { '2026-10-14': 2.5 }
       },
       {
         id: 't_1789354764016',
@@ -539,7 +539,7 @@ export const projectItems = [
         subSegmentIdx: 2,
         milestoneIdx: 1,
         dailyHours_planned: { '2026-10-12': 4, '2026-10-13': 4, '2026-10-14': 4 },
-        dailyHours_actual: { '2026-10-12': 4, '2026-10-13': 4 }
+        dailyHours_actual: { '2026-10-12': 4, '2026-10-13': 1, '2026-10-15': 1.5 }
       },
       {
         id: 't_atgt_km40_km50',
@@ -555,7 +555,7 @@ export const projectItems = [
         subSegmentIdx: 0,
         milestoneIdx: 1,
         dailyHours_planned: { '2026-10-19': 4, '2026-10-20': 4 },
-        dailyHours_actual: {}
+        dailyHours_actual: { '2026-10-15': 1.5 }
       },
       {
         id: 't_atgt_km50_km62',
@@ -571,7 +571,7 @@ export const projectItems = [
         subSegmentIdx: 0,
         milestoneIdx: 1,
         dailyHours_planned: { '2026-10-21': 4, '2026-10-22': 4 },
-        dailyHours_actual: {}
+        dailyHours_actual: { '2026-10-15': 1.5 }
       },
       {
         id: 't_atgt_km62_km72',
@@ -587,7 +587,7 @@ export const projectItems = [
         subSegmentIdx: 0,
         milestoneIdx: 1,
         dailyHours_planned: { '2026-10-23': 4, '2026-10-24': 4 },
-        dailyHours_actual: {}
+        dailyHours_actual: { '2026-10-16': 1.5 }
       },
       {
         id: 't_1789354890001',
@@ -603,7 +603,7 @@ export const projectItems = [
         subSegmentIdx: 2,
         milestoneIdx: 0,
         dailyHours_planned: { '2026-10-08': 4, '2026-10-09': 4 },
-        dailyHours_actual: { '2026-10-08': 4, '2026-10-09': 4 }
+        dailyHours_actual: { '2026-10-08': 4, '2026-10-09': 4, '2026-10-13': 1 }
       },
       {
         id: 't_1789354890002',
@@ -649,7 +649,8 @@ export const projectItems = [
         dueDate: '2026-10-22',
         segmentIdx: 2,
         subSegmentIdx: 1,
-        milestoneIdx: 1
+        milestoneIdx: 1,
+        dailyHours_actual: { '2026-10-13': 0.5 }
       },
       {
         id: 't_1789354890005',
@@ -759,3 +760,347 @@ export const projectItems = [
     ]
   }
 ];
+
+export const memberTimesheetsSeed = [
+  // 10 BẢN GHI THỰC TẾ CỦA THÂN NGUYỄN THÁI THIỆN (DỰ ÁN 14D) - TỔNG 13h
+  {
+    id: 'ts_act_thien_101',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354890001',
+    taskName: 'Mô hình Cầu & Cống (Km10-Km16: 2 cầu, 25 cống)',
+    dateString: '2026-10-13',
+    date: '2026-10-13',
+    hours: 1,
+    isActual: true,
+    isOT: false,
+    note: 'tạo cọc phản quang, tạo vạch sơn 3d',
+    comment: 'tạo cọc phản quang, tạo vạch sơn 3d',
+    createdAt: '2026-10-13T17:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_102',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354890004',
+    taskName: 'Bổ sung thang bậc nước & Tường chắn (Km44-Km46)',
+    dateString: '2026-10-13',
+    date: '2026-10-13',
+    hours: 0.5,
+    isActual: true,
+    isOT: false,
+    note: 'cập nhật xuất ifc',
+    comment: 'cập nhật xuất ifc',
+    createdAt: '2026-10-13T17:30:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_103',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354764016',
+    taskName: 'An Toàn Giao Thông (Km34-Km35)',
+    dateString: '2026-10-13',
+    date: '2026-10-13',
+    hours: 1,
+    isActual: true,
+    isOT: false,
+    note: 'Rải vạch dọc tuyến',
+    comment: 'Rải vạch dọc tuyến',
+    createdAt: '2026-10-13T18:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_104',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km5_km27',
+    taskName: 'An Toàn Giao Thông (Km5-Km27)',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 1.5,
+    isActual: true,
+    isOT: false,
+    note: 'Rải vạch dọc tuyến',
+    comment: 'Rải vạch dọc tuyến',
+    createdAt: '2026-10-14T11:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_105',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km5_km27',
+    taskName: 'An Toàn Giao Thông (Km5-Km27)',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 1,
+    isActual: true,
+    isOT: false,
+    note: 'làm vạch dọc tuyến',
+    comment: 'làm vạch dọc tuyến',
+    createdAt: '2026-10-14T15:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_106',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354546060',
+    taskName: 'An Toàn Giao Thông (Km0-Km5)',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 2,
+    isActual: true,
+    isOT: false,
+    note: 'Hoan thien',
+    comment: 'Hoan thien',
+    createdAt: '2026-10-14T17:30:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_107',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354764016',
+    taskName: 'An Toàn Giao Thông (Km34-Km35)',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 1.5,
+    isActual: true,
+    isOT: false,
+    note: 'rải xong biển PQ, tạo 3D biển báo',
+    comment: 'rải xong biển PQ, tạo 3D biển báo',
+    createdAt: '2026-10-15T11:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_108',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km40_km50',
+    taskName: 'An Toàn Giao Thông (Km40-Km50)',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 1.5,
+    isActual: true,
+    isOT: false,
+    note: 'Rải các biển báo trừ biển PQ',
+    comment: 'Rải các biển báo trừ biển PQ',
+    createdAt: '2026-10-15T14:30:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_109',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km50_km62',
+    taskName: 'An Toàn Giao Thông (Km50-Km62)',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 1.5,
+    isActual: true,
+    isOT: false,
+    note: 'Hoàn thiện hộ lan cọc tiêu',
+    comment: 'Hoàn thiện hộ lan cọc tiêu',
+    createdAt: '2026-10-15T17:00:00.000Z'
+  },
+  {
+    id: 'ts_act_thien_110',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km62_km72',
+    taskName: 'An Toàn Giao Thông (Km62-Km72)',
+    dateString: '2026-10-16',
+    date: '2026-10-16',
+    hours: 1.5,
+    isActual: true,
+    isOT: false,
+    note: 'Rải Hộ Lan',
+    comment: 'Rải Hộ Lan',
+    createdAt: '2026-10-16T09:30:00.000Z'
+  },
+
+  // 8 BẢN GHI PHÂN CÔNG KẾ HOẠCH (KẾ HOẠCH PM PHÂN CÔNG: 4h/ngày)
+  {
+    id: 'ts_plan_thien_201',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_1789354764016',
+    taskName: 'An Toàn Giao Thông (Km34-Km35)',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km34-Km35)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km34-Km35)'
+  },
+  {
+    id: 'ts_plan_thien_202',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km5_km27',
+    taskName: 'An Toàn Giao Thông (Km5-Km27)',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km5-Km27)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km5-Km27)'
+  },
+  {
+    id: 'ts_plan_thien_203',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km5_km27',
+    taskName: 'An Toàn Giao Thông (Km5-Km27)',
+    dateString: '2026-10-16',
+    date: '2026-10-16',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km5-Km27)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km5-Km27)'
+  },
+  {
+    id: 'ts_plan_thien_204',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km40_km50',
+    taskName: 'An Toàn Giao Thông (Km40-Km50)',
+    dateString: '2026-10-19',
+    date: '2026-10-19',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km40-Km50)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km40-Km50)'
+  },
+  {
+    id: 'ts_plan_thien_205',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km40_km50',
+    taskName: 'An Toàn Giao Thông (Km40-Km50)',
+    dateString: '2026-10-20',
+    date: '2026-10-20',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km40-Km50)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km40-Km50)'
+  },
+  {
+    id: 'ts_plan_thien_206',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km50_km62',
+    taskName: 'An Toàn Giao Thông (Km50-Km62)',
+    dateString: '2026-10-21',
+    date: '2026-10-21',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km50-Km62)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km50-Km62)'
+  },
+  {
+    id: 'ts_plan_thien_207',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km62_km72',
+    taskName: 'An Toàn Giao Thông (Km62-Km72)',
+    dateString: '2026-10-23',
+    date: '2026-10-23',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km62-Km72)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km62-Km72)'
+  },
+  {
+    id: 'ts_plan_thien_208',
+    userId: 'u_thien',
+    userName: 'Thân Nguyễn Thái Thiện',
+    email: 'thienthannguyenthai@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km62_km72',
+    taskName: 'An Toàn Giao Thông (Km62-Km72)',
+    dateString: '2026-10-24',
+    date: '2026-10-24',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch An Toàn Giao Thông (Km62-Km72)',
+    comment: 'Kế hoạch An Toàn Giao Thông (Km62-Km72)'
+  },
+
+  // BẢN GHI THỰC TẾ CỦA MINH THUẬN (DỰ ÁN 15D)
+  {
+    id: 'ts_act_thuan_301',
+    userId: 'u_thuan',
+    userName: 'Minh Thuận',
+    email: 'minhthuan.uah@gmail.com',
+    projectId: 'P006',
+    projectName: 'Đầu tư xây dựng Quốc lộ 15D đoạn từ Cảng Mỹ Thủy đến cao tốc Cam Lộ - La Sơn',
+    taskId: 't_review_15d',
+    taskName: 'Review dữ liệu dự án',
+    sheetNo: 'IFC trong mục "B.MO HINH BIM"',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 2,
+    isActual: true,
+    isOT: false,
+    note: 'Rà soát và note những thông tin còn thiếu của mô hình',
+    comment: 'Rà soát và note những thông tin còn thiếu của mô hình',
+    createdAt: '2026-10-15T16:00:00.000Z'
+  }
+];
+

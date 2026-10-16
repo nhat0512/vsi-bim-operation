@@ -51,6 +51,10 @@ export function renderTopbar() {
         <button id="btn-backup-json" class="btn btn-outline btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px;" title="Tải file sao lưu JSON về máy tính (Chỉ Quản trị viên)">
           💾 Sao lưu
         </button>
+        <label id="label-topbar-import-backup" class="btn btn-sm" style="display: flex; align-items: center; gap: 4px; font-size: 0.75rem; padding: 4px 10px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid #f59e0b; cursor: pointer; font-weight: 600; margin: 0;" title="Nạp file sao lưu JSON từ máy tính để khôi phục toàn bộ dữ liệu">
+          📂 Nạp sao lưu
+          <input type="file" id="input-topbar-import-backup" accept=".json" style="display: none;">
+        </label>
       ` : ''}
 
       <!-- User Profile & Logout -->
@@ -220,6 +224,32 @@ export function initTopbar() {
     backupBtn.addEventListener('click', async () => {
       const { exportBackupJSON } = await import('../state.js');
       exportBackupJSON();
+    });
+  }
+
+  // Nút Nạp file Sao lưu JSON trực tiếp từ Topbar
+  const topbarImportInput = document.getElementById('input-topbar-import-backup');
+  if (topbarImportInput) {
+    topbarImportInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!confirm(`Bạn có chắc muốn nạp dữ liệu từ file sao lưu "${file.name}" không?\nToàn bộ dữ liệu thành viên, nhiệm vụ và giờ làm sẽ được khôi phục nguyên vẹn và đồng bộ an toàn lên Cloud.`)) {
+        topbarImportInput.value = '';
+        return;
+      }
+      try {
+        const { importBackupJSON } = await import('../state.js');
+        const res = await importBackupJSON(file);
+        if (res && res.success) {
+          alert(`✅ Phục hồi hoàn tất từ file "${file.name}"!\n- ${res.projectsCount} dự án\n- ${res.tasksCount} nhiệm vụ\n- ${res.timesheetsCount} bản ghi giờ làm của nhân sự\nDữ liệu thành viên đã được khôi phục đầy đủ!`);
+          window.dispatchEvent(new Event('hashchange'));
+          window.location.reload();
+        }
+      } catch(err) {
+        alert('❌ Lỗi khi nạp file sao lưu: ' + err.message);
+      } finally {
+        topbarImportInput.value = '';
+      }
     });
   }
 

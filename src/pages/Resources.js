@@ -32,6 +32,9 @@ export function render() {
           <button class="btn btn-outline" id="btn-export-excel" title="Xuất danh sách nhân sự sang file Excel (CSV UTF-8)">
             📥 Xuất Excel
           </button>
+          <button class="btn btn-outline admin-only" id="btn-sync-firebase-users" title="Đồng bộ bảng nhân sự theo danh sách tài khoản Firebase Authentication" style="color: var(--accent-primary); border-color: var(--accent-primary);">
+            🔄 Đồng bộ từ Firebase
+          </button>
           <button class="btn btn-outline admin-only" id="btn-clean-mock" title="Xóa toàn bộ nhân sự chưa đăng ký tài khoản thật">
             🧹 Dọn dẹp Mock
           </button>
@@ -1899,6 +1902,18 @@ export function init() {
   // Export to Excel
   document.getElementById('btn-export-excel')?.addEventListener('click', () => {
     exportPersonnelToExcel();
+  });
+
+  // Đồng bộ nhân sự theo Firebase Authentication
+  document.getElementById('btn-sync-firebase-users')?.addEventListener('click', async () => {
+    if (confirm('Bạn có muốn đồng bộ bảng nhân sự chuẩn 100% theo các tài khoản thực trên Firebase Authentication không? Các tài khoản mẫu (mock) sẽ được dọn sạch.')) {
+      const { personnelItems } = await import('../data/resources.js');
+      const { syncToFirestore } = await import('../state.js');
+      setState('personnel', personnelItems);
+      await syncToFirestore();
+      refreshPage();
+      showToast('Đã đồng bộ bảng nhân sự theo Firebase Authentication thành công!');
+    }
   });
 
   // Clean Mock Data Button (Safely removes R001-R005 demo records if requested)

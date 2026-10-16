@@ -480,8 +480,9 @@ export const projectItems = [
     team: [
       { name: 'Thân Nguyễn Thái Thiện', role: 'BIM Modeler' },
       { name: 'Nguyễn Ngọc Thanh Tài', role: 'BIM Modeler' },
-      { name: 'Trần Minh Khoa', role: 'BIM Coordinator' },
-      { name: 'Nguyễn Văn An', role: 'BIM Manager' }
+      { name: 'Minh Thuận', role: 'BIM Modeler' },
+      { name: 'Nguyễn Văn An', role: 'BIM Coordinator' },
+      { name: 'Nguyễn Thanh Nhật', role: 'BIM Manager' }
     ],
     phases: [
       { id: 'survey', status: 'completed', progress: 100, startDate: '2026-01-01', endDate: '2026-03-31' },

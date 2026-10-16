@@ -33,10 +33,12 @@ let state = {
   currentUserRole: 'BIM Manager', // Legacy, to be replaced by currentUser.role
   currentUser: null, // { id, name, email, role }
   registeredUsers: [
-    // Default admin account
-    { id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
-    { id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' },
-    { id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' }
+    { id: 'u_admin', name: 'Nguyễn Thanh Nhật (Admin)', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
+    { id: 'u_nhat', name: 'Nguyễn Thanh Nhật', email: 'nhattedisouth@gmail.com', password: '123', role: 'BIM Manager' },
+    { id: 'u_thien', name: 'Thân Nguyễn Thái Thiện', email: 'thienthannguyenthai@gmail.com', password: '123', role: 'BIM Modeler' },
+    { id: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com', password: '123', role: 'BIM Modeler' },
+    { id: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
+    { id: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com', password: '123', role: 'BIM Coordinator' }
   ]
 };
 
@@ -72,21 +74,15 @@ if (savedState) {
       state.widgetSpans.analytics = 3;
     }
     
-    // Ensure default users exist
-    if (!state.registeredUsers || state.registeredUsers.length === 0) {
-      state.registeredUsers = [
-        { id: 'u-1', name: 'Admin', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
-        { id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' },
-        { id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' }
-      ];
-    } else {
-      if (!state.registeredUsers.some(u => u.name === 'Thân Nguyễn Thái Thiện')) {
-        state.registeredUsers.push({ id: 'u-thien', name: 'Thân Nguyễn Thái Thiện', email: 'thien.than@vsibim.com', password: '123', role: 'BIM Modeler' });
-      }
-      if (!state.registeredUsers.some(u => u.name === 'Nguyễn Ngọc Thanh Tài')) {
-        state.registeredUsers.push({ id: 'u-tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tai.nguyen@vsibim.com', password: '123', role: 'BIM Modeler' });
-      }
-    }
+    // Đồng bộ người dùng Firebase thực vào registeredUsers
+    state.registeredUsers = [
+      { id: 'u_admin', name: 'Nguyễn Thanh Nhật (Admin)', email: 'admin@vsibim.com', password: '123', role: 'BIM Manager' },
+      { id: 'u_nhat', name: 'Nguyễn Thanh Nhật', email: 'nhattedisouth@gmail.com', password: '123', role: 'BIM Manager' },
+      { id: 'u_thien', name: 'Thân Nguyễn Thái Thiện', email: 'thienthannguyenthai@gmail.com', password: '123', role: 'BIM Modeler' },
+      { id: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com', password: '123', role: 'BIM Modeler' },
+      { id: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
+      { id: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com', password: '123', role: 'BIM Coordinator' }
+    ];
   } catch(e) {
     console.error('Error loading state', e);
   }
@@ -108,7 +104,7 @@ if (state.theme === 'dark') {
 const GAS_URL = "https://script.google.com/macros/s/AKfycbx7XiBpWK5409sDFQGFsJCtQHv3WHWGe8U4sfOQjZNqjQMmW3PTX9Csy431W3sQwm8y/exec";
 
 let syncTimeout = null;
-export async function syncToFirestore() {
+export async function syncToFirestore(forceResetTombstones = false) {
   if (!db) return;
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
@@ -169,33 +165,43 @@ export async function syncToFirestore() {
       } catch(e) {}
 
       // 🛡️ BẢO VỆ TIMESHEETS (Đồng bộ an toàn giữa các thiết bị nhưng TÔN TRỌNG THAO TÁC XÓA)
-      let deletedIds = new Set([
-        ...(state.deletedTimesheetIds || []),
-        ...(existingData.deletedTimesheetIds || [])
-      ]);
-      try {
-        const localDelStr = localStorage.getItem('bimTransPM_DeletedTimesheets');
-        if (localDelStr) {
-          const parsedLocalDel = JSON.parse(localDelStr);
-          if (Array.isArray(parsedLocalDel)) {
-            parsedLocalDel.forEach(id => deletedIds.add(id));
+      let deletedIds = new Set();
+      if (!forceResetTombstones) {
+        deletedIds = new Set([
+          ...(state.deletedTimesheetIds || []),
+          ...(existingData.deletedTimesheetIds || [])
+        ]);
+        try {
+          const localDelStr = localStorage.getItem('bimTransPM_DeletedTimesheets');
+          if (localDelStr) {
+            const parsedLocalDel = JSON.parse(localDelStr);
+            if (Array.isArray(parsedLocalDel)) {
+              parsedLocalDel.forEach(id => deletedIds.add(id));
+            }
           }
-        }
-      } catch(e) {}
-      state.deletedTimesheetIds = Array.from(deletedIds);
-      try {
-        localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(state.deletedTimesheetIds));
-      } catch(e) {}
+        } catch(e) {}
+        state.deletedTimesheetIds = Array.from(deletedIds);
+        try {
+          localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(state.deletedTimesheetIds));
+        } catch(e) {}
+      } else {
+        // Khi khôi phục backup hoặc reset: dọn sạch hoàn toàn các tombstone
+        state.deletedTimesheetIds = [];
+        try {
+          localStorage.removeItem('bimTransPM_DeletedTimesheets');
+        } catch(e) {}
+      }
 
       const tsMap = new Map();
       const isTsDeleted = (ts) => {
         if (!ts) return true;
+        if (forceResetTombstones) return false;
         const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
         return deletedIds.has(ts.id) || deletedIds.has(key);
       };
 
-      // 1. Lấy timesheets từ Firestore nhưng BỎ HẾT các bản ghi đã xóa
-      if (existingData.timesheets && existingData.timesheets.length > 0) {
+      // 1. Lấy timesheets từ Firestore nếu không forceReset
+      if (!forceResetTombstones && existingData.timesheets && existingData.timesheets.length > 0) {
         existingData.timesheets.forEach(ts => {
           if (!isTsDeleted(ts)) {
             const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
@@ -204,7 +210,7 @@ export async function syncToFirestore() {
         });
       }
 
-      // 2. Gộp timesheets hiện tại ở State, BỎ QUA item đã bị xóa
+      // 2. Gộp timesheets hiện tại ở State
       (state.timesheets || []).forEach(ts => {
         if (!isTsDeleted(ts)) {
           const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
@@ -515,48 +521,117 @@ export async function restoreFromGoogleSheets() {
 }
 
 /**
- * XUẤT FILE SAO LƯU JSON VỀ MÁY
+ * XUẤT FILE SAO LƯU TOÀN BỘ HỆ THỐNG VỀ MÁY (FULL SYSTEM BACKUP)
  */
 export function exportBackupJSON() {
   const backup = {
+    version: "2.0",
+    system: "VSI BIM Operation Platform",
+    exportedAt: new Date().toISOString(),
+    exportedBy: state.currentUser?.email || state.currentUserAuth?.email || 'admin@vsibim.com',
     projects: state.projects || [],
     personnel: state.personnel || [],
     timesheets: state.timesheets || [],
     softwareAssets: state.softwareAssets || [],
     hardwareAssets: state.hardwareAssets || [],
     activityLog: state.activityLog || [],
-    exportedAt: new Date().toISOString()
+    qualityData: state.qualityData || null,
+    registeredUsers: state.registeredUsers || [],
+    dashboardLayout: state.dashboardLayout || [],
+    widgetSpans: state.widgetSpans || {},
+    theme: state.theme || 'light'
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `BIM_TransPM_Backup_${formatLocalDate(new Date())}.json`;
+  a.download = `BIM_TransPM_FullBackup_${formatLocalDate(new Date())}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
 
 /**
- * NHẬP FILE SAO LƯU JSON TỪ MÁY
+ * NHẬP FILE SAO LƯU JSON TỪ MÁY VÀ KHÔI PHỤC TOÀN BỘ HỆ THỐNG (FULL RESTORE)
  */
-export function importBackupJSON(file) {
+export function importBackupJSON(fileOrData) {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
+    const processData = async (data) => {
       try {
-        const data = JSON.parse(e.target.result);
-        if (data.projects) setState('projects', data.projects);
-        if (data.personnel) setState('personnel', data.personnel);
-        if (data.timesheets) setState('timesheets', data.timesheets);
-        if (data.softwareAssets) setState('softwareAssets', data.softwareAssets);
-        if (data.hardwareAssets) setState('hardwareAssets', data.hardwareAssets);
-        if (data.activityLog) setState('activityLog', data.activityLog);
-        resolve({ success: true });
+        if (!data || typeof data !== 'object') {
+          throw new Error("Dữ liệu sao lưu không hợp lệ");
+        }
+
+        // 1. DỌN SẠCH CÁC TOMBSTONE ĐÃ XÓA để giải phóng dữ liệu giờ làm & nhiệm vụ của nhân sự
+        state.deletedTimesheetIds = [];
+        try {
+          localStorage.removeItem('bimTransPM_DeletedTimesheets');
+        } catch(err) {}
+
+        // 2. Nạp dữ liệu toàn bộ các module từ file backup
+        if (data.projects && Array.isArray(data.projects)) setState('projects', data.projects);
+        if (data.personnel && Array.isArray(data.personnel)) setState('personnel', data.personnel);
+        if (data.timesheets && Array.isArray(data.timesheets)) setState('timesheets', data.timesheets);
+        if (data.softwareAssets && Array.isArray(data.softwareAssets)) setState('softwareAssets', data.softwareAssets);
+        if (data.hardwareAssets && Array.isArray(data.hardwareAssets)) setState('hardwareAssets', data.hardwareAssets);
+        if (data.activityLog && Array.isArray(data.activityLog)) setState('activityLog', data.activityLog);
+        if (data.qualityData) setState('qualityData', data.qualityData);
+        if (data.registeredUsers && Array.isArray(data.registeredUsers)) setState('registeredUsers', data.registeredUsers);
+        if (data.dashboardLayout && Array.isArray(data.dashboardLayout)) setState('dashboardLayout', data.dashboardLayout);
+        if (data.widgetSpans && typeof data.widgetSpans === 'object') setState('widgetSpans', data.widgetSpans);
+        if (data.theme) setState('theme', data.theme);
+
+        // Lưu vào localStorage ngay
+        try {
+          localStorage.setItem('bimTransPM_State', JSON.stringify(state));
+        } catch(e) {}
+
+        // 3. Tạo ngay điểm phục hồi cục bộ
+        saveLocalSnapshot(`Khôi phục toàn bộ từ file backup: ${fileOrData?.name || 'JSON'}`);
+
+        // 4. Đồng bộ ngay lên Firestore với cờ forceResetTombstones = true
+        await syncToFirestore(true);
+
+        let totalTasks = 0;
+        (state.projects || []).forEach(p => { totalTasks += (p.tasks || []).length; });
+
+        console.log(`✅ Phục hồi hoàn tất từ Backup JSON! ${state.projects.length} dự án, ${totalTasks} tasks, ${state.timesheets.length} timesheets`);
+
+        resolve({ 
+          success: true, 
+          projectsCount: (state.projects || []).length,
+          tasksCount: totalTasks,
+          timesheetsCount: (state.timesheets || []).length,
+          personnelCount: (state.personnel || []).length
+        });
       } catch (err) {
         reject(err);
       }
     };
-    reader.readAsText(file);
+
+    if (fileOrData instanceof File || fileOrData instanceof Blob) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          processData(parsed);
+        } catch (err) {
+          reject(new Error("File JSON không đúng định dạng: " + err.message));
+        }
+      };
+      reader.onerror = () => reject(new Error("Không thể đọc file"));
+      reader.readAsText(fileOrData);
+    } else if (typeof fileOrData === 'object' && fileOrData !== null) {
+      processData(fileOrData);
+    } else if (typeof fileOrData === 'string') {
+      try {
+        const parsed = JSON.parse(fileOrData);
+        processData(parsed);
+      } catch(e) {
+        reject(new Error("Chuỗi JSON không đúng định dạng: " + e.message));
+      }
+    } else {
+      reject(new Error("Định dạng dữ liệu không được hỗ trợ"));
+    }
   });
 }
 
@@ -655,6 +730,12 @@ export function restoreSnapshotByIndex(index) {
     const snapshot = JSON.parse(raw);
     if (!snapshot || !snapshot.data) return { success: false, error: 'Dữ liệu điểm sao lưu bị hỏng' };
 
+    // Dọn sạch tombstone đã xóa để toàn bộ dữ liệu giờ làm trong snapshot được khôi phục nguyên vẹn
+    state.deletedTimesheetIds = [];
+    try {
+      localStorage.removeItem('bimTransPM_DeletedTimesheets');
+    } catch(err) {}
+
     if (snapshot.data.projects) setState('projects', snapshot.data.projects);
     if (snapshot.data.personnel) setState('personnel', snapshot.data.personnel);
     if (snapshot.data.timesheets) setState('timesheets', snapshot.data.timesheets);
@@ -662,7 +743,7 @@ export function restoreSnapshotByIndex(index) {
     if (snapshot.data.hardwareAssets) setState('hardwareAssets', snapshot.data.hardwareAssets);
     if (snapshot.data.activityLog) setState('activityLog', snapshot.data.activityLog);
 
-    syncToFirestore();
+    syncToFirestore(true);
     return {
       success: true,
       summary: snapshot.summary,
@@ -744,28 +825,55 @@ if (firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('ĐIỀN')) {
     
     onAuthStateChanged(auth, (user) => {
       if (user) {
+        const emailLower = (user.email || '').toLowerCase().trim();
+        const personnel = state.personnel || [];
+        const foundPerson = personnel.find(p => 
+          (p.email || '').toLowerCase() === emailLower || 
+          (p.secondaryEmails || []).some(e => e.toLowerCase() === emailLower)
+        );
+        
+        let canonicalName = user.displayName;
+        if (!canonicalName || canonicalName === user.email.split('@')[0]) {
+          if (foundPerson) {
+            canonicalName = foundPerson.name;
+          } else if (emailLower.includes('thienthannguyen') || emailLower.includes('thien.than')) {
+            canonicalName = 'Thân Nguyễn Thái Thiện';
+          } else if (emailLower.includes('tainguyen6628') || emailLower.includes('tai.nguyen')) {
+            canonicalName = 'Nguyễn Ngọc Thanh Tài';
+          } else if (emailLower.includes('minhthuan')) {
+            canonicalName = 'Minh Thuận';
+          } else if (emailLower.includes('nhattedisouth') || emailLower === 'admin@vsibim.com') {
+            canonicalName = 'Nguyễn Thanh Nhật';
+          } else if (emailLower.includes('an.nguyen')) {
+            canonicalName = 'Nguyễn Văn An';
+          } else {
+            canonicalName = user.email.split('@')[0];
+          }
+        }
+
         const authUser = { 
           id: user.uid, 
-          name: user.displayName || user.email.split('@')[0], 
+          name: canonicalName, 
           email: user.email 
         };
         setState('currentUserAuth', authUser);
         
-        // Auto-sync to personnel list (Google Sheets)
-        const personnel = state.personnel || [];
-        if (!personnel.find(p => p.email === user.email)) {
-          personnel.unshift({
-            id: `p-${Date.now()}`,
-            name: authUser.name,
+        // Tự động bổ sung vào danh sách nhân sự nếu là người mới
+        if (!foundPerson) {
+          personnel.push({
+            id: `p-${user.uid}`,
+            name: canonicalName,
             email: user.email,
-            avatar: '👤',
-            role: user.email === 'admin@vsibim.com' ? 'BIM Manager' : 'Member',
-            level: 'New',
-            skills: [],
-            allocation: [],
-            totalAllocation: 0
+            avatar: canonicalName.split(' ').map(w => w[0]).join('').slice(0, 3).toUpperCase() || '👤',
+            role: (user.email === 'admin@vsibim.com' || user.email === 'nhattedisouth@gmail.com') ? 'BIM Manager' : 'BIM Modeler',
+            level: 'mid',
+            skills: ['Civil 3D', 'Revit', 'AutoCAD'],
+            allocation: [{ projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }],
+            totalAllocation: 100,
+            status: 'active'
           });
           setState('personnel', personnel);
+          syncToFirestore();
         }
       } else {
         setState('currentUserAuth', null);
@@ -1381,38 +1489,32 @@ export async function loadInitialData() {
             }
           }
 
-          let loadedPersonnel = (data.personnel && data.personnel.length > 1) ? data.personnel : resourcesMod.personnelItems;
-          const requiredPersonnel = [
-            {
-              id: 'r_thien',
-              name: 'Thân Nguyễn Thái Thiện',
-              role: 'BIM Modeler',
-              roleId: 'bim-modeler',
-              level: 'mid',
-              email: 'thien.than@vsibim.com',
-              avatar: 'TNTT',
-              skills: ['Civil 3D', 'InfraWorks', 'AutoCAD'],
-              allocation: [{ projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }],
-              totalAllocation: 100,
-              status: 'active'
-            },
-            {
-              id: 'r_tai',
-              name: 'Nguyễn Ngọc Thanh Tài',
-              role: 'BIM Modeler',
-              roleId: 'bim-modeler',
-              level: 'mid',
-              email: 'tai.nguyen@vsibim.com',
-              avatar: 'NNTT',
-              skills: ['Civil 3D', 'Revit Structure', 'Navisworks'],
-              allocation: [{ projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }],
-              totalAllocation: 100,
-              status: 'active'
-            }
-          ];
-          requiredPersonnel.forEach(rp => {
-            if (!loadedPersonnel.some(p => p.name === rp.name)) {
-              loadedPersonnel.push(rp);
+          let loadedPersonnel = (data.personnel && data.personnel.length > 0) ? data.personnel : resourcesMod.personnelItems;
+          
+          // Dọn sạch hoàn toàn các mock user cũ (R001-R012)
+          const mockEmailsToRemove = new Set([
+            'khoa.tran@bimvn.com', 'hoa.le@bimvn.com', 'hung.pham@bimvn.com',
+            'mai.nguyen@bimvn.com', 'nam.hoang@bimvn.com', 'tung.le@bimvn.com',
+            'lan.dang@bimvn.com', 'ha.bui@bimvn.com', 'long.vu@bimvn.com',
+            'bao.trinh@bimvn.com', 'yen.phan@bimvn.com'
+          ]);
+          loadedPersonnel = loadedPersonnel.filter(p => !mockEmailsToRemove.has(p.email) && !/^R\d{3}$/.test(p.id));
+
+          // Đảm bảo toàn bộ 6 tài khoản Firebase Auth thật luôn hiện diện đầy đủ
+          resourcesMod.personnelItems.forEach(realUser => {
+            const existingIdx = loadedPersonnel.findIndex(p => 
+              (p.email && p.email.toLowerCase() === realUser.email.toLowerCase()) || 
+              (p.name && p.name === realUser.name)
+            );
+            if (existingIdx >= 0) {
+              loadedPersonnel[existingIdx] = {
+                ...realUser,
+                ...loadedPersonnel[existingIdx],
+                email: realUser.email,
+                secondaryEmails: realUser.secondaryEmails || []
+              };
+            } else {
+              loadedPersonnel.push(realUser);
             }
           });
 
@@ -1457,14 +1559,28 @@ export async function loadInitialData() {
             } catch(err) {}
           }
 
+          // Chuẩn hóa toàn bộ timesheets về email & ID thật của Firebase
+          timesheetsToLoad = timesheetsToLoad.map(ts => {
+            if (ts.email === 'thien.than@vsibim.com' || ts.userName === 'Thân Nguyễn Thái Thiện') {
+              return { ...ts, email: 'thienthannguyenthai@gmail.com', userName: 'Thân Nguyễn Thái Thiện', userId: 'u_thien' };
+            }
+            if (ts.email === 'tai.nguyen@vsibim.com' || ts.userName === 'Nguyễn Ngọc Thanh Tài') {
+              return { ...ts, email: 'tainguyen6628@gmail.com', userName: 'Nguyễn Ngọc Thanh Tài', userId: 'u_tai' };
+            }
+            if (ts.email?.includes('minhthuan')) {
+              return { ...ts, email: 'minhthuan.uah@gmail.com', userName: 'Minh Thuận', userId: 'u_thuan' };
+            }
+            return ts;
+          });
+
           // Tự động bổ sung giờ làm của Modeler từ tasks nếu timesheetsToLoad đang thiếu (CHỈ THÊM NẾU CHƯA TỪNG BỊ XÓA)
           if (default14D && default14D.tasks) {
             default14D.tasks.forEach(task => {
               const taskId = task.id;
               const taskAssignee = task.assignee || 'Thân Nguyễn Thái Thiện';
               const pObj = loadedPersonnel.find(p => p.name === taskAssignee);
-              const uid = pObj ? pObj.id : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'r_tai' : 'r_thien');
-              const email = pObj ? pObj.email : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'tai.nguyen@vsibim.com' : 'thien.than@vsibim.com');
+              const uid = pObj ? pObj.id : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'u_tai' : 'u_thien');
+              const email = pObj ? pObj.email : (taskAssignee === 'Nguyễn Ngọc Thanh Tài' ? 'tainguyen6628@gmail.com' : 'thienthannguyenthai@gmail.com');
               
               if (task.dailyHours_planned && typeof task.dailyHours_planned === 'object') {
                 Object.entries(task.dailyHours_planned).forEach(([dStr, hrs]) => {

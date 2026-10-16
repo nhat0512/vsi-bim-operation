@@ -1,250 +1,58 @@
 // ============================================
-// MOCK DATA — Resources (Personnel, Software, Hardware)
+// RESOURCES — Real Personnel (Synced with Firebase Auth), Software, Hardware
 // ============================================
 
 export const personnelItems = [
   {
-    id: 'R001',
-    name: 'Nguyễn Văn An',
+    id: 'u_admin',
+    name: 'Nguyễn Thanh Nhật',
     role: 'BIM Manager',
     roleId: 'bim-manager',
     level: 'senior',
-    email: 'an.nguyen@bimvn.com',
-    phone: '0901-234-567',
-    avatar: 'NVA',
-    skills: ['Revit', 'Civil 3D', 'Navisworks', 'BIM 360', 'Dynamo'],
-    certifications: ['Autodesk Certified Professional', 'buildingSMART openBIM'],
+    email: 'admin@vsibim.com',
+    secondaryEmails: ['nhattedisouth@gmail.com'],
+    phone: '0901-888-999',
+    avatar: 'NTN',
+    skills: ['Revit', 'Civil 3D', 'Navisworks', 'Quản lý dự án BIM', 'BIM 360 / ACC'],
+    certifications: ['Autodesk Certified Professional', 'BIM Manager Certificate'],
     allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 40 },
-      { projectId: 'P005', projectName: 'Vành Đai 4', percentage: 50 }
+      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 25 },
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 25 }
     ],
-    totalAllocation: 90,
+    totalAllocation: 50,
+    status: 'active',
+    joinDate: '2020-01-01'
+  },
+  {
+    id: 'u_nhat',
+    name: 'Nguyễn Thanh Nhật (PM)',
+    role: 'Project Manager',
+    roleId: 'project-manager',
+    level: 'senior',
+    email: 'nhattedisouth@gmail.com',
+    secondaryEmails: ['admin@vsibim.com'],
+    phone: '0901-888-999',
+    avatar: 'NTN',
+    skills: ['MS Project', 'Power BI', 'Civil 3D', 'Quản trị tiến độ & chi phí (EVM)'],
+    certifications: ['PMP', 'BIM Coordinator Certificate'],
+    allocation: [
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 50 }
+    ],
+    totalAllocation: 50,
     status: 'active',
     joinDate: '2020-03-15'
   },
   {
-    id: 'R002',
-    name: 'Trần Minh Khoa',
-    role: 'BIM Coordinator',
-    roleId: 'bim-coordinator',
-    level: 'mid',
-    email: 'khoa.tran@bimvn.com',
-    phone: '0912-345-678',
-    avatar: 'TMK',
-    skills: ['Revit', 'Navisworks', 'Civil 3D', 'Dynamo'],
-    certifications: ['Autodesk Certified Professional'],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 50 },
-      { projectId: 'P004', projectName: 'Nút giao An Phú', percentage: 30 },
-      { projectId: 'P006', projectName: 'Cao tốc BN-HP', percentage: 25 }
-    ],
-    totalAllocation: 105,
-    status: 'overloaded',
-    joinDate: '2021-06-01'
-  },
-  {
-    id: 'R003',
-    name: 'Lê Thị Hoa',
-    role: 'BIM Modeler',
-    roleId: 'bim-modeler',
-    level: 'mid',
-    email: 'hoa.le@bimvn.com',
-    phone: '0923-456-789',
-    avatar: 'LTH',
-    skills: ['Revit', 'Civil 3D', 'InfraWorks'],
-    certifications: [],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 60 },
-      { projectId: 'P003', projectName: 'Hầm Hải Vân 2', percentage: 40 }
-    ],
-    totalAllocation: 100,
-    status: 'active',
-    joinDate: '2022-01-10'
-  },
-  {
-    id: 'R004',
-    name: 'Phạm Đức Hùng',
-    role: 'BIM Modeler',
-    roleId: 'bim-modeler',
-    level: 'mid',
-    email: 'hung.pham@bimvn.com',
-    phone: '0934-567-890',
-    avatar: 'PDH',
-    skills: ['Revit', 'Civil 3D', 'OpenRoads Designer'],
-    certifications: ['Autodesk Certified Associate'],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 30 },
-      { projectId: 'P002', projectName: 'Cầu Mỹ Thuận 2', percentage: 70 }
-    ],
-    totalAllocation: 100,
-    status: 'active',
-    joinDate: '2021-09-15'
-  },
-  {
-    id: 'R005',
-    name: 'Nguyễn Thị Mai',
-    role: 'BIM Modeler',
-    roleId: 'bim-modeler',
-    level: 'junior',
-    email: 'mai.nguyen@bimvn.com',
-    phone: '0945-678-901',
-    avatar: 'NTM',
-    skills: ['Revit', 'AutoCAD'],
-    certifications: [],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 40 },
-      { projectId: 'P003', projectName: 'Hầm Hải Vân 2', percentage: 50 }
-    ],
-    totalAllocation: 90,
-    status: 'active',
-    joinDate: '2023-03-01'
-  },
-  {
-    id: 'R006',
-    name: 'Võ Hoàng Nam',
-    role: 'BIM Coordinator',
-    roleId: 'bim-coordinator',
-    level: 'mid',
-    email: 'nam.vo@bimvn.com',
-    phone: '0956-789-012',
-    avatar: 'VHN',
-    skills: ['Revit', 'Civil 3D', 'Navisworks', 'BIM 360'],
-    certifications: ['Autodesk Certified Professional'],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 20 },
-      { projectId: 'P004', projectName: 'Nút giao An Phú', percentage: 70 }
-    ],
-    totalAllocation: 90,
-    status: 'active',
-    joinDate: '2022-05-15'
-  },
-  {
-    id: 'R007',
-    name: 'Lê Văn Tùng',
-    role: 'Khảo sát viên',
-    roleId: 'surveyor',
-    level: 'mid',
-    email: 'tung.le@bimvn.com',
-    phone: '0967-890-123',
-    avatar: 'LVT',
-    skills: ['Total Station', '3D Scanner', 'ReCap Pro', 'Civil 3D'],
-    certifications: [],
-    allocation: [
-      { projectId: 'P002', projectName: 'Cầu Mỹ Thuận 2', percentage: 30 },
-      { projectId: 'P003', projectName: 'Hầm Hải Vân 2', percentage: 40 },
-      { projectId: 'P005', projectName: 'Vành Đai 4', percentage: 30 }
-    ],
-    totalAllocation: 100,
-    status: 'active',
-    joinDate: '2021-11-01'
-  },
-  {
-    id: 'R008',
-    name: 'Đặng Thị Lan',
-    role: 'QA/QC Engineer',
-    roleId: 'qaqc',
-    level: 'mid',
-    email: 'lan.dang@bimvn.com',
-    phone: '0978-901-234',
-    avatar: 'DTL',
-    skills: ['Navisworks', 'Solibri', 'BIM 360'],
-    certifications: ['buildingSMART openBIM'],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 30 },
-      { projectId: 'P002', projectName: 'Cầu Mỹ Thuận 2', percentage: 25 },
-      { projectId: 'P004', projectName: 'Nút giao An Phú', percentage: 20 }
-    ],
-    totalAllocation: 75,
-    status: 'active',
-    joinDate: '2022-08-01'
-  },
-  {
-    id: 'R009',
-    name: 'Hoàng Minh Tuấn',
-    role: 'Design Engineer',
-    roleId: 'design-engineer',
-    level: 'senior',
-    email: 'tuan.hoang@bimvn.com',
-    phone: '0989-012-345',
-    avatar: 'HMT',
-    skills: ['Civil 3D', 'OpenRoads', 'MIDAS', 'SAP2000'],
-    certifications: ['PE Civil'],
-    allocation: [
-      { projectId: 'P002', projectName: 'Cầu Mỹ Thuận 2', percentage: 50 },
-      { projectId: 'P003', projectName: 'Hầm Hải Vân 2', percentage: 40 }
-    ],
-    totalAllocation: 90,
-    status: 'active',
-    joinDate: '2019-07-15'
-  },
-  {
-    id: 'R010',
-    name: 'Bùi Thanh Hà',
-    role: 'CAD Technician',
-    roleId: 'cad-technician',
-    level: 'junior',
-    email: 'ha.bui@bimvn.com',
-    phone: '0990-123-456',
-    avatar: 'BTH',
-    skills: ['AutoCAD', 'Revit', 'SketchUp'],
-    certifications: [],
-    allocation: [
-      { projectId: 'P005', projectName: 'Vành Đai 4', percentage: 80 }
-    ],
-    totalAllocation: 80,
-    status: 'active',
-    joinDate: '2024-01-15'
-  },
-  {
-    id: 'R011',
-    name: 'Trịnh Quốc Bảo',
-    role: 'BIM Modeler',
-    roleId: 'bim-modeler',
-    level: 'mid',
-    email: 'bao.trinh@bimvn.com',
-    phone: '0901-234-999',
-    avatar: 'TQB',
-    skills: ['Revit', 'Civil 3D', 'Dynamo'],
-    certifications: [],
-    allocation: [
-      { projectId: 'P003', projectName: 'Hầm Hải Vân 2', percentage: 60 },
-      { projectId: 'P005', projectName: 'Vành Đai 4', percentage: 30 }
-    ],
-    totalAllocation: 90,
-    status: 'active',
-    joinDate: '2023-06-01'
-  },
-  {
-    id: 'R012',
-    name: 'Phan Thị Yến',
-    role: 'Project Manager',
-    roleId: 'project-manager',
-    level: 'senior',
-    email: 'yen.phan@bimvn.com',
-    phone: '0912-999-888',
-    avatar: 'PTY',
-    skills: ['MS Project', 'BIM 360', 'Power BI', 'Primavera P6'],
-    certifications: ['PMP', 'BIM Manager Certificate'],
-    allocation: [
-      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 25 },
-      { projectId: 'P002', projectName: 'Cầu Mỹ Thuận 2', percentage: 25 },
-      { projectId: 'P005', projectName: 'Vành Đai 4', percentage: 30 }
-    ],
-    totalAllocation: 80,
-    status: 'active',
-    joinDate: '2018-04-01'
-  },
-
-  {
-    id: 'r_thien',
+    id: 'u_thien',
     name: 'Thân Nguyễn Thái Thiện',
     role: 'BIM Modeler',
     roleId: 'bim-modeler',
     level: 'mid',
-    email: 'thien.than@vsibim.com',
+    email: 'thienthannguyenthai@gmail.com',
+    secondaryEmails: ['thien.than@vsibim.com'],
     phone: '0918-345-678',
     avatar: 'TNTT',
-    skills: ['Civil 3D', 'InfraWorks', 'AutoCAD'],
+    skills: ['Civil 3D', 'InfraWorks', 'AutoCAD', 'San nền & Trắc dọc tuyến'],
     certifications: ['Autodesk Certified Professional'],
     allocation: [
       { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
@@ -254,15 +62,16 @@ export const personnelItems = [
     joinDate: '2023-02-15'
   },
   {
-    id: 'r_tai',
+    id: 'u_tai',
     name: 'Nguyễn Ngọc Thanh Tài',
     role: 'BIM Modeler',
     roleId: 'bim-modeler',
     level: 'mid',
-    email: 'tai.nguyen@vsibim.com',
+    email: 'tainguyen6628@gmail.com',
+    secondaryEmails: ['tai.nguyen@vsibim.com'],
     phone: '0928-456-789',
     avatar: 'NNTT',
-    skills: ['Civil 3D', 'Revit Structure', 'Navisworks'],
+    skills: ['Civil 3D', 'Revit Structure', 'Navisworks', 'Cầu & Kết cấu BTCT'],
     certifications: ['Autodesk Certified Professional'],
     allocation: [
       { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
@@ -270,6 +79,43 @@ export const personnelItems = [
     totalAllocation: 100,
     status: 'active',
     joinDate: '2023-03-01'
+  },
+  {
+    id: 'u_thuan',
+    name: 'Minh Thuận',
+    role: 'BIM Modeler',
+    roleId: 'bim-modeler',
+    level: 'mid',
+    email: 'minhthuan.uah@gmail.com',
+    phone: '0938-112-233',
+    avatar: 'MT',
+    skills: ['Revit Architecture', 'Civil 3D', 'AutoCAD', 'Hạ tầng kỹ thuật'],
+    certifications: ['Autodesk Certified Associate'],
+    allocation: [
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
+    ],
+    totalAllocation: 100,
+    status: 'active',
+    joinDate: '2023-05-10'
+  },
+  {
+    id: 'u_an',
+    name: 'Nguyễn Văn An',
+    role: 'BIM Coordinator',
+    roleId: 'bim-coordinator',
+    level: 'senior',
+    email: 'an.nguyen@bimvn.com',
+    phone: '0901-234-567',
+    avatar: 'NVA',
+    skills: ['Revit', 'Civil 3D', 'Navisworks', 'QA/QC Clash Detection', 'Dynamo'],
+    certifications: ['Autodesk Certified Professional', 'buildingSMART openBIM'],
+    allocation: [
+      { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 50 },
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 50 }
+    ],
+    totalAllocation: 100,
+    status: 'active',
+    joinDate: '2021-06-01'
   }
 ];
 
@@ -294,12 +140,9 @@ export const hardwareAssets = [
 ];
 
 export const activityLog = [
-  { id: 'A001', type: 'task', user: 'Trần Minh Khoa', action: 'hoàn thành clash detection round 2', project: 'QL1A HCM-Long Thành', time: '15 phút trước', dotColor: 'var(--accent-secondary)' },
-  { id: 'A002', type: 'model', user: 'Phạm Đức Hùng', action: 'cập nhật model trụ tháp lên LOD 300', project: 'Cầu Mỹ Thuận 2', time: '32 phút trước', dotColor: 'var(--accent-primary)' },
-  { id: 'A003', type: 'clash', user: 'Đặng Thị Lan', action: 'phát hiện 15 clash mới (MEP vs Structure)', project: 'Hầm Hải Vân 2', time: '1 giờ trước', dotColor: 'var(--accent-warning)' },
-  { id: 'A004', type: 'meeting', user: 'Phan Thị Yến', action: 'đặt lịch họp BIM coordination', project: 'Vành Đai 4', time: '2 giờ trước', dotColor: 'var(--accent-purple)' },
-  { id: 'A005', type: 'resource', user: 'Nguyễn Văn An', action: 'phân bổ Bùi Thanh Hà vào team', project: 'Vành Đai 4', time: '3 giờ trước', dotColor: 'var(--accent-cyan)' },
-  { id: 'A006', type: 'upload', user: 'Lê Văn Tùng', action: 'upload point cloud scan đợt 3', project: 'Hầm Hải Vân 2', time: '4 giờ trước', dotColor: 'var(--accent-secondary)' },
-  { id: 'A007', type: 'review', user: 'Nguyễn Văn An', action: 'duyệt BEP v2.1', project: 'QL1A HCM-Long Thành', time: '5 giờ trước', dotColor: 'var(--accent-primary)' },
-  { id: 'A008', type: 'alert', user: 'Hệ thống', action: 'cảnh báo Trần Minh Khoa vượt 105% allocation', project: '', time: '6 giờ trước', dotColor: 'var(--accent-danger)' }
+  { id: 'A001', type: 'task', user: 'Thân Nguyễn Thái Thiện', action: 'cập nhật tiến độ phân đoạn Km0-Km5 lên 75%', project: 'Theo dõi tiến độ bản vẽ 14D', time: '15 phút trước', dotColor: 'var(--accent-secondary)' },
+  { id: 'A002', type: 'model', user: 'Nguyễn Ngọc Thanh Tài', action: 'hoàn thành mô hình cầu đi thép & 16 cống', project: 'Theo dõi tiến độ bản vẽ 14D', time: '32 phút trước', dotColor: 'var(--accent-primary)' },
+  { id: 'A003', type: 'clash', user: 'Nguyễn Văn An', action: 'kiểm tra xung đột mô hình hạ tầng & thoát nước', project: 'Theo dõi tiến độ bản vẽ 14D', time: '1 giờ trước', dotColor: 'var(--accent-warning)' },
+  { id: 'A004', type: 'meeting', user: 'Nguyễn Thanh Nhật', action: 'phê duyệt mốc hoàn thành đợt 1', project: 'Theo dõi tiến độ bản vẽ 14D', time: '2 giờ trước', dotColor: 'var(--accent-purple)' },
+  { id: 'A005', type: 'resource', user: 'Minh Thuận', action: 'nhận bàn giao phụ trách phân đoạn Km50-Km62', project: 'Theo dõi tiến độ bản vẽ 14D', time: '3 giờ trước', dotColor: 'var(--accent-cyan)' }
 ];

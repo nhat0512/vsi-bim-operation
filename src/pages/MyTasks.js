@@ -14,35 +14,32 @@ let currentCalendarYear = new Date().getFullYear();
 
 export function render() {
   const { currentUser, currentUserAuth, projects, personnel, timesheets } = getState();
-  const userEmail = currentUserAuth?.email || currentUser?.email || '';
+  const userEmail = (currentUserAuth?.email || currentUser?.email || '').toLowerCase().trim();
 
-  // Tìm hồ sơ nhân sự của người đăng nhập
-  const myRecord = (personnel || []).find(p => p.email === userEmail) || currentUser?.personnelRecord;
+  // Tìm hồ sơ nhân sự của người đăng nhập (hỗ trợ cả primary email và secondary email)
+  const myRecord = (personnel || []).find(p => 
+    (p.email || '').toLowerCase() === userEmail || 
+    (p.secondaryEmails || []).some(e => e.toLowerCase() === userEmail)
+  ) || currentUser?.personnelRecord;
+
   const userName = myRecord?.name || currentUserAuth?.name || currentUser?.name || 'Nhân viên';
   const personId = myRecord ? myRecord.id : (currentUserAuth?.id || 'unknown');
+
+  // Bộ so khớp thông minh hỗ trợ mọi định danh của nhân sự
+  const matcher = createMemberMatcher(userEmail, userName, myRecord);
 
   // Tìm tất cả dự án + task được giao cho người này
   const myAssignments = [];
   (projects || []).forEach(project => {
     // Các tasks được gán cho người này
-    const tasks = (project.tasks || []).filter(t => 
-      t.assignee === userName || 
-      t.assignee === userEmail ||
-      (myRecord && t.assignee === myRecord.name)
-    );
+    const tasks = (project.tasks || []).filter(t => matcher(t.assignee));
     
     // Các RFIs được gán cho người này
-    const rfis = (project.rfis || []).filter(r => 
-      r.assignee === userName || 
-      r.assignee === userEmail ||
-      (myRecord && r.assignee === myRecord.name)
-    );
+    const rfis = (project.rfis || []).filter(r => matcher(r.assignee));
 
     // Kiểm tra xem người này có nằm trong Đội ngũ dự án (Team) không
-    const isTeamMember = (project.team || []).some(m => 
-      m.name === userName || m.email === userEmail || (myRecord && m.name === myRecord.name)
-    );
-    const isLead = project.teamLead === userName || project.teamLead === userEmail || (myRecord && project.teamLead === myRecord.name);
+    const isTeamMember = (project.team || []).some(m => matcher(m.name) || matcher(m.email));
+    const isLead = matcher(project.teamLead);
 
     // Nếu có task HOẶC RFI HOẶC nằm trong team dự án thì đều được tính
     if (tasks.length > 0 || (rfis && rfis.length > 0) || isTeamMember || isLead) {
@@ -61,7 +58,7 @@ export function render() {
     : 0;
 
   // Tính toán thống kê tuần (Weekly Timesheet Strip)
-  const weekStats = getWeeklyTimesheetData(userEmail, userName, personId, timesheets);
+  const weekStats = getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher);
 
   return `
     <div class="animate-fade-in-up">
@@ -380,7 +377,36 @@ export function render() {
 /**
  * TÍNH TOÁN DỮ LIỆU TUẦN CHO BẢNG CHẤM CÔNG (T2 -> CN)
  */
-function getWeeklyTimesheetData(userEmail, userName, personId, timesheets) {
+/**
+ * TẠO BỘ SO KHỚP ĐỊNH DANH NHÂN SỰ TOÀN DIỆN (Hỗ trợ Email, Tên đầy đủ, Biệt danh)
+ */
+function createMemberMatcher(userEmail, userName, myRecord) {
+  const myAliases = new Set([
+    (userName || '').toLowerCase().trim(),
+    (userEmail || '').toLowerCase().trim(),
+    (myRecord?.email || '').toLowerCase().trim(),
+    ...(myRecord?.secondaryEmails || []).map(e => (e || '').toLowerCase().trim())
+  ]);
+  if (userName?.includes('Thiện')) myAliases.add('thiện');
+  if (userName?.includes('Tài')) myAliases.add('tài');
+  if (userName?.includes('Thuận')) myAliases.add('thuận');
+  if (userName?.includes('Nhật')) myAliases.add('nhật');
+  if (userName?.includes('An')) myAliases.add('an');
+
+  return (val) => {
+    if (!val) return false;
+    const v = val.toLowerCase().trim();
+    if (myAliases.has(v)) return true;
+    if (userName && (v.includes(userName.toLowerCase()) || userName.toLowerCase().includes(v))) return true;
+    return false;
+  };
+}
+
+/**
+ * TÍNH TOÁN DỮ LIỆU TUẦN CHO BẢNG CHẤM CÔNG (T2 -> CN)
+ */
+function getWeeklyTimesheetData(userEmail, userName, personId, timesheets, matcher = null) {
+  const isMatch = matcher || createMemberMatcher(userEmail, userName, null);
   const now = new Date();
   const currentDay = now.getDay(); // 0 = CN, 1 = T2
   const diffToMonday = currentDay === 0 ? -6 : 1 - currentDay;
@@ -402,7 +428,7 @@ function getWeeklyTimesheetData(userEmail, userName, personId, timesheets) {
     const dateStr = formatLocalDate(d);
 
     const dayRecords = (timesheets || []).filter(ts => {
-      const match = ts.userId === personId || ts.email === userEmail || ts.userName === userName;
+      const match = ts.userId === personId || isMatch(ts.email) || isMatch(ts.userName);
       return match && (ts.dateString === dateStr || ts.date === dateStr);
     });
 

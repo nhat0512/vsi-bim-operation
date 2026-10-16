@@ -1558,6 +1558,8 @@ function openEditTimesheetModal(tsId) {
     return;
   }
 
+  const matcher = createMemberMatcher(userEmail, userName, myRecord);
+
   const proj = (projects || []).find(p => p.id === targetTs.projectId);
   let task = null;
   let isRfi = false;
@@ -1578,17 +1580,97 @@ function openEditTimesheetModal(tsId) {
   const currentNote = targetTs.note || targetTs.comment || '';
   const isOT = targetTs.isOT || false;
 
+  // Helper tạo danh sách tùy chọn Hạng mục / Nhiệm vụ theo dự án
+  const buildTaskOptionsHtml = (selectedProject, currentSelectedTaskId, currentSelectedTaskName) => {
+    if (!selectedProject) {
+      return '<option value="">-- Vui lòng chọn dự án trước --</option>';
+    }
+
+    let optionsHtml = `<option value="t_general" ${currentSelectedTaskId === 't_general' ? 'selected' : ''}>🏢 -- Công việc chung (Không phân Task) --</option>`;
+
+    const allTasks = selectedProject.tasks || [];
+    const myTasks = allTasks.filter(t => matcher(t.assignee));
+    const otherTasks = allTasks.filter(t => !matcher(t.assignee));
+
+    const renderOption = (t) => {
+      const trueIdx = allTasks.indexOf(t);
+      const val = t.id || `t_${trueIdx}`;
+      let extraInfo = '';
+      if (t.segmentIdx !== undefined && t.segmentIdx !== null && selectedProject.segments?.[t.segmentIdx]) {
+        extraInfo = ` - [${selectedProject.segments[t.segmentIdx].name}]`;
+      }
+      const isSelected = (val === currentSelectedTaskId) || (t.id && t.id === currentSelectedTaskId) || (currentSelectedTaskId === `t_${trueIdx}`) || (currentSelectedTaskName && t.name === currentSelectedTaskName);
+      return `<option value="${val}" ${isSelected ? 'selected' : ''}>${t.name}${extraInfo} (${t.progress || 0}%)</option>`;
+    };
+
+    if (myTasks.length > 0) {
+      optionsHtml += '<optgroup label="⭐ Công việc của tôi trong dự án">';
+      myTasks.forEach(t => {
+        optionsHtml += renderOption(t);
+      });
+      optionsHtml += '</optgroup>';
+    }
+
+    if (otherTasks.length > 0) {
+      optionsHtml += '<optgroup label="📁 Các công việc khác trong dự án">';
+      otherTasks.forEach(t => {
+        optionsHtml += renderOption(t);
+      });
+      optionsHtml += '</optgroup>';
+    }
+
+    const rfis = selectedProject.rfis || [];
+    if (rfis.length > 0) {
+      optionsHtml += '<optgroup label="❓ Yêu cầu RFI (Request For Information)">';
+      rfis.forEach((r, rIdx) => {
+        const val = `rfi_${rIdx}`;
+        const isSelected = (val === currentSelectedTaskId) || (r.code && currentSelectedTaskId?.includes(r.code)) || (r.title && currentSelectedTaskName?.includes(r.title));
+        optionsHtml += `<option value="${val}" ${isSelected ? 'selected' : ''}>[RFI] ${r.code ? r.code + ' - ' : ''}${r.title} (${r.status || 'Open'})</option>`;
+      });
+      optionsHtml += '</optgroup>';
+    }
+
+    return optionsHtml;
+  };
+
   const contentHTML = `
     <div class="edit-timesheet-modal" style="padding: 4px 0;">
-      <!-- Header Info Banner -->
-      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px;">
-        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap;">
-          <span class="badge blue" style="font-size: 0.72rem;">📁 ${proj ? proj.name : (targetTs.projectName || targetTs.projectId)}</span>
-          <span class="badge green" style="font-size: 0.72rem;">${isRfi ? 'Xử lý RFI' : 'Công việc'}</span>
-          ${targetTs.isOT ? '<span class="badge orange" style="font-size: 0.72rem;">Ngoài giờ (OT)</span>' : ''}
+      <!-- Khung chọn Dự án & Hạng mục công việc (Cho phép chỉnh sửa linh hoạt) -->
+      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+          <span style="font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted);">
+            📁 Thông Tin Dự Án & Hạng Mục
+          </span>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <span id="edit-ts-type-badge" class="badge ${isRfi ? 'orange' : (task ? 'green' : 'blue')}" style="font-size: 0.72rem;">
+              ${isRfi ? '❓ Xử lý RFI' : (task ? '📋 Công việc' : '🏢 Chung')}
+            </span>
+            ${targetTs.isOT ? '<span class="badge orange" style="font-size: 0.72rem;">Ngoài giờ (OT)</span>' : ''}
+          </div>
         </div>
-        <div style="font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin-top: 6px;">
-          ${targetTs.taskName || task?.name || 'Công việc'}
+
+        <!-- Dropdown chọn Dự án -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 4px;">
+            📁 Dự án <span style="color: var(--text-danger);">*</span>
+          </label>
+          <select id="edit-ts-project" class="form-select" style="width: 100%; font-weight: 600; font-size: 0.88rem;">
+            ${(projects || []).map(p => `
+              <option value="${p.id}" ${p.id === (proj?.id || targetTs.projectId) ? 'selected' : ''}>
+                ${p.code ? p.code + ' - ' : ''}${p.name}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+
+        <!-- Dropdown chọn Hạng mục / Nhiệm vụ -->
+        <div>
+          <label class="text-xs font-semibold" style="color: var(--text-primary); display: block; margin-bottom: 4px;">
+            📋 Hạng mục / Nhiệm vụ <span style="color: var(--text-danger);">*</span>
+          </label>
+          <select id="edit-ts-task" class="form-select" style="width: 100%; font-weight: 600; font-size: 0.88rem;">
+            ${buildTaskOptionsHtml(proj, targetTs.taskId, targetTs.taskName)}
+          </select>
         </div>
       </div>
 
@@ -1627,22 +1709,20 @@ function openEditTimesheetModal(tsId) {
         </div>
 
         <!-- Cập nhật Tiến độ Task nếu có task -->
-        ${task ? `
-          <div style="padding-top: 10px; border-top: 1px solid var(--border-subtle);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-              <label class="text-xs font-semibold" style="color: var(--text-primary);">📊 Cập nhật tiến độ hoàn thành</label>
-              <span id="edit-ts-progress-val" style="font-size: 0.95rem; font-weight: 700; color: var(--accent-primary);">${task.progress || 0}%</span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
-              <input type="range" id="edit-ts-progress" min="0" max="100" step="5" value="${task.progress || 0}" style="flex: 1; accent-color: var(--accent-primary);">
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="10">+10%</button>
-              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="25">+25%</button>
-              <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-set="100" style="color: #10b981; border-color: #10b981; font-weight: bold;">Hoàn thành 100% ✅</button>
-            </div>
+        <div id="edit-ts-progress-container" style="padding-top: 10px; border-top: 1px solid var(--border-subtle); display: ${task ? 'block' : 'none'};">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="text-xs font-semibold" style="color: var(--text-primary);">📊 Cập nhật tiến độ hoàn thành</label>
+            <span id="edit-ts-progress-val" style="font-size: 0.95rem; font-weight: 700; color: var(--accent-primary);">${task?.progress || 0}%</span>
           </div>
-        ` : ''}
+          <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 8px;">
+            <input type="range" id="edit-ts-progress" min="0" max="100" step="5" value="${task?.progress || 0}" style="flex: 1; accent-color: var(--accent-primary);">
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="10">+10%</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-add="25">+25%</button>
+            <button type="button" class="btn btn-outline btn-xs btn-edit-prog-btn" data-set="100" style="color: #10b981; border-color: #10b981; font-weight: bold;">Hoàn thành 100% ✅</button>
+          </div>
+        </div>
 
         <!-- Mã Bản vẽ / Sheet No. -->
         <div>
@@ -1683,12 +1763,79 @@ function openEditTimesheetModal(tsId) {
   openModal('✏️ Chỉnh Sửa Giờ Làm Việc', contentHTML, { size: 'normal' });
 
   // Event handlers
+  const projectSelect = document.getElementById('edit-ts-project');
+  const taskSelect = document.getElementById('edit-ts-task');
+  const typeBadge = document.getElementById('edit-ts-type-badge');
+  const progressContainer = document.getElementById('edit-ts-progress-container');
+  const sheetSuggestions = document.getElementById('edit-sheet-suggestions');
+
   const hoursInput = document.getElementById('edit-ts-hours');
   const dateInput = document.getElementById('edit-ts-date');
   const isotInput = document.getElementById('edit-ts-isot');
   const noteInput = document.getElementById('edit-ts-note');
   const progSlider = document.getElementById('edit-ts-progress');
   const progVal = document.getElementById('edit-ts-progress-val');
+
+  // Hàm cập nhật trạng thái hiển thị của Task & Progress Slider
+  const updateTaskSelectionState = () => {
+    const pId = projectSelect ? projectSelect.value : '';
+    const curProj = (projects || []).find(p => p.id === pId);
+    const selectedVal = taskSelect ? taskSelect.value : '';
+
+    if (selectedVal.startsWith('rfi_')) {
+      if (typeBadge) {
+        typeBadge.className = 'badge orange';
+        typeBadge.textContent = '❓ Xử lý RFI';
+      }
+      if (progressContainer) progressContainer.style.display = 'none';
+    } else if (selectedVal === 't_general' || !selectedVal) {
+      if (typeBadge) {
+        typeBadge.className = 'badge blue';
+        typeBadge.textContent = '🏢 Chung';
+      }
+      if (progressContainer) progressContainer.style.display = 'none';
+    } else {
+      if (typeBadge) {
+        typeBadge.className = 'badge green';
+        typeBadge.textContent = '📋 Công việc';
+      }
+      if (progressContainer) progressContainer.style.display = 'block';
+
+      if (curProj && curProj.tasks) {
+        let tsk = curProj.tasks.find(t => t.id === selectedVal);
+        if (!tsk && selectedVal.startsWith('t_')) {
+          const idx = parseInt(selectedVal.replace('t_', ''), 10);
+          tsk = curProj.tasks[idx];
+        }
+        if (tsk && progSlider && progVal) {
+          progSlider.value = tsk.progress || 0;
+          progVal.textContent = `${tsk.progress || 0}%`;
+        }
+      }
+    }
+  };
+
+  // Sự kiện khi thay đổi Dự án
+  projectSelect?.addEventListener('change', () => {
+    const newPId = projectSelect.value;
+    const curProj = (projects || []).find(p => p.id === newPId);
+    if (taskSelect) {
+      taskSelect.innerHTML = buildTaskOptionsHtml(curProj, '', '');
+    }
+    // Cập nhật gợi ý bản vẽ
+    if (sheetSuggestions && curProj) {
+      sheetSuggestions.innerHTML = `
+        ${(curProj.segments || []).map(s => `<option value="${s.name}">`).join('')}
+        ${(curProj.drawingData || []).filter(d => !d.isHeader).map(d => `<option value="${d.content}">`).join('')}
+      `;
+    }
+    updateTaskSelectionState();
+  });
+
+  // Sự kiện khi thay đổi Hạng mục / Nhiệm vụ
+  taskSelect?.addEventListener('change', () => {
+    updateTaskSelectionState();
+  });
 
   // Quick hour buttons
   document.querySelectorAll('.btn-edit-hour-btn').forEach(btn => {
@@ -1739,14 +1886,20 @@ function openEditTimesheetModal(tsId) {
     }
   });
 
-  // Submit
+  // Submit / Lưu Thay Đổi với cam kết bảo toàn an toàn dữ liệu
   document.getElementById('edit-ts-btn-submit')?.addEventListener('click', () => {
+    const newProjectId = projectSelect ? projectSelect.value : targetTs.projectId;
+    const newTaskId = taskSelect ? taskSelect.value : targetTs.taskId;
     const newDate = dateInput.value;
     const newHours = parseFloat(hoursInput.value);
     const newIsOT = isotInput.checked;
     const newNote = noteInput.value.trim();
     const newSheetNo = document.getElementById('edit-ts-sheetno')?.value.trim() || '';
 
+    if (!newProjectId) {
+      alert('Vui lòng chọn dự án');
+      return;
+    }
     if (!newDate) {
       alert('Vui lòng chọn ngày làm việc');
       return;
@@ -1756,8 +1909,85 @@ function openEditTimesheetModal(tsId) {
       return;
     }
 
-    const { timesheets: curTs } = getState();
+    const { timesheets: curTs, projects: allProjs } = getState();
     const updatedTs = [...(curTs || [])];
+
+    const oldProjectId = targetTs.projectId;
+    const oldTaskId = targetTs.taskId;
+    const oldTaskName = targetTs.taskName;
+    const oldDate = targetTs.dateString || targetTs.date;
+
+    const oldProj = (allProjs || []).find(p => p.id === oldProjectId);
+    const newProj = (allProjs || []).find(p => p.id === newProjectId);
+
+    let newTaskName = '';
+    let newTaskObj = null;
+
+    if (newTaskId === 't_general') {
+      newTaskName = 'Công việc chung';
+    } else if (newTaskId.startsWith('rfi_')) {
+      const rIdx = parseInt(newTaskId.replace('rfi_', ''), 10);
+      const rfi = newProj?.rfis?.[rIdx];
+      newTaskName = rfi ? `[RFI] ${rfi.code ? rfi.code + ' - ' : ''}${rfi.title}` : 'Xử lý RFI';
+    } else {
+      if (newProj && newProj.tasks) {
+        newTaskObj = newProj.tasks.find(t => t.id === newTaskId);
+        if (!newTaskObj && newTaskId.startsWith('t_')) {
+          const idx = parseInt(newTaskId.replace('t_', ''), 10);
+          newTaskObj = newProj.tasks[idx];
+        }
+      }
+      newTaskName = newTaskObj ? newTaskObj.name : (targetTs.taskName || 'Công việc');
+    }
+
+    // 1. DỌN SẠCH GIỜ Ở TASK CŨ (NẾU CÓ THAY ĐỔI TASK HOẶC THAY ĐỔI DỰ ÁN HOẶC THAY ĐỔI NGÀY)
+    let oldTaskObj = null;
+    if (oldProj && oldProj.tasks) {
+      oldTaskObj = oldProj.tasks.find(t => t.id === oldTaskId || t.name === oldTaskName);
+      if (!oldTaskObj && oldTaskId && oldTaskId.startsWith('t_')) {
+        const idx = parseInt(oldTaskId.replace('t_', ''), 10);
+        oldTaskObj = oldProj.tasks[idx];
+      }
+    }
+
+    const isTaskChanged = (oldProjectId !== newProjectId) || (oldTaskId !== newTaskId);
+    const isDateChanged = oldDate !== newDate;
+
+    if (oldTaskObj && (isTaskChanged || isDateChanged)) {
+      if (oldTaskObj.dailyHours_actual && oldTaskObj.dailyHours_actual[oldDate] !== undefined) {
+        delete oldTaskObj.dailyHours_actual[oldDate];
+        updateProject(oldProj.id, { tasks: oldProj.tasks });
+      }
+    }
+
+    // 2. GHI GIỜ VÀO TASK MỚI (NẾU CÓ TASK MỚI TRONG DỰ ÁN)
+    if (newTaskObj) {
+      if (!newTaskObj.dailyHours_actual) newTaskObj.dailyHours_actual = {};
+      newTaskObj.dailyHours_actual[newDate] = newHours;
+      if (progSlider && progressContainer && progressContainer.style.display !== 'none') {
+        const newProgress = parseInt(progSlider.value);
+        newTaskObj.progress = newProgress;
+        newTaskObj.status = newProgress >= 100 ? 'completed' : 'active';
+      }
+      updateProject(newProj.id, { tasks: newProj.tasks });
+    }
+
+    // 3. NẾU BẢN GHI CŨ LÀ BẢN GHI SYNTHETIC (TỰ TẠO TỪ DAILYHOURS), ĐÁNH DẤU TOMBSTONE ĐỂ KHÔNG BỊ TRÙNG LẶP
+    if (isTaskChanged || isDateChanged) {
+      if (tsId.startsWith('syn-act-') || tsId.startsWith('syn-res-act-')) {
+        const delSet = new Set([...(getState().deletedTimesheetIds || []), tsId]);
+        if (oldTaskId && oldDate) {
+          delSet.add(`syn-act-${oldTaskId}-${oldDate}`);
+          delSet.add(`ts-act-${oldTaskId}-${oldDate}`);
+        }
+        setState('deletedTimesheetIds', Array.from(delSet));
+        try {
+          localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(Array.from(delSet)));
+        } catch(e) {}
+      }
+    }
+
+    // 4. CẬP NHẬT HOẶC THÊM MỚI VÀO DANH SÁCH TIMESHEETS
     const tsIdx = updatedTs.findIndex(t => {
       if (t.id === tsId) return true;
       const compKey = `${t.userId}_${t.projectId}_${t.taskId || ''}_${t.dateString || t.date}_${!!t.isActual}`;
@@ -1765,9 +1995,12 @@ function openEditTimesheetModal(tsId) {
     });
 
     if (tsIdx >= 0) {
-      const oldDate = updatedTs[tsIdx].dateString || updatedTs[tsIdx].date;
       updatedTs[tsIdx] = {
         ...updatedTs[tsIdx],
+        projectId: newProjectId,
+        projectName: newProj ? newProj.name : (targetTs.projectName || ''),
+        taskId: newTaskId,
+        taskName: newTaskName,
         dateString: newDate,
         date: newDate,
         hours: newHours,
@@ -1783,10 +2016,10 @@ function openEditTimesheetModal(tsId) {
         userId: targetTs.userId || personId,
         userName: targetTs.userName || userName,
         email: targetTs.email || userEmail,
-        projectId: targetTs.projectId,
-        projectName: targetTs.projectName,
-        taskId: targetTs.taskId,
-        taskName: targetTs.taskName,
+        projectId: newProjectId,
+        projectName: newProj ? newProj.name : (targetTs.projectName || ''),
+        taskId: newTaskId,
+        taskName: newTaskName,
         dateString: newDate,
         date: newDate,
         hours: newHours,
@@ -1799,31 +2032,10 @@ function openEditTimesheetModal(tsId) {
       });
     }
 
-    // Cập nhật project tasks nếu có
-    const targetProj = proj || (projects || []).find(p => p.id === targetTs.projectId);
-    if (targetProj && targetProj.tasks) {
-      let targetTask = targetProj.tasks.find(t => t.id === targetTs.taskId || t.name === targetTs.taskName);
-      if (targetTask) {
-        if (!targetTask.dailyHours_actual) targetTask.dailyHours_actual = {};
-        const oldDate = targetTs.dateString || targetTs.date;
-        if (oldDate !== newDate && targetTask.dailyHours_actual[oldDate] !== undefined) {
-          delete targetTask.dailyHours_actual[oldDate];
-        }
-        targetTask.dailyHours_actual[newDate] = newHours;
-
-        if (progSlider) {
-          const newProgress = parseInt(progSlider.value);
-          targetTask.progress = newProgress;
-          targetTask.status = newProgress >= 100 ? 'completed' : 'active';
-        }
-        updateProject(targetProj.id, { tasks: targetProj.tasks });
-      }
-    }
-
     setState('timesheets', updatedTs);
-    saveLocalSnapshot(`Chỉnh sửa giờ làm: ${newHours}h cho ${targetTs.taskName || 'công việc'}`);
+    saveLocalSnapshot(`Chỉnh sửa giờ làm: ${newHours}h cho ${newTaskName}`);
     closeModal();
-    showToast(`✅ Đã cập nhật thành công ${newHours} giờ làm việc!`);
+    showToast(`✅ Đã cập nhật thành công ${newHours} giờ cho "${newTaskName}"!`);
     refreshPage();
   });
 }

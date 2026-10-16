@@ -769,31 +769,48 @@ function confirmDeleteProject(projectId) {
   const project = (projects || []).find(p => p.id === projectId);
   if (!project) return;
 
+  const taskCount = (project.tasks || []).length;
+  const memberCount = (project.team || []).length || project.teamSize || 0;
+
   const html = `
-    <div style="text-align: center; padding: 20px 0;">
-      <div style="font-size: 3rem; margin-bottom: 16px;">⚠️</div>
-      <div style="font-size: 1.1rem; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">
-        Xóa dự án "${project.name}"?
+    <div style="text-align: center; padding: 16px 8px;">
+      <div style="font-size: 3rem; margin-bottom: 12px;">⚠️</div>
+      <h3 style="font-size: 1.2rem; font-weight: 700; color: var(--accent-danger, #ef4444); margin: 0 0 8px 0;">
+        Xác nhận xóa dự án
+      </h3>
+      <div style="font-size: 1.05rem; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
+        ${project.name}
       </div>
-      <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6;">
-        Mã: <strong>${project.code || project.id}</strong> · ${project.location || ''}<br/>
-        Hành động này không thể hoàn tác.
+      <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px;">
+        Mã: <strong>${project.code || project.id}</strong> · CĐT: ${project.client || '—'} · Quy mô: ${taskCount} công việc (${memberCount} nhân sự)
       </div>
-      <div class="flex justify-center gap-sm">
-        <button class="btn btn-ghost" id="confirm-cancel">Hủy</button>
-        <button class="btn" id="confirm-delete" style="background: var(--accent-danger); color: white;">🗑️ Xóa dự án</button>
+      
+      <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 14px; margin-bottom: 20px; text-align: left; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6;">
+        <div style="font-weight: 700; color: var(--accent-danger, #ef4444); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+          🛡️ Cam kết an toàn dữ liệu:
+        </div>
+        • Hệ thống <strong>tự động lưu Điểm phục hồi (Snapshot)</strong> ngay lập tức trước khi xóa.<br/>
+        • Bạn có thể <strong>khôi phục lại nguyên vẹn</strong> dự án bất kỳ lúc nào tại mục <em>Điểm phục hồi</em> ở thanh công cụ.<br/>
+        • Hồ sơ nhân sự và toàn bộ các dự án khác hoàn toàn được bảo vệ, không bị ảnh hưởng.
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: center;">
+        <button type="button" class="btn btn-ghost" id="confirm-cancel" style="min-width: 110px;">Hủy bỏ</button>
+        <button type="button" class="btn" id="confirm-delete" style="background: var(--accent-danger, #ef4444); color: white; min-width: 140px; font-weight: 600;">
+          🗑️ Xác nhận xóa
+        </button>
       </div>
     </div>
   `;
 
-  openModal('Xác nhận xóa', html);
+  openModal('Xác nhận xóa dự án', html);
 
   setTimeout(() => {
     document.getElementById('confirm-cancel')?.addEventListener('click', closeModal);
     document.getElementById('confirm-delete')?.addEventListener('click', () => {
       deleteProject(projectId);
       closeModal();
-      showToast(`Đã xóa dự án "${project.name}"`);
+      showToast(`Đã xóa dự án "${project.name}". Điểm phục hồi đã được lưu an toàn.`);
       refreshDashboard();
     });
   }, 50);

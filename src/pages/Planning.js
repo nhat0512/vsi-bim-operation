@@ -1,4 +1,4 @@
-import { getState, setState } from '../state.js';
+import { getState, setState, deleteTimesheet, updateProject, saveLocalSnapshot } from '../state.js';
 import { formatDisplayName } from '../utils/formatters.js';
 
 // Module-level persistent UI states
@@ -10,6 +10,85 @@ let filterProjectId = '';
 let filterOnlyActive = false;
 let collapsedMembers = new Set();
 let collapsedProjects = new Set();
+
+// Helper chuẩn hóa so khớp người dùng trong Timesheet
+export function matchUserTs(t, userId, personnel = []) {
+  if (!t) return false;
+  if (t.userId === userId) return true;
+  const person = (personnel || []).find(p => p.id === userId);
+  if (!person) return false;
+  const pName = (person.name || '').toLowerCase();
+  const pEmail = (person.email || '').toLowerCase();
+  const tEmail = (t.email || '').toLowerCase();
+  const tName = (t.userName || '').toLowerCase();
+  if (tEmail && (tEmail === pEmail || (person.secondaryEmails || []).some(e => e.toLowerCase() === tEmail))) return true;
+  if (tName && pName && (tName.includes(pName) || pName.includes(tName))) return true;
+  if (pName.includes('thiện') && (tName.includes('thiện') || tEmail.includes('thienthan') || t.userId === 'u_thien')) return true;
+  if (pName.includes('tài') && (tName.includes('tài') || tEmail.includes('tainguyen') || t.userId === 'u_tai')) return true;
+  if (pName.includes('thuận') && (tName.includes('thuận') || tEmail.includes('minhthuan') || t.userId === 'u_thuan')) return true;
+  if (pName.includes('an') && (tName.includes('an') || tEmail.includes('an.nguyen') || t.userId === 'u_an')) return true;
+  if (pName.includes('nhật') && (tName.includes('nhật') || tEmail.includes('nhatte') || t.userId === 'u_nhat' || t.userId === 'u_admin')) return true;
+  return false;
+}
+
+// Helper chuẩn hóa so khớp công việc (Task / RFI) trong Timesheet
+export function matchTaskTs(t, userId, taskId, projId, projects = [], personnel = []) {
+  if (!matchUserTs(t, userId, personnel)) return false;
+  if (projId && t.projectId && t.projectId !== projId) return false;
+  if (t.taskId === taskId) return true;
+  const proj = (projects || []).find(p => p.id === (projId || t.projectId));
+  if (proj && proj.tasks) {
+    if (typeof taskId === 'string' && taskId.startsWith('t_')) {
+      const idx = parseInt(taskId.replace('t_', ''), 10);
+      if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === t.taskId) return true;
+    }
+    if (typeof t.taskId === 'string' && t.taskId.startsWith('t_')) {
+      const idx = parseInt(t.taskId.replace('t_', ''), 10);
+      if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === taskId) return true;
+    }
+    const targetTask = proj.tasks.find(x => x.id === taskId);
+    if (targetTask && (t.taskName === targetTask.name || (t.comment && t.comment.includes(targetTask.name)))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Helper lấy bản ghi kế hoạch hiện có (kết hợp cả timesheets và dailyHours_planned trên task)
+export function getTsRecord(userId, taskId, dateStr, projId, timesheets = [], projects = [], personnel = []) {
+  const found = timesheets.find(t => 
+    matchTaskTs(t, userId, taskId, projId, projects, personnel) && 
+    (t.dateString === dateStr || t.date === dateStr) && 
+    !t.isActual
+  );
+  if (found) return found;
+
+  // Fallback: Tìm từ dailyHours_planned của task trong project nếu chưa có timesheet độc lập
+  const proj = (projects || []).find(p => p.id === projId);
+  if (proj && proj.tasks) {
+    const tsk = proj.tasks.find(x => x.id === taskId) || (taskId.startsWith('t_') ? proj.tasks[parseInt(taskId.replace('t_', ''), 10)] : null);
+    if (tsk && tsk.dailyHours_planned && tsk.dailyHours_planned[dateStr] !== undefined) {
+      const h = Number(tsk.dailyHours_planned[dateStr]) || 0;
+      if (h > 0) {
+        return {
+          id: `syn-plan-${tsk.id || taskId}-${dateStr}`,
+          userId: userId,
+          projectId: proj.id,
+          projectName: proj.name,
+          taskId: tsk.id || taskId,
+          taskName: tsk.name,
+          dateString: dateStr,
+          date: dateStr,
+          hours: h,
+          isActual: false,
+          isOT: false,
+          comment: ''
+        };
+      }
+    }
+  }
+  return null;
+}
 
 function getPlanningData(offset = 0) {
   const data = [];
@@ -48,7 +127,7 @@ function getPlanningData(offset = 0) {
 export function render() {
   const state = getState();
   const planData = getPlanningData(currentOffset);
-  const isManager = ['BIM Manager', 'Project Manager'].includes(state.currentUserRole);
+  const isManager = ['BIM Manager', 'Project Manager', 'Admin'].includes(state.currentUserRole || state.currentUser?.role);
   
   let targetPersonnel = [];
   if (isManager) {
@@ -66,7 +145,7 @@ export function render() {
   planData.forEach(w => w.days.forEach(d => periodDates.push(d.dateString)));
 
   // KPI calculations
-  const periodTimesheets = timesheets.filter(t => periodDates.includes(t.dateString) && !t.isActual);
+  const periodTimesheets = timesheets.filter(t => periodDates.includes(t.dateString || t.date) && !t.isActual);
   const totalPeriodHours = periodTimesheets.reduce((s, t) => s + (Number(t.hours) || 0), 0);
   const activeUserIds = new Set(periodTimesheets.filter(t => Number(t.hours) > 0).map(t => t.userId));
   const activeMembersCount = activeUserIds.size;
@@ -77,66 +156,33 @@ export function render() {
   const standardHours = targetPersonnel.length * 10 * 8; // 10 work days * 8h
   const teamCapacityPct = standardHours > 0 ? Math.round((totalPeriodHours / standardHours) * 100) : 0;
 
-  // Helper match user in timesheet
-  const matchUserTs = (t, userId) => {
-    if (!t) return false;
-    if (t.userId === userId) return true;
-    const person = (state.personnel || []).find(p => p.id === userId);
-    if (!person) return false;
-    const pName = (person.name || '').toLowerCase();
-    const pEmail = (person.email || '').toLowerCase();
-    const tEmail = (t.email || '').toLowerCase();
-    const tName = (t.userName || '').toLowerCase();
-    if (tEmail && (tEmail === pEmail || (person.secondaryEmails || []).some(e => e.toLowerCase() === tEmail))) return true;
-    if (tName && pName && (tName.includes(pName) || pName.includes(tName))) return true;
-    if (pName.includes('thiện') && (tName.includes('thiện') || tEmail.includes('thienthan') || t.userId === 'u_thien')) return true;
-    if (pName.includes('tài') && (tName.includes('tài') || tEmail.includes('tainguyen') || t.userId === 'u_tai')) return true;
-    if (pName.includes('thuận') && (tName.includes('thuận') || tEmail.includes('minhthuan') || t.userId === 'u_thuan')) return true;
-    if (pName.includes('an') && (tName.includes('an') || tEmail.includes('an.nguyen') || t.userId === 'u_an')) return true;
-    if (pName.includes('nhật') && (tName.includes('nhật') || tEmail.includes('nhatte') || t.userId === 'u_nhat')) return true;
-    return false;
-  };
-
-  // Helper match timesheet
-  const matchTaskTs = (t, userId, taskId, projId) => {
-    if (!matchUserTs(t, userId)) return false;
-    if (projId && t.projectId && t.projectId !== projId) return false;
-    if (t.taskId === taskId) return true;
-    const proj = (state.projects || []).find(p => p.id === (projId || t.projectId));
-    if (proj && proj.tasks) {
-      if (typeof taskId === 'string' && taskId.startsWith('t_')) {
-        const idx = parseInt(taskId.replace('t_', ''), 10);
-        if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === t.taskId) return true;
-      }
-      if (typeof t.taskId === 'string' && t.taskId.startsWith('t_')) {
-        const idx = parseInt(t.taskId.replace('t_', ''), 10);
-        if (!isNaN(idx) && proj.tasks[idx] && proj.tasks[idx].id === taskId) return true;
-      }
-      const targetTask = proj.tasks.find(x => x.id === taskId);
-      if (targetTask && (t.taskName === targetTask.name || (t.comment && t.comment.includes(targetTask.name)))) {
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const getTsRecord = (userId, taskId, dateStr, projId) => {
-    return timesheets.find(t => matchTaskTs(t, userId, taskId, projId) && t.dateString === dateStr && !t.isActual);
+  const getRecord = (userId, taskId, dateStr, projId) => {
+    return getTsRecord(userId, taskId, dateStr, projId, timesheets, state.projects, state.personnel);
   };
 
   const getActualHours = (userId, taskId, dateStr, projId) => {
-    return timesheets.filter(t => matchTaskTs(t, userId, taskId, projId) && t.dateString === dateStr && t.isActual)
+    let act = timesheets.filter(t => matchTaskTs(t, userId, taskId, projId, state.projects, state.personnel) && (t.dateString === dateStr || t.date === dateStr) && t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
+    if (act === 0) {
+      const proj = (state.projects || []).find(p => p.id === projId);
+      if (proj && proj.tasks) {
+        const tsk = proj.tasks.find(x => x.id === taskId) || (taskId.startsWith('t_') ? proj.tasks[parseInt(taskId.replace('t_', ''), 10)] : null);
+        if (tsk && tsk.dailyHours_actual && tsk.dailyHours_actual[dateStr] !== undefined) {
+          act = Number(tsk.dailyHours_actual[dateStr]) || 0;
+        }
+      }
+    }
+    return act;
   };
 
   const getUserDayTotal = (userId, dateStr) => {
-    return timesheets.filter(t => matchUserTs(t, userId) && t.dateString === dateStr && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId, state.personnel) && (t.dateString === dateStr || t.date === dateStr) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
   const getUserWeekTotal = (userId, weekData) => {
     const weekDates = weekData.days.map(d => d.dateString);
-    return timesheets.filter(t => matchUserTs(t, userId) && weekDates.includes(t.dateString) && !t.isActual)
+    return timesheets.filter(t => matchUserTs(t, userId, state.personnel) && weekDates.includes(t.dateString || t.date) && !t.isActual)
       .reduce((sum, t) => sum + (Number(t.hours) || 0), 0);
   };
 
@@ -763,14 +809,14 @@ export function render() {
                         ${planData.map(w => {
                           let wHtml = '';
                           w.days.forEach(d => {
-                            const ts = getTsRecord(personId, taskId, d.dateString, pObj.project.id);
+                            const ts = getRecord(personId, taskId, d.dateString, pObj.project.id);
                             const val = ts ? ts.hours : '';
                             const isOT = ts ? ts.isOT : false;
-                            const hasComment = ts && ts.comment;
+                            const hasComment = ts && (ts.comment || ts.note);
 
                             let indicator = '';
                             if (isOT || hasComment) {
-                              indicator = `<div style="position: absolute; top: 2px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: ${isOT ? '#ef4444' : '#f59e0b'};" title="${isOT ? 'Làm ngoài giờ (OT)' : 'Có ghi chú'}"></div>`;
+                              indicator = `<div class="ts-indicator" data-uid="${personId}" data-pid="${pObj.project.id}" data-tid="${taskId}" data-date="${d.dateString}" style="position: absolute; top: 2px; right: 2px; width: 7px; height: 7px; border-radius: 50%; background: ${isOT ? '#ef4444' : '#f59e0b'}; cursor: pointer; z-index: 2;" title="${isOT ? 'Làm ngoài giờ (OT)' : 'Có ghi chú'}: ${hasComment ? ts.comment || ts.note : 'OT'} - Nhấp để sửa"></div>`;
                             }
 
                             const hasVal = val !== '' && Number(val) > 0;
@@ -787,8 +833,9 @@ export function render() {
                                   data-date="${d.dateString}"
                                   value="${val}"
                                   min="0" max="24"
+                                  step="0.5"
                                   placeholder="·"
-                                  title="Nhập giờ hoặc nhấp đúp để thêm ghi chú/OT"
+                                  title="Nhập số giờ kế hoạch (0 để xóa, nhấp đúp để thêm ghi chú/OT)"
                                   style="width: 38px; height: 26px; text-align: center; background: ${inputBg}; border: ${inputBorder}; border-radius: 4px; color: ${hasVal ? 'var(--text-primary)' : 'var(--text-muted)'}; font-size: 0.75rem; font-weight: ${hasVal ? '700' : 'normal'}; padding: 0;"
                                 >
                                 ${(() => {
@@ -822,9 +869,12 @@ export function render() {
 
       <!-- Modals (Note, OT, Analytics) -->
       <div id="ts-detail-modal" class="modal-backdrop" style="display: none; z-index: 9999;">
-        <div class="modal-content" style="max-width: 400px;">
+        <div class="modal-content" style="max-width: 440px;">
           <div class="modal-header">
-            <h3>Chi tiết công việc & OT</h3>
+            <div>
+              <h3 style="margin: 0; font-size: 1.05rem;">Chi tiết kế hoạch: <span id="ts-modal-task-title" style="color: var(--accent-primary);"></span></h3>
+              <div class="text-xs text-muted" id="ts-modal-sub-title" style="margin-top: 4px;"></div>
+            </div>
             <button class="btn-icon" id="ts-detail-close">×</button>
           </div>
           <div class="modal-body">
@@ -834,25 +884,25 @@ export function render() {
             <input type="hidden" id="ts-date">
             
             <div class="form-group mb-sm">
-              <label class="form-label font-bold">Số giờ làm</label>
-              <input type="number" id="ts-hours" class="form-input w-full" min="0" max="24" step="0.5">
+              <label class="form-label font-bold">⏱️ Số giờ kế hoạch (h)</label>
+              <input type="number" id="ts-hours" class="form-input w-full" min="0" max="24" step="0.5" placeholder="VD: 4, 8...">
             </div>
             
             <div class="form-group mb-sm" style="display: flex; align-items: center; gap: 8px;">
-              <input type="checkbox" id="ts-isot" style="width: 16px; height: 16px;">
+              <input type="checkbox" id="ts-isot" style="width: 16px; height: 16px; accent-color: #ef4444;">
               <label for="ts-isot" style="margin: 0; color: #ef4444; font-weight: bold; cursor: pointer;">Làm ngoài giờ (OT)</label>
             </div>
             
             <div class="form-group">
-              <label class="form-label font-bold">Ghi chú công việc</label>
+              <label class="form-label font-bold">📝 Ghi chú phân công / công việc</label>
               <textarea id="ts-comment" class="form-input w-full" rows="3" placeholder="Ví dụ: Họp review thiết kế, xử lý xung đột mô hình..."></textarea>
             </div>
           </div>
-          <div class="modal-footer" style="display: flex; justify-content: space-between;">
-            <button class="btn btn-outline text-danger" id="ts-detail-delete" style="border-color: transparent;">Xóa giờ</button>
+          <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+            <button class="btn btn-outline text-danger" id="ts-detail-delete" style="border-color: rgba(239, 68, 68, 0.4); font-weight: 600;">🗑️ Xóa giờ</button>
             <div class="flex gap-sm">
               <button class="btn btn-outline" id="ts-detail-cancel">Hủy</button>
-              <button class="btn btn-primary" id="ts-detail-save">💾 Lưu lại</button>
+              <button class="btn btn-primary" id="ts-detail-save" style="background: #10b981; border-color: #10b981; font-weight: 600;">💾 Lưu lại</button>
             </div>
           </div>
         </div>
@@ -1056,15 +1106,38 @@ export function init() {
 
   // 7. Input Cell Listeners
   document.querySelectorAll('.ts-input').forEach(input => {
+    // Tự động bôi đen toàn bộ số khi click vào ô để dễ dàng gõ đè
+    input.addEventListener('focus', (e) => {
+      e.target.select();
+    });
+
+    // Nhấn Enter để kết thúc nhập và lưu ngay lập tức
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.target.blur();
+      }
+    });
+
+    // Thay đổi số giờ
     input.addEventListener('change', (e) => {
-      const val = e.target.value;
-      saveTimesheet(e.target.dataset, Number(val));
+      const rawVal = e.target.value.trim();
+      const numVal = rawVal === '' ? 0 : parseFloat(rawVal);
+      saveTimesheet(e.target.dataset, isNaN(numVal) ? 0 : numVal);
     });
     
+    // Nhấp đúp mở modal chi tiết & OT
     input.addEventListener('dblclick', (e) => {
       e.preventDefault();
       const ds = e.target.dataset;
       openTsModal(ds);
+    });
+  });
+
+  // Nhấp vào chấm indicator cũng mở modal chi tiết
+  document.querySelectorAll('.ts-indicator').forEach(dot => {
+    dot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openTsModal(e.currentTarget.dataset);
     });
   });
   
@@ -1092,11 +1165,12 @@ export function init() {
       tid: document.getElementById('ts-tid').value,
       date: document.getElementById('ts-date').value
     };
-    const hours = Number(document.getElementById('ts-hours').value);
+    const rawH = document.getElementById('ts-hours').value.trim();
+    const hours = rawH === '' ? 0 : parseFloat(rawH);
     const isOT = document.getElementById('ts-isot').checked;
     const comment = document.getElementById('ts-comment').value.trim();
     
-    saveTimesheet(ds, hours, isOT, comment);
+    saveTimesheet(ds, isNaN(hours) ? 0 : hours, isOT, comment);
     modalTs.style.display = 'none';
   });
   
@@ -1107,8 +1181,10 @@ export function init() {
       tid: document.getElementById('ts-tid').value,
       date: document.getElementById('ts-date').value
     };
-    saveTimesheet(ds, 0, false, '');
-    modalTs.style.display = 'none';
+    if (confirm(`Bạn có chắc chắn muốn xóa giờ kế hoạch ngày ${ds.date}?`)) {
+      saveTimesheet(ds, 0, false, '');
+      modalTs.style.display = 'none';
+    }
   });
 }
 
@@ -1132,17 +1208,39 @@ function refreshView() {
 
 function openTsModal(ds) {
   const modal = document.getElementById('ts-detail-modal');
+  if (!modal) return;
   document.getElementById('ts-uid').value = ds.uid;
   document.getElementById('ts-pid').value = ds.pid;
   document.getElementById('ts-tid').value = ds.tid;
   document.getElementById('ts-date').value = ds.date;
   
-  const { timesheets } = getState();
-  const ts = (timesheets || []).find(t => t.userId === ds.uid && t.projectId === ds.pid && t.taskId === ds.tid && t.dateString === ds.date && !t.isActual);
+  const { timesheets, projects, personnel } = getState();
+  const person = (personnel || []).find(p => p.id === ds.uid) || (personnel || []).find(p => matchUserTs({ userId: ds.uid, userName: ds.uid, email: ds.uid }, p.id, personnel));
+  const proj = (projects || []).find(p => p.id === ds.pid);
+  let task = null;
+  if (proj && proj.tasks) {
+    task = proj.tasks.find(x => x.id === ds.tid) || (ds.tid.startsWith('t_') ? proj.tasks[parseInt(ds.tid.replace('t_', ''), 10)] : null);
+  }
+
+  const ts = getTsRecord(ds.uid, ds.tid, ds.date, ds.pid, timesheets, projects, personnel);
   
-  document.getElementById('ts-hours').value = ts ? ts.hours : '';
-  document.getElementById('ts-isot').checked = ts ? ts.isOT : false;
-  document.getElementById('ts-comment').value = ts && ts.comment ? ts.comment : '';
+  let plannedHours = ts ? ts.hours : '';
+  if (plannedHours === '' && task && task.dailyHours_planned && task.dailyHours_planned[ds.date] !== undefined) {
+    plannedHours = task.dailyHours_planned[ds.date];
+  }
+
+  const modalTaskTitle = document.getElementById('ts-modal-task-title');
+  if (modalTaskTitle) {
+    modalTaskTitle.textContent = task ? task.name : (ds.tid === 't_general' ? 'Công việc chung' : ds.tid);
+  }
+  const modalSubtitle = document.getElementById('ts-modal-sub-title');
+  if (modalSubtitle) {
+    modalSubtitle.textContent = `👤 ${person ? person.name : 'Nhân sự'} · 📁 ${proj ? proj.name : 'Dự án'} · 📅 ${ds.date}`;
+  }
+  
+  document.getElementById('ts-hours').value = (plannedHours !== '' && plannedHours !== null && plannedHours !== undefined) ? plannedHours : '';
+  document.getElementById('ts-isot').checked = ts ? !!ts.isOT : false;
+  document.getElementById('ts-comment').value = ts ? (ts.comment || ts.note || '') : '';
   
   modal.style.display = 'flex';
 }
@@ -1162,7 +1260,7 @@ function openAnalyticsModal(uid) {
   const projSums = {};
   let totalHours = 0;
   
-  (timesheets || []).filter(t => t.userId === uid && weekDates.includes(t.dateString) && !t.isActual).forEach(t => {
+  (timesheets || []).filter(t => matchUserTs(t, uid, personnel) && weekDates.includes(t.dateString || t.date) && !t.isActual).forEach(t => {
     projSums[t.projectId] = (projSums[t.projectId] || 0) + Number(t.hours);
     totalHours += Number(t.hours);
   });
@@ -1214,44 +1312,148 @@ function saveTimesheet(ds, hours, isOT = false, comment = '') {
   const tid = ds.tid;
   const dateStr = ds.date;
   
-  const { timesheets } = getState();
+  const { timesheets, projects, personnel } = getState();
   const updated = [...(timesheets || [])];
   
-  const existingIdx = updated.findIndex(t => t.userId === uid && t.projectId === pid && t.taskId === tid && t.dateString === dateStr && !t.isActual);
-  
-  if (hours === 0 || hours === '') {
-    if (existingIdx >= 0) {
-      const targetTs = updated[existingIdx];
-      import('../state.js').then(module => {
-        module.deleteTimesheet(targetTs.id || `${targetTs.userId}_${targetTs.projectId}_${targetTs.taskId || ''}_${targetTs.dateString || targetTs.date}_false`);
-        refreshView();
-      });
-      return;
-    }
-  } else {
-    if (existingIdx >= 0) {
-      updated[existingIdx].hours = hours;
-      updated[existingIdx].isOT = isOT;
-      updated[existingIdx].comment = comment;
-    } else {
-      updated.push({
-        id: `ts-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        userId: uid,
-        projectId: pid,
-        taskId: tid,
-        dateString: dateStr,
-        hours: hours,
-        isOT: isOT,
-        comment: comment,
-        isActual: false
-      });
+  // Tìm chính xác bản ghi kế hoạch hiện có (hỗ trợ mọi biến thể định danh)
+  const existingIdx = updated.findIndex(t => 
+    matchTaskTs(t, uid, tid, pid, projects, personnel) && 
+    (t.dateString === dateStr || t.date === dateStr) && 
+    !t.isActual
+  );
+
+  const proj = (projects || []).find(p => p.id === pid);
+  let targetTask = null;
+  if (proj && proj.tasks) {
+    targetTask = proj.tasks.find(x => x.id === tid) || (tid.startsWith('t_') ? proj.tasks[parseInt(tid.replace('t_', ''), 10)] : null);
+    if (!targetTask && existingIdx >= 0 && updated[existingIdx].taskName) {
+      targetTask = proj.tasks.find(x => x.name === updated[existingIdx].taskName);
     }
   }
-  
-  import('../state.js').then(module => {
-    module.setState('timesheets', updated);
+
+  // TRƯỜNG HỢP 1: XÓA GIỜ KẾ HOẠCH (NHẬP 0 HOẶC ĐỂ TRỐNG HOẶC NÚT XÓA)
+  if (hours === 0 || hours === '' || isNaN(hours)) {
+    if (existingIdx >= 0) {
+      const targetTs = updated[existingIdx];
+      deleteTimesheet(targetTs.id || `${targetTs.userId}_${targetTs.projectId}_${targetTs.taskId || ''}_${dateStr}_false`);
+    }
+    
+    // Đồng thời dọn sạch trong task.dailyHours_planned của project nếu có
+    if (proj && targetTask && targetTask.dailyHours_planned && targetTask.dailyHours_planned[dateStr] !== undefined) {
+      delete targetTask.dailyHours_planned[dateStr];
+      updateProject(proj.id, { tasks: proj.tasks });
+    }
+
+    // Đăng ký tombstone để bản ghi synthetic không tự sinh lại
+    const tombstoneKeys = [`syn-plan-${tid}-${dateStr}`, `ts-plan-${tid}-${dateStr}`, `${uid}_${pid}_${tid}_${dateStr}_false`];
+    if (targetTask?.id) {
+      tombstoneKeys.push(`syn-plan-${targetTask.id}-${dateStr}`, `ts-plan-${targetTask.id}-${dateStr}`);
+    }
+    const delSet = new Set([...(getState().deletedTimesheetIds || []), ...tombstoneKeys]);
+    setState('deletedTimesheetIds', Array.from(delSet));
+    try {
+      localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(Array.from(delSet)));
+    } catch(e) {}
+
+    saveLocalSnapshot(`Xóa giờ kế hoạch ngày ${dateStr}`);
+    showToast('🗑️ Đã xóa giờ kế hoạch thành công!');
     refreshView();
-  });
+    return;
+  }
+
+  // TRƯỜNG HỢP 2: CẬP NHẬT HOẶC THÊM MỚI GIỜ KẾ HOẠCH
+  let taskName = targetTask ? targetTask.name : (tid.startsWith('rfi_') ? 'Xử lý RFI' : (tid === 't_general' ? 'Công việc chung' : tid));
+
+  if (existingIdx >= 0) {
+    updated[existingIdx] = {
+      ...updated[existingIdx],
+      hours: hours,
+      isOT: isOT,
+      comment: comment,
+      note: comment,
+      dateString: dateStr,
+      date: dateStr,
+      updatedAt: new Date().toISOString()
+    };
+    taskName = updated[existingIdx].taskName || taskName;
+  } else {
+    const person = (personnel || []).find(p => p.id === uid) || (personnel || []).find(p => matchUserTs({ userId: uid, userName: uid, email: uid }, p.id, personnel));
+    updated.unshift({
+      id: `ts-plan-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      userId: person ? person.id : uid,
+      userName: person ? person.name : '',
+      email: person ? person.email : '',
+      projectId: pid,
+      projectName: proj ? proj.name : '',
+      taskId: targetTask?.id || tid,
+      taskName: taskName,
+      dateString: dateStr,
+      date: dateStr,
+      hours: hours,
+      isActual: false,
+      isOT: isOT,
+      comment: comment,
+      note: comment,
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  // Cập nhật trên task.dailyHours_planned của project
+  if (proj && targetTask) {
+    if (!targetTask.dailyHours_planned) targetTask.dailyHours_planned = {};
+    targetTask.dailyHours_planned[dateStr] = hours;
+    updateProject(proj.id, { tasks: proj.tasks });
+  }
+
+  // Gỡ bỏ tombstone cũ nếu có
+  if (getState().deletedTimesheetIds && getState().deletedTimesheetIds.length > 0) {
+    const blockedKeys = new Set([
+      `syn-plan-${tid}-${dateStr}`,
+      `ts-plan-${tid}-${dateStr}`,
+      targetTask?.id ? `syn-plan-${targetTask.id}-${dateStr}` : '',
+      targetTask?.id ? `ts-plan-${targetTask.id}-${dateStr}` : '',
+      `${uid}_${pid}_${tid}_${dateStr}_false`
+    ]);
+    const filteredDel = getState().deletedTimesheetIds.filter(k => !blockedKeys.has(k));
+    setState('deletedTimesheetIds', filteredDel);
+    try {
+      localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(filteredDel));
+    } catch(e) {}
+  }
+
+  setState('timesheets', updated);
+  saveLocalSnapshot(`Cập nhật kế hoạch: ${hours}h cho ${taskName} ngày ${dateStr}`);
+  showToast(`✅ Đã lưu ${hours}h kế hoạch cho "${taskName}"!`);
+  refreshView();
+}
+
+function showToast(message, type = 'success') {
+  let toast = document.getElementById('planning-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'planning-toast';
+    toast.style.cssText = `
+      position: fixed; bottom: 24px; right: 24px; z-index: 99999;
+      padding: 12px 24px; border-radius: 12px;
+      font-size: 0.875rem; font-weight: 600;
+      backdrop-filter: blur(20px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+      transform: translateY(100px); opacity: 0;
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    `;
+    document.body.appendChild(toast);
+  }
+  
+  toast.textContent = message;
+  toast.style.background = type === 'warning' ? 'rgba(245, 158, 11, 0.95)' : 'rgba(16, 185, 129, 0.95)';
+  toast.style.color = '#fff';
+  toast.style.transform = 'translateY(0)';
+  toast.style.opacity = '1';
+
+  setTimeout(() => {
+    toast.style.transform = 'translateY(100px)';
+    toast.style.opacity = '0';
+  }, 2500);
 }
 
 export function destroy() {}

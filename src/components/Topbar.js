@@ -6,6 +6,7 @@ import { getState, setState, subscribe, logoutUser } from '../state.js';
 
 const PAGE_TITLES = {
   'dashboard': { title: 'Dashboard', breadcrumb: 'Tổng quan dự án' },
+  'projects': { title: 'Danh mục Dự án', breadcrumb: 'Quản lý danh mục' },
   'project-detail': { title: 'Chi tiết dự án', breadcrumb: 'Quản lý dự án' },
   'planning': { title: 'General Planning', breadcrumb: 'Lịch biểu & Tiến độ' },
   'resources': { title: 'Quản lý nguồn lực', breadcrumb: 'Nhân sự & Thiết bị' },

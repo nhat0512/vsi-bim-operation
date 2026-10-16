@@ -16,6 +16,7 @@ let state = {
   activityLog: [],
   timesheets: [...(memberTimesheetsSeed || [])],
   deletedTimesheetIds: [], // Danh sách tombstone chống hồi sinh timesheet đã xóa
+  deletedProjectIds: [], // Danh sách tombstone chống hồi sinh dự án đã xóa
   qualityData: null,
   selectedProjectId: null,
   sidebarOpen: false,
@@ -67,6 +68,23 @@ if (savedState) {
         const key = ts.id || `${ts.userId}_${ts.projectId}_${ts.taskId || ''}_${ts.dateString || ts.date}_${!!ts.isActual}`;
         return !dSet.has(ts.id) && !dSet.has(key);
       });
+    }
+
+    // Phục hồi tombstone các dự án đã xóa từ localStorage
+    try {
+      const savedDeletedProjects = localStorage.getItem('bimTransPM_DeletedProjects');
+      if (savedDeletedProjects) {
+        const parsedDelProj = JSON.parse(savedDeletedProjects);
+        if (Array.isArray(parsedDelProj)) {
+          state.deletedProjectIds = Array.from(new Set([...(state.deletedProjectIds || []), ...parsedDelProj]));
+        }
+      }
+    } catch(e) {}
+
+    // Lọc bỏ ngay các projects nằm trong danh sách đã xóa
+    if (state.deletedProjectIds && state.deletedProjectIds.length > 0) {
+      const dpSet = new Set(state.deletedProjectIds);
+      state.projects = (state.projects || []).filter(p => !dpSet.has(p.id));
     }
 
     // Đảm bảo 10 bản ghi vàng thực tế của thành viên (Dự án 14D) luôn có mặt
@@ -262,13 +280,45 @@ export async function syncToFirestore(forceResetTombstones = false) {
       let timesheetsToSave = Array.from(tsMap.values());
       state.timesheets = timesheetsToSave;
 
+      // 🛡️ BẢO VỆ DỰ ÁN (PROJECTS) VÀ DANH SÁCH TOMBSTONE
+      let deletedProjectIds = new Set();
+      if (!forceResetTombstones) {
+        deletedProjectIds = new Set([
+          ...(state.deletedProjectIds || []),
+          ...(existingData.deletedProjectIds || [])
+        ]);
+        try {
+          const localDelProjStr = localStorage.getItem('bimTransPM_DeletedProjects');
+          if (localDelProjStr) {
+            const parsedLocalDel = JSON.parse(localDelProjStr);
+            if (Array.isArray(parsedLocalDel)) {
+              parsedLocalDel.forEach(id => deletedProjectIds.add(id));
+            }
+          }
+        } catch(e) {}
+        state.deletedProjectIds = Array.from(deletedProjectIds);
+        try {
+          localStorage.setItem('bimTransPM_DeletedProjects', JSON.stringify(state.deletedProjectIds));
+        } catch(e) {}
+      } else {
+        state.deletedProjectIds = [];
+        try {
+          localStorage.removeItem('bimTransPM_DeletedProjects');
+        } catch(e) {}
+      }
+
       // 🛡️ BẢO VỆ PROJECTS & TASKS (Data Loss Prevention Guard)
-      let projectsToSave = [...(state.projects || [])];
+      let projectsToSave = [...(state.projects || [])].filter(p => !deletedProjectIds.has(p.id));
+      state.projects = projectsToSave;
+
       if (existingData.projects && existingData.projects.length > 0) {
-        // 1. Chống mất số lượng dự án: Nếu state hiện tại có ít dự án hơn Firestore
-        if (projectsToSave.length < existingData.projects.length) {
-          console.warn(`🛡️ DLP Guard: Phát hiện thiếu dự án (${projectsToSave.length} vs ${existingData.projects.length}). Tự động gộp!`);
-          const pMap = new Map(existingData.projects.map(p => [p.id, p]));
+        // Chỉ đối chiếu các dự án hợp lệ (chưa bị xóa chủ đích)
+        const validExistingProjects = existingData.projects.filter(p => !deletedProjectIds.has(p.id));
+
+        // 1. Chống mất số lượng dự án ngoài ý muốn: Nếu state hiện tại có ít dự án hơn Firestore
+        if (projectsToSave.length < validExistingProjects.length) {
+          console.warn(`🛡️ DLP Guard: Phát hiện thiếu dự án (${projectsToSave.length} vs ${validExistingProjects.length}). Tự động gộp dự án hợp lệ!`);
+          const pMap = new Map(validExistingProjects.map(p => [p.id, p]));
           projectsToSave.forEach(p => pMap.set(p.id, p));
           projectsToSave = Array.from(pMap.values());
           state.projects = projectsToSave;
@@ -276,7 +326,7 @@ export async function syncToFirestore(forceResetTombstones = false) {
 
         // 2. Chống mất Tasks, Segments, Milestones khi cập nhật một phần (cho phép xóa rỗng có chủ đích)
         projectsToSave.forEach(p => {
-          const exP = existingData.projects.find(ep => ep.id === p.id);
+          const exP = validExistingProjects.find(ep => ep.id === p.id);
           if (exP) {
             if (p.tasks === undefined && exP.tasks) {
               p.tasks = exP.tasks;
@@ -299,6 +349,7 @@ export async function syncToFirestore(forceResetTombstones = false) {
         activityLog: state.activityLog || existingData.activityLog || [],
         timesheets: timesheetsToSave,
         deletedTimesheetIds: state.deletedTimesheetIds || [],
+        deletedProjectIds: state.deletedProjectIds || [],
         lastUpdated: new Date().toISOString()
       }));
 
@@ -784,10 +835,12 @@ export function restoreSnapshotByIndex(index) {
     const snapshot = JSON.parse(raw);
     if (!snapshot || !snapshot.data) return { success: false, error: 'Dữ liệu điểm sao lưu bị hỏng' };
 
-    // Dọn sạch tombstone đã xóa để toàn bộ dữ liệu giờ làm trong snapshot được khôi phục nguyên vẹn
+    // Dọn sạch tombstone đã xóa để toàn bộ dữ liệu (giờ làm & dự án) trong snapshot được khôi phục nguyên vẹn
     state.deletedTimesheetIds = [];
+    state.deletedProjectIds = [];
     try {
       localStorage.removeItem('bimTransPM_DeletedTimesheets');
+      localStorage.removeItem('bimTransPM_DeletedProjects');
     } catch(err) {}
 
     if (snapshot.data.projects) setState('projects', snapshot.data.projects);
@@ -1195,21 +1248,67 @@ export function updateProject(projectId, updates) {
 }
 
 /**
- * Delete a project from state
+ * Delete a project from state with safety snapshot and tombstone protection
  * @param {string} projectId - ID of the project to delete
  * @returns {boolean} True if deleted successfully
  */
 export function deleteProject(projectId) {
-  const project = state.projects.find(p => p.id === projectId);
+  const project = (state.projects || []).find(p => p.id === projectId);
   if (!project) return false;
 
-  const projects = state.projects.filter(p => p.id !== projectId);
+  // 1. Tự động tạo điểm sao lưu phục hồi (Snapshot) trước khi xóa
+  saveLocalSnapshot(`Trước khi xóa dự án "${project.name}" (${project.code || project.id})`);
+
+  // 2. Thêm vào danh sách tombstone để Firestore không tự động gộp/hồi sinh
+  let deletedIds = new Set(state.deletedProjectIds || []);
+  try {
+    const localDel = localStorage.getItem('bimTransPM_DeletedProjects');
+    if (localDel) {
+      const parsed = JSON.parse(localDel);
+      if (Array.isArray(parsed)) parsed.forEach(id => deletedIds.add(id));
+    }
+  } catch(e) {}
+  deletedIds.add(projectId);
+  state.deletedProjectIds = Array.from(deletedIds);
+  try {
+    localStorage.setItem('bimTransPM_DeletedProjects', JSON.stringify(state.deletedProjectIds));
+  } catch(e) {}
+
+  // 3. Xóa khỏi state.projects
+  const projects = (state.projects || []).filter(p => p.id !== projectId);
   setState('projects', projects);
   pushToHistory(projects);
 
+  // 4. Nếu selectedProjectId đang là dự án bị xóa, chuyển sang dự án khác hoặc null
+  if (state.selectedProjectId === projectId) {
+    setState('selectedProjectId', projects.length > 0 ? projects[0].id : null);
+  }
+
+  // 5. Cập nhật phân bổ nhân sự (bảo toàn hồ sơ nhân sự, chỉ gỡ liên kết dự án đã xóa)
+  if (state.personnel && Array.isArray(state.personnel)) {
+    let updatedPersonnel = false;
+    state.personnel.forEach(person => {
+      if (person.allocation && Array.isArray(person.allocation)) {
+        const oldLen = person.allocation.length;
+        person.allocation = person.allocation.filter(a => a.projectId !== projectId);
+        if (person.allocation.length !== oldLen) {
+          updatedPersonnel = true;
+          person.totalAllocation = person.allocation.reduce((sum, a) => sum + (a.percentage || 0), 0);
+          person.status = person.totalAllocation > 100 ? 'overloaded' : (person.totalAllocation > 0 ? 'active' : 'idle');
+        }
+      }
+    });
+    if (updatedPersonnel) {
+      setState('personnel', [...state.personnel]);
+    }
+  }
+
   addActivityLog(`xóa dự án "${project.name}"`, project.name);
 
-  console.log(`🗑️ Project ${projectId} deleted:`, project.name);
+  // 6. Kích hoạt đồng bộ Cloud ngay lập tức
+  syncToFirestore();
+
+  console.log(`🗑️ Dự án ${projectId} (${project.name}) đã được xóa an toàn`);
   return true;
 }
 
@@ -1587,7 +1686,21 @@ export async function loadInitialData() {
         if (docSnap.exists()) {
           const data = docSnap.data();
           
-          let projectsToLoad = data.projects || [];
+          // Hydrate danh sách dự án đã xóa (Tombstones)
+          let deletedProjectIds = new Set(data.deletedProjectIds || []);
+          try {
+            const localDelProj = localStorage.getItem('bimTransPM_DeletedProjects');
+            if (localDelProj) {
+              const parsed = JSON.parse(localDelProj);
+              if (Array.isArray(parsed)) parsed.forEach(id => deletedProjectIds.add(id));
+            }
+          } catch(err) {}
+          state.deletedProjectIds = Array.from(deletedProjectIds);
+          try {
+            localStorage.setItem('bimTransPM_DeletedProjects', JSON.stringify(state.deletedProjectIds));
+          } catch(err) {}
+
+          let projectsToLoad = (data.projects || []).filter(p => !deletedProjectIds.has(p.id));
 
           // ─── PHỤC HỒI (1): Khôi phục từ localStorage nếu Firestore trống ───
           if (projectsToLoad.length === 0 && typeof window !== 'undefined' && window.localStorage) {
@@ -1596,7 +1709,7 @@ export async function loadInitialData() {
               if (localProjStr) {
                 const localProj = JSON.parse(localProjStr);
                 if (localProj && localProj.length > 0) {
-                  projectsToLoad = localProj;
+                  projectsToLoad = localProj.filter(p => !deletedProjectIds.has(p.id));
                 }
               }
             } catch(err) {}
@@ -1616,15 +1729,15 @@ export async function loadInitialData() {
             projectsToLoad = projectsToLoad.filter(p => !duplicatedIds.has(p.id));
             duplicatedIds.forEach(dupId => {
               const defaultVersion = defaultProjects.find(p => p.id === dupId);
-              if (defaultVersion) {
+              if (defaultVersion && !deletedProjectIds.has(dupId)) {
                 projectsToLoad.push(defaultVersion);
               }
             });
           }
 
-          // ─── PHỤC HỒI (3): Bổ sung các dự án bị thiếu ───
+          // ─── PHỤC HỒI (3): Bổ sung các dự án bị thiếu (không hồi sinh dự án đã chủ đích xóa) ───
           const currentIds = new Set(projectsToLoad.map(p => p.id));
-          const missingDefaults = defaultProjects.filter(p => !currentIds.has(p.id));
+          const missingDefaults = defaultProjects.filter(p => !currentIds.has(p.id) && !deletedProjectIds.has(p.id));
           if (missingDefaults.length > 0) {
             projectsToLoad = [...projectsToLoad, ...missingDefaults];
           }

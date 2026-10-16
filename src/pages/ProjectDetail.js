@@ -5,6 +5,7 @@ import { getState, updateProject } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
 import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
+import { promptSafeDeleteProject } from './ProjectList.js';
 
 let hoursOverTimeChartInstance = null;
 let hoursByPhaseChartInstance = null;
@@ -175,7 +176,14 @@ export function render() {
             <span class="badge-dot"></span>
             ${statusInfo.label}
           </span>
-          ${getIsEditing() ? `<button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>` : ''}
+          ${getIsEditing() ? `
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>
+              <button class="btn btn-outline text-danger" id="btn-delete-project-detail" style="border-color: rgba(239, 68, 68, 0.4); color: var(--accent-danger, #ef4444);" title="Xóa dự án này">
+                🗑️ Xóa dự án
+              </button>
+            </div>
+          ` : ''}
         `}
       </div>
 
@@ -1819,6 +1827,13 @@ export function init() {
     } catch(err) {
       console.error(err);
     }
+  });
+
+  // Nút xóa dự án an toàn (chỉ hiển thị cho Manager/Admin)
+  document.getElementById('btn-delete-project-detail')?.addEventListener('click', () => {
+    promptSafeDeleteProject(project.id, () => {
+      window.location.hash = '#projects';
+    });
   });
 }
 

@@ -439,7 +439,9 @@ function createMemberMatcher(userEmail, userName, myRecord) {
   if (isThuan) {
     myAliases.add('thuận');
     myAliases.add('minh thuận');
+    myAliases.add('lương minh thuận');
     myAliases.add('minhthuan.uah@gmail.com');
+    myAliases.add('thuan.luong@vsibim.com');
     myAliases.add('u_thuan');
   }
   if (isAn) {

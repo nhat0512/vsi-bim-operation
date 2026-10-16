@@ -36,7 +36,7 @@ export function renderTopbar() {
   if (displayUserName === userEmail.split('@')[0]) {
     if (userEmail.includes('thienthan') || userEmail.includes('thien.than')) displayUserName = 'Thân Nguyễn Thái Thiện';
     else if (userEmail.includes('tainguyen') || userEmail.includes('tai.nguyen')) displayUserName = 'Nguyễn Ngọc Thanh Tài';
-    else if (userEmail.includes('minhthuan')) displayUserName = 'Minh Thuận';
+    else if (userEmail.includes('minhthuan')) displayUserName = 'Lương Minh Thuận';
     else if (userEmail.includes('an.nguyen')) displayUserName = 'Nguyễn Văn An';
     else if (userEmail.includes('nhattedisouth') || userEmail === 'admin@vsibim.com') displayUserName = 'Nguyễn Thanh Nhật';
   }

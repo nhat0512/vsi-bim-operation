@@ -38,7 +38,7 @@ let state = {
     { id: 'u_nhat', name: 'Nguyễn Thanh Nhật', email: 'nhattedisouth@gmail.com', password: '123', role: 'BIM Manager' },
     { id: 'u_thien', name: 'Thân Nguyễn Thái Thiện', email: 'thienthannguyenthai@gmail.com', password: '123', role: 'BIM Modeler' },
     { id: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com', password: '123', role: 'BIM Modeler' },
-    { id: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
+    { id: 'u_thuan', name: 'Lương Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
     { id: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com', password: '123', role: 'BIM Coordinator' }
   ]
 };
@@ -100,7 +100,7 @@ if (savedState) {
       { id: 'u_nhat', name: 'Nguyễn Thanh Nhật', email: 'nhattedisouth@gmail.com', password: '123', role: 'BIM Manager' },
       { id: 'u_thien', name: 'Thân Nguyễn Thái Thiện', email: 'thienthannguyenthai@gmail.com', password: '123', role: 'BIM Modeler' },
       { id: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com', password: '123', role: 'BIM Modeler' },
-      { id: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
+      { id: 'u_thuan', name: 'Lương Minh Thuận', email: 'minhthuan.uah@gmail.com', password: '123', role: 'BIM Modeler' },
       { id: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com', password: '123', role: 'BIM Coordinator' }
     ];
   } catch(e) {
@@ -900,7 +900,7 @@ if (firebaseConfig.apiKey && !firebaseConfig.apiKey.includes('ĐIỀN')) {
           } else if (emailLower.includes('tainguyen6628') || emailLower.includes('tai.nguyen')) {
             canonicalName = 'Nguyễn Ngọc Thanh Tài';
           } else if (emailLower.includes('minhthuan')) {
-            canonicalName = 'Minh Thuận';
+            canonicalName = 'Lương Minh Thuận';
           } else if (emailLower.includes('nhattedisouth') || emailLower === 'admin@vsibim.com') {
             canonicalName = 'Nguyễn Thanh Nhật';
           } else if (emailLower.includes('an.nguyen')) {
@@ -1628,7 +1628,7 @@ export async function loadInitialData() {
               return { uid: 'u_tai', name: 'Nguyễn Ngọc Thanh Tài', email: 'tainguyen6628@gmail.com' };
             }
             if (s.includes('thuận') || s.includes('minhthuan') || s === 'u_thuan') {
-              return { uid: 'u_thuan', name: 'Minh Thuận', email: 'minhthuan.uah@gmail.com' };
+              return { uid: 'u_thuan', name: 'Lương Minh Thuận', email: 'minhthuan.uah@gmail.com' };
             }
             if (s.includes('an') || s.includes('an.nguyen') || s === 'u_an') {
               return { uid: 'u_an', name: 'Nguyễn Văn An', email: 'an.nguyen@bimvn.com' };

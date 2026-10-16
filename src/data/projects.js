@@ -224,42 +224,79 @@ export const projectItems = [
   },
   {
     id: 'P006',
-    code: 'CAO-TOC-BN-HP',
-    name: 'Cao tốc Bắc Ninh - Hải Phòng mở rộng',
+    code: 'INVT15D00128',
+    name: 'Đầu tư xây dựng Quốc lộ 15D đoạn từ Cảng Mỹ Thủy đến cao tốc Cam Lộ - La Sơn',
     type: 'road',
-    status: 'on-hold',
-    priority: 'medium',
-    client: 'VEC',
-    location: 'Bắc Ninh - Hải Dương - Hải Phòng',
-    length: '74 km',
+    status: 'active',
+    priority: 'high',
+    client: 'Sở Xây dựng tỉnh Quảng Trị; Địa chỉ: số 02, Trần Hưng Đạo, phường Đồng Hới, tỉnh Quảng Trị',
+    location: 'Các xã Mỹ Thủy, Vĩnh Định, Diên Sanh, tỉnh Quảng Trị',
+    length: '92 km',
     budget: '9,800 tỷ VNĐ',
-    progress: 25,
-    startDate: '2026-05-01',
-    endDate: '2028-06-30',
-    bepVersion: 'v1.2',
-    currentPhase: 'preliminary',
-    modelHealth: 70,
+    progress: 2,
+    startDate: '2026-06-01',
+    endDate: '2028-12-31',
+    bepVersion: 'v1.0',
+    currentPhase: 'survey',
+    modelHealth: 85,
     lodTarget: 300,
     lodCurrent: 100,
-    clashesTotal: 78,
-    clashesResolved: 30,
+    clashesTotal: 15,
+    clashesResolved: 8,
     disciplines: ['road', 'bridge', 'drainage', 'traffic'],
-    teamSize: 12,
-    teamLead: 'Trần Minh Khoa',
+    teamSize: 8,
+    teamLead: 'Nguyễn Thanh Nhật',
+    team: [
+      { name: 'Nguyễn Thanh Nhật', role: 'BIM Manager' },
+      { name: 'Lương Minh Thuận', role: 'BIM Modeler' },
+      { name: 'Nguyễn Văn An', role: 'BIM Coordinator' }
+    ],
+    milestones: [
+      { id: 'M1', name: 'Bàn giao dữ liệu khảo sát & Thiết lập BEP', date: '2026-10-25' },
+      { id: 'M2', name: 'Thẩm tra mô hình hướng tuyến sơ bộ', date: '2026-11-15' }
+    ],
     segments: [
-      { id: 'S1', name: 'Đoạn Bắc Ninh', progress: 35 },
-      { id: 'S2', name: 'Đoạn Hải Dương', progress: 22 },
-      { id: 'S3', name: 'Đoạn Hải Phòng', progress: 18 }
+      { id: 'S1', name: 'Đoạn Quảng Trị (Cảng Mỹ Thủy - Cam Lộ)', progress: 2 },
+      { id: 'S2', name: 'Đoạn Cam Lộ - La Sơn', progress: 0 }
     ],
     phases: [
-      { id: 'survey', status: 'completed', progress: 100, startDate: '2026-05-01', endDate: '2026-07-31' },
-      { id: 'preliminary', status: 'on-hold', progress: 40, startDate: '2026-07-15', endDate: '2027-01-31' },
-      { id: 'technical', status: 'planning', progress: 0, startDate: '2027-01-15', endDate: '2027-09-30' },
-      { id: 'detailed', status: 'planning', progress: 0, startDate: '2027-09-01', endDate: '2028-03-31' },
-      { id: 'construction', status: 'planning', progress: 0, startDate: '2028-03-01', endDate: '2028-06-30' },
-      { id: 'handover', status: 'planning', progress: 0, startDate: '2028-06-01', endDate: '2028-06-30' }
+      { id: 'survey', status: 'active', progress: 30, startDate: '2026-06-01', endDate: '2026-11-30' },
+      { id: 'preliminary', status: 'planning', progress: 0, startDate: '2026-12-01', endDate: '2027-06-30' },
+      { id: 'technical', status: 'planning', progress: 0, startDate: '2027-07-01', endDate: '2027-12-31' },
+      { id: 'detailed', status: 'planning', progress: 0, startDate: '2028-01-01', endDate: '2028-06-30' },
+      { id: 'construction', status: 'planning', progress: 0, startDate: '2028-07-01', endDate: '2028-12-31' },
+      { id: 'handover', status: 'planning', progress: 0, startDate: '2028-12-01', endDate: '2028-12-31' }
     ],
-    tasks: []
+    tasks: [
+      {
+        id: 't_review_15d',
+        name: 'Review dữ liệu dự án',
+        assignee: 'Lương Minh Thuận',
+        phase: 'survey',
+        lod: 'LOD 200',
+        chainage: 'Đoạn Quảng Trị',
+        status: 'active',
+        progress: 2,
+        dueDate: '2026-10-21',
+        segmentIdx: 0,
+        dailyHours_planned: { '2026-10-15': 4, '2026-10-16': 4 },
+        dailyHours_actual: { '2026-10-15': 2 }
+      },
+      {
+        id: 't_bep_15d',
+        name: 'Khởi tạo BEP & Điều phối CDE dự án 15D',
+        assignee: 'Nguyễn Thanh Nhật',
+        phase: 'survey',
+        lod: 'LOD 200',
+        chainage: 'Toàn tuyến',
+        status: 'active',
+        progress: 10,
+        dueDate: '2026-10-25',
+        segmentIdx: 0,
+        dailyHours_planned: { '2026-10-14': 4, '2026-10-15': 4 },
+        dailyHours_actual: { '2026-10-15': 3 }
+      }
+    ]
   },
   {
     id: 'P007',
@@ -1082,11 +1119,11 @@ export const memberTimesheetsSeed = [
     comment: 'Kế hoạch An Toàn Giao Thông (Km62-Km72)'
   },
 
-  // BẢN GHI THỰC TẾ CỦA MINH THUẬN (DỰ ÁN 15D)
+  // BẢN GHI THỰC TẾ & KẾ HOẠCH CỦA LƯƠNG MINH THUẬN (DỰ ÁN 15D & 14D)
   {
     id: 'ts_act_thuan_301',
     userId: 'u_thuan',
-    userName: 'Minh Thuận',
+    userName: 'Lương Minh Thuận',
     email: 'minhthuan.uah@gmail.com',
     projectId: 'P006',
     projectName: 'Đầu tư xây dựng Quốc lộ 15D đoạn từ Cảng Mỹ Thủy đến cao tốc Cam Lộ - La Sơn',
@@ -1101,6 +1138,97 @@ export const memberTimesheetsSeed = [
     note: 'Rà soát và note những thông tin còn thiếu của mô hình',
     comment: 'Rà soát và note những thông tin còn thiếu của mô hình',
     createdAt: '2026-10-15T16:00:00.000Z'
+  },
+  {
+    id: 'ts_plan_thuan_302',
+    userId: 'u_thuan',
+    userName: 'Lương Minh Thuận',
+    email: 'minhthuan.uah@gmail.com',
+    projectId: 'P006',
+    projectName: 'Đầu tư xây dựng Quốc lộ 15D đoạn từ Cảng Mỹ Thủy đến cao tốc Cam Lộ - La Sơn',
+    taskId: 't_review_15d',
+    taskName: 'Review dữ liệu dự án',
+    dateString: '2026-10-16',
+    date: '2026-10-16',
+    hours: 4,
+    isActual: false,
+    isOT: false,
+    note: 'Kế hoạch kiểm tra đối chiếu dữ liệu khảo sát 15D',
+    comment: 'Kế hoạch kiểm tra đối chiếu dữ liệu khảo sát 15D'
+  },
+  {
+    id: 'ts_act_thuan_303',
+    userId: 'u_thuan',
+    userName: 'Lương Minh Thuận',
+    email: 'minhthuan.uah@gmail.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 't_atgt_km50_km62',
+    taskName: 'An Toàn Giao Thông (Km50-Km62)',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 4,
+    isActual: true,
+    isOT: false,
+    note: 'Nhận bàn giao phụ trách phân đoạn Km50-Km62 và kiểm tra mô hình',
+    comment: 'Nhận bàn giao phụ trách phân đoạn Km50-Km62 và kiểm tra mô hình',
+    createdAt: '2026-10-14T16:00:00.000Z'
+  },
+
+  // BẢN GHI THỰC TẾ & ĐIỀU PHỐI CỦA NGUYỄN THANH NHẬT (DỰ ÁN 15D, 14D, QL1A)
+  {
+    id: 'ts_act_nhat_401',
+    userId: 'u_admin',
+    userName: 'Nguyễn Thanh Nhật',
+    email: 'admin@vsibim.com',
+    projectId: 'P006',
+    projectName: 'Đầu tư xây dựng Quốc lộ 15D đoạn từ Cảng Mỹ Thủy đến cao tốc Cam Lộ - La Sơn',
+    taskId: 't_bep_15d',
+    taskName: 'Khởi tạo BEP & Điều phối CDE dự án 15D',
+    dateString: '2026-10-15',
+    date: '2026-10-15',
+    hours: 3,
+    isActual: true,
+    isOT: false,
+    note: 'Họp khởi động dự án 15D và rà soát yêu cầu kỹ thuật mô hình BIM',
+    comment: 'Họp khởi động dự án 15D và rà soát yêu cầu kỹ thuật mô hình BIM',
+    createdAt: '2026-10-15T10:00:00.000Z'
+  },
+  {
+    id: 'ts_act_nhat_402',
+    userId: 'u_admin',
+    userName: 'Nguyễn Thanh Nhật',
+    email: 'admin@vsibim.com',
+    projectId: 'P007',
+    projectName: 'Theo dõi tiến độ bản vẽ 14D',
+    taskId: 'T001',
+    taskName: 'Hoàn thiện hồ sơ thanh toán đợt 1',
+    dateString: '2026-10-14',
+    date: '2026-10-14',
+    hours: 4,
+    isActual: true,
+    isOT: false,
+    note: 'Phê duyệt mốc hoàn thành đợt 1 và thẩm tra mô hình hạ tầng',
+    comment: 'Phê duyệt mốc hoàn thành đợt 1 và thẩm tra mô hình hạ tầng',
+    createdAt: '2026-10-14T11:00:00.000Z'
+  },
+  {
+    id: 'ts_act_nhat_403',
+    userId: 'u_admin',
+    userName: 'Nguyễn Thanh Nhật',
+    email: 'nhattedisouth@gmail.com',
+    projectId: 'P001',
+    projectName: 'Mở rộng QL1A đoạn HCM - Long Thành',
+    taskId: 'T001',
+    taskName: 'Mô hình nút giao Dầu Giây',
+    dateString: '2026-10-16',
+    date: '2026-10-16',
+    hours: 3,
+    isActual: true,
+    isOT: false,
+    note: 'Điều phối xung đột mô hình cầu vượt và nút giao',
+    comment: 'Điều phối xung đột mô hình cầu vượt và nút giao',
+    createdAt: '2026-10-16T14:00:00.000Z'
   }
 ];
 

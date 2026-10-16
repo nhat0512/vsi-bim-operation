@@ -16,10 +16,11 @@ export const personnelItems = [
     skills: ['Revit', 'Civil 3D', 'Navisworks', 'Quản lý dự án BIM', 'BIM 360 / ACC'],
     certifications: ['Autodesk Certified Professional', 'BIM Manager Certificate'],
     allocation: [
+      { projectId: 'P006', projectName: 'Đầu tư xây dựng Quốc lộ 15D', percentage: 30 },
       { projectId: 'P001', projectName: 'QL1A HCM-Long Thành', percentage: 25 },
       { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 25 }
     ],
-    totalAllocation: 50,
+    totalAllocation: 80,
     status: 'active',
     joinDate: '2020-01-01'
   },
@@ -36,9 +37,10 @@ export const personnelItems = [
     skills: ['MS Project', 'Power BI', 'Civil 3D', 'Quản trị tiến độ & chi phí (EVM)'],
     certifications: ['PMP', 'BIM Coordinator Certificate'],
     allocation: [
+      { projectId: 'P006', projectName: 'Đầu tư xây dựng Quốc lộ 15D', percentage: 30 },
       { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 50 }
     ],
-    totalAllocation: 50,
+    totalAllocation: 80,
     status: 'active',
     joinDate: '2020-03-15'
   },
@@ -82,17 +84,19 @@ export const personnelItems = [
   },
   {
     id: 'u_thuan',
-    name: 'Minh Thuận',
+    name: 'Lương Minh Thuận',
     role: 'BIM Modeler',
     roleId: 'bim-modeler',
-    level: 'mid',
+    level: 'senior',
     email: 'minhthuan.uah@gmail.com',
+    secondaryEmails: ['thuan.luong@vsibim.com'],
     phone: '0938-112-233',
-    avatar: 'MT',
-    skills: ['Revit Architecture', 'Civil 3D', 'AutoCAD', 'Hạ tầng kỹ thuật'],
-    certifications: ['Autodesk Certified Associate'],
+    avatar: 'LMT',
+    skills: ['Revit', 'Civil 3D', 'Navisworks', 'AutoCAD', 'Hạ tầng kỹ thuật'],
+    certifications: ['Autodesk Certified Associate', 'BIM Modeler Certificate'],
     allocation: [
-      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 100 }
+      { projectId: 'P006', projectName: 'Đầu tư xây dựng Quốc lộ 15D', percentage: 30 },
+      { projectId: 'P007', projectName: 'Theo dõi tiến độ bản vẽ 14D', percentage: 70 }
     ],
     totalAllocation: 100,
     status: 'active',

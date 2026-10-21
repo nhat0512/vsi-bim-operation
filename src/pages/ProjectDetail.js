@@ -16,6 +16,10 @@ let currentTaskViewMode = 'table'; // 'table' | 'kanban' | 'gantt'
 let taskGanttScale = 'month'; // 'day' | 'week' | 'month' | 'quarter'
 let taskGanttInstance = null;
 let hoursSummaryCache = { key: '', data: null };
+let currentTaskGroupBy = 'none'; // 'none' | 'milestone' | 'segment' | 'assignee' | 'status'
+let currentTaskStatusFilter = 'all'; // 'all' | 'overdue' | 'active' | 'completed' | 'unstarted'
+let isTaskTableCompactMode = true; // true: Hiển thị tinh gọn & trực quan | false: Chế độ sửa hàng loạt
+let taskGroupCollapsedMap = {}; // { [groupKey]: boolean }
 
 function getIsEditing() {
   const { currentUserRole, currentUser } = getState();
@@ -510,11 +514,303 @@ function renderHoursSummary(project, projectTimesheets) {
 }
 
 /**
- * QUẢN LÝ DANH SÁCH CÔNG VIỆC (ĐẦY ĐỦ TÍNH NĂNG XÓA, TÌM KIẾM, PHÂN CÔNG)
+ * NHÓM CÔNG VIỆC THÔNG MINH (GROUP BY MILESTONE / SEGMENT / ASSIGNEE / STATUS)
+ */
+function buildTaskGroups(project, tasks, groupBy) {
+  if (!groupBy || groupBy === 'none') {
+    return [{ key: 'all', title: '', tasks, isDefault: true }];
+  }
+
+  if (groupBy === 'milestone') {
+    const milestones = project.milestones || [];
+    const groups = milestones.map((m, mIdx) => {
+      const gTasks = tasks.filter(t => t.milestoneIdx === mIdx);
+      const d = m.date ? m.date.split('T')[0] : '';
+      return {
+        key: `ml_${mIdx}`,
+        title: `🎯 ${m.name}${d ? ` (${d})` : ''}`,
+        tasks: gTasks
+      };
+    });
+    const unassigned = tasks.filter(t => t.milestoneIdx == null || t.milestoneIdx < 0 || !milestones[t.milestoneIdx]);
+    if (unassigned.length > 0) {
+      groups.push({
+        key: 'ml_unassigned',
+        title: '🎯 Chưa gắn cột mốc',
+        tasks: unassigned
+      });
+    }
+    return groups.filter(g => g.tasks.length > 0);
+  }
+
+  if (groupBy === 'segment') {
+    const segments = project.segments || [];
+    const groups = [];
+    segments.forEach((s, sIdx) => {
+      const sTasks = tasks.filter(t => t.segmentIdx === sIdx);
+      if (sTasks.length > 0) {
+        groups.push({
+          key: `seg_${sIdx}`,
+          title: `🏷️ ${s.name}`,
+          tasks: sTasks
+        });
+      }
+    });
+    const unassigned = tasks.filter(t => t.segmentIdx == null || t.segmentIdx < 0 || !segments[t.segmentIdx]);
+    if (unassigned.length > 0) {
+      groups.push({
+        key: 'seg_unassigned',
+        title: '🏷️ Chưa phân đoạn',
+        tasks: unassigned
+      });
+    }
+    return groups;
+  }
+
+  if (groupBy === 'assignee') {
+    const groups = [];
+    const assignees = [...new Set(tasks.map(t => t.assignee).filter(Boolean))];
+    assignees.forEach(name => {
+      groups.push({
+        key: `ass_${encodeURIComponent(name)}`,
+        title: `👤 ${formatDisplayName(name)}`,
+        tasks: tasks.filter(t => t.assignee === name)
+      });
+    });
+    const unassigned = tasks.filter(t => !t.assignee);
+    if (unassigned.length > 0) {
+      groups.push({
+        key: 'ass_unassigned',
+        title: '👤 Chưa gán nhân sự',
+        tasks: unassigned
+      });
+    }
+    return groups;
+  }
+
+  if (groupBy === 'status') {
+    const now = new Date();
+    const overdueTasks = tasks.filter(t => (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < now);
+    const activeTasks = tasks.filter(t => (t.progress || 0) > 0 && (t.progress || 0) < 100 && (!t.dueDate || new Date(t.dueDate) >= now));
+    const unstartedTasks = tasks.filter(t => (t.progress || 0) === 0 && (!t.dueDate || new Date(t.dueDate) >= now));
+    const completedTasks = tasks.filter(t => (t.progress || 0) >= 100);
+
+    const groups = [
+      { key: 'st_overdue', title: '🔴 Quá hạn cần xử lý', tasks: overdueTasks },
+      { key: 'st_active', title: '🚀 Đang thực hiện', tasks: activeTasks },
+      { key: 'st_unstarted', title: '⏳ Chưa bắt đầu', tasks: unstartedTasks },
+      { key: 'st_completed', title: '✅ Đã hoàn thành', tasks: completedTasks }
+    ];
+    return groups.filter(g => g.tasks.length > 0);
+  }
+
+  return [{ key: 'all', title: '', tasks, isDefault: true }];
+}
+
+/**
+ * HÀNG CÔNG VIỆC CHẾ ĐỘ TINH GỌN (CLEAN MODERN ROW)
+ */
+function renderCompactTaskRow(t, idx, project, personnel, formatDate, isEditing, groupKey, isCollapsed) {
+  const taskId = t.id || `t_${idx}`;
+  const now = new Date();
+  const isOverdue = (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < now;
+  const isDueSoon = !isOverdue && (t.progress || 0) < 100 && t.dueDate && (new Date(t.dueDate) - now <= 3 * 24 * 60 * 60 * 1000);
+  const seg = t.segmentIdx != null && project.segments[t.segmentIdx] ? project.segments[t.segmentIdx].name : '';
+  const subSeg = t.segmentIdx != null && t.subSegmentIdx != null && project.segments[t.segmentIdx]?.subSegments?.[t.subSegmentIdx] ? project.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name : '';
+  const ml = t.milestoneIdx != null && (project.milestones || [])[t.milestoneIdx] ? project.milestones[t.milestoneIdx].name : '';
+  const member = (personnel || []).find(m => m.name === t.assignee);
+  const avatar = (member && member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(formatDisplayName(t.assignee || 'BIM'))}&background=random`;
+  const progColor = (t.progress || 0) >= 100 ? '#10b981' : (t.progress || 0) >= 50 ? '#3b82f6' : (t.progress || 0) > 0 ? '#f59e0b' : '#94a3b8';
+
+  return `
+    <tr class="task-row task-row-compact" data-id="${taskId}" data-idx="${idx}" data-group-key="${groupKey}" data-name="${(t.name || '').toLowerCase()}" data-assignee="${t.assignee || ''}" data-milestone="${t.milestoneIdx != null ? t.milestoneIdx : ''}" data-segment="${t.segmentIdx != null ? t.segmentIdx : ''}" data-status="${t.progress >= 100 ? 'completed' : isOverdue ? 'overdue' : t.progress > 0 ? 'active' : 'unstarted'}" style="${isCollapsed ? 'display: none;' : ''}">
+      <td style="text-align: center; width: 38px;">
+        <input type="checkbox" class="task-select-chk" data-id="${taskId}" data-idx="${idx}">
+      </td>
+      <td style="min-width: 260px;">
+        <div>
+          <div class="task-name-text btn-task-detail" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: color 0.15s;" title="Nhấp để xem & chỉnh sửa chi tiết">
+            ${t.name}
+          </div>
+          
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 5px;">
+            ${seg ? `
+              <span class="badge" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(59, 130, 246, 0.08); color: var(--accent-primary); border: 1px solid rgba(59, 130, 246, 0.25);">
+                🏷️ ${seg}${subSeg ? ` / ${subSeg}` : ''}
+              </span>
+            ` : ''}
+            ${ml ? `
+              <span class="badge" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.25);">
+                🎯 ${ml}
+              </span>
+            ` : ''}
+            <span class="badge" style="font-size: 0.68rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted);">
+              ${t.phase || 'BVTC'} · ${t.lod || 'LOD 300'}
+            </span>
+            ${t.cloudLinks ? `
+              <a href="${t.cloudLinks.split('\n')[0].trim()}" target="_blank" rel="noopener" class="badge blue" style="font-size: 0.68rem; padding: 2px 6px; text-decoration: none;" title="Mở mô hình 3D trên Cloud">
+                🌐 3D
+              </a>
+            ` : ''}
+          </div>
+        </div>
+      </td>
+
+      <td style="width: 170px;">
+        ${t.assignee ? `
+          <div class="flex items-center gap-xs" title="${formatDisplayName(t.assignee)}">
+            <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;">
+            <span style="font-size: 0.84rem; font-weight: 500; color: var(--text-primary); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${formatDisplayName(t.assignee)}
+            </span>
+          </div>
+        ` : `
+          <span style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">Chưa gán</span>
+        `}
+      </td>
+
+      <td style="width: 200px;">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+            <div class="progress-bar" style="flex: 1; height: 6px; background: var(--bg-tertiary);">
+              <div class="progress-bar-fill" style="width: ${t.progress || 0}%; background-color: ${progColor};"></div>
+            </div>
+            <span id="row-prog-num-${taskId}" style="font-size: 0.82rem; font-weight: 700; color: ${progColor}; min-width: 38px; text-align: right;">
+              ${t.progress || 0}%
+            </span>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 4px; margin-top: 2px;">
+            ${(t.progress || 0) < 100 ? `
+              <button type="button" class="btn btn-ghost btn-xs btn-row-step-prog" data-id="${taskId}" data-step="10" title="Tăng +10% tiến độ" style="padding: 1px 6px; font-size: 0.68rem; height: 20px; line-height: 1;">+10%</button>
+              <button type="button" class="btn btn-ghost btn-xs btn-row-step-prog" data-id="${taskId}" data-step="25" title="Tăng +25% tiến độ" style="padding: 1px 6px; font-size: 0.68rem; height: 20px; line-height: 1;">+25%</button>
+              <button type="button" class="btn btn-ghost btn-xs btn-row-finish-prog text-success" data-id="${taskId}" title="Đánh dấu hoàn thành 100%" style="padding: 1px 7px; font-size: 0.72rem; height: 20px; line-height: 1; font-weight: bold;">✔ Xong</button>
+            ` : `
+              <span style="font-size: 0.72rem; font-weight: 700; color: #10b981;">✅ Đã hoàn thành</span>
+            `}
+          </div>
+        </div>
+      </td>
+
+      <td style="width: 140px;">
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 0.82rem; font-weight: 600; color: ${isOverdue ? '#ef4444' : 'var(--text-primary)'};">
+            ${formatDate(t.dueDate)}
+          </span>
+          ${isOverdue ? `
+            <span class="badge red" style="font-size: 0.68rem; padding: 1px 6px; width: fit-content;">⚠️ Quá hạn</span>
+          ` : isDueSoon ? `
+            <span class="badge orange" style="font-size: 0.68rem; padding: 1px 6px; width: fit-content;">⚡ Sắp đến hạn</span>
+          ` : ''}
+        </div>
+      </td>
+
+      <td style="text-align: center; width: 100px;">
+        <div class="flex items-center justify-center gap-xs">
+          <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
+            🔍
+          </button>
+          <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
+            🗑️
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+/**
+ * HÀNG CÔNG VIỆC CHẾ ĐỘ SỬA HÀNG LOẠT (BULK EDIT ROW)
+ */
+function renderEditableTaskRow(t, idx, project, personnel, formatDate, isEditing, groupKey, isCollapsed) {
+  const isOverdue = new Date(t.dueDate) < new Date() && t.status !== 'completed';
+  const taskId = t.id || `t_${idx}`;
+
+  return `
+    <tr class="task-row task-row-editable" data-id="${taskId}" data-idx="${idx}" data-group-key="${groupKey}" data-name="${(t.name || '').toLowerCase()}" data-assignee="${t.assignee || ''}" data-milestone="${t.milestoneIdx != null ? t.milestoneIdx : ''}" data-segment="${t.segmentIdx != null ? t.segmentIdx : ''}" data-status="${t.progress >= 100 ? 'completed' : isOverdue ? 'overdue' : t.progress > 0 ? 'active' : 'unstarted'}" style="${isCollapsed ? 'display: none;' : ''}">
+      <td style="text-align: center; width: 38px;">
+        <input type="checkbox" class="task-select-chk" data-id="${taskId}" data-idx="${idx}">
+      </td>
+      <td>
+        <input type="text" class="form-input edit-task-name" data-id="${taskId}" data-idx="${idx}" value="${t.name || ''}" placeholder="Nhập tên công việc..." style="width: 100%; font-weight: 600; margin-bottom: 4px;">
+        <div class="flex items-center gap-xs" style="flex-wrap: wrap;">
+          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+            <span style="font-size: 0.65rem; margin-right: 4px;">🏷️</span>
+            <select class="edit-task-segment" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+              <option value="-1">-- Phân đoạn --</option>
+              ${project.segments.map((s, sIdx) => {
+                let html = `<option value="${sIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx == null ? 'selected' : ''}>▶ ${s.name}</option>`;
+                if (s.subSegments && s.subSegments.length > 0) {
+                  s.subSegments.forEach((sub, subIdx) => {
+                    html += `<option value="${sIdx}_${subIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx === subIdx ? 'selected' : ''}>&nbsp;&nbsp;↳ ${sub.name}</option>`;
+                  });
+                }
+                return html;
+              }).join('')}
+            </select>
+          </div>
+          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
+            <span style="font-size: 0.65rem; margin-right: 4px;">🎯</span>
+            <select class="edit-task-milestone" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
+              <option value="-1">-- Cột mốc --</option>
+              ${(project.milestones || []).map((m, mIdx) => `
+                <option value="${mIdx}" ${t.milestoneIdx === mIdx ? 'selected' : ''}>${m.name}</option>
+              `).join('')}
+            </select>
+          </div>
+        </div>
+      </td>
+      <td class="text-sm" style="width: 170px;">
+        <select class="form-select edit-task-assignee" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.8rem; padding: 4px 8px; width: 100%;">
+          <option value="">-- Chọn --</option>
+          ${t.assignee && !(personnel || []).some(m => m.name === t.assignee) ? `
+            <option value="${t.assignee}" selected>👤 ${formatDisplayName(t.assignee)}</option>
+          ` : ''}
+          ${(personnel || []).map(m => {
+            let label = formatDisplayName(m.name);
+            const alloc = m.totalAllocation || 0;
+            if (alloc >= 100) label += ' [⚠️ Quá tải]';
+            else label += ` [✅ Rảnh ${100 - alloc}%]`;
+            return `<option value="${m.name}" ${t.assignee === m.name ? 'selected' : ''}>${label}</option>`;
+          }).join('')}
+        </select>
+      </td>
+      <td style="width: 130px;">
+        <div class="flex items-center gap-xs">
+          <input type="number" class="form-input edit-task-progress" data-id="${taskId}" data-idx="${idx}" value="${t.progress || 0}" min="0" max="100" style="width: 65px; font-weight: bold; text-align: center;">
+          <span class="text-xs font-semibold">%</span>
+        </div>
+      </td>
+      <td style="width: 140px;">
+        <input type="date" class="form-input edit-task-due" data-id="${taskId}" data-idx="${idx}" value="${(t.dueDate || '').split('T')[0]}" style="font-size: 0.8rem; padding: 4px 6px; width: 100%;">
+      </td>
+      <td style="text-align: center; width: 100px;">
+        <div class="flex items-center justify-center gap-xs">
+          <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
+            🔍
+          </button>
+          <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
+            🗑️
+          </button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+/**
+ * QUẢN LÝ DANH SÁCH CÔNG VIỆC (ĐẦY ĐỦ TÍNH NĂNG GOM NHÓM, LỌC NHANH 1-CHẠM, TINH GỌN BẢNG)
  */
 function renderTasksSection(project, isEditing, personnel, formatDate) {
-  const completedCount = (project.tasks || []).filter(t => t.progress >= 100).length;
-  const activeCount = (project.tasks || []).length - completedCount;
+  const allTasks = project.tasks || [];
+  const now = new Date();
+  const overdueCount = allTasks.filter(t => (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < now).length;
+  const completedCount = allTasks.filter(t => (t.progress || 0) >= 100).length;
+  const activeCount = allTasks.filter(t => (t.progress || 0) > 0 && (t.progress || 0) < 100).length;
+  const unstartedCount = allTasks.filter(t => (t.progress || 0) === 0).length;
+
+  // Inject styles cho task management
+  injectTaskManagementStyles();
 
   return `
     <div class="card mb-lg">
@@ -523,7 +819,7 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
           <div>
             <h3 class="card-title">📌 Quản lý Danh sách Công việc (Tasks)</h3>
             <div class="text-xs text-muted" style="margin-top: 2px;">
-              Tổng cộng: <strong>${(project.tasks || []).length}</strong> công việc · Đang làm: <strong style="color: var(--accent-primary);">${activeCount}</strong> · Hoàn thành: <strong style="color: var(--accent-success);">${completedCount}</strong>
+              Tổng cộng: <strong>${allTasks.length}</strong> công việc · Đang làm: <strong style="color: var(--accent-primary);">${activeCount}</strong> · Hoàn thành: <strong style="color: var(--accent-success);">${completedCount}</strong>${overdueCount > 0 ? ` · Quá hạn: <strong style="color: #ef4444;">${overdueCount}</strong>` : ''}
             </div>
           </div>
 
@@ -546,7 +842,7 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
           <button class="btn btn-primary btn-sm" id="btn-add-task">
             ➕ Thêm công việc
           </button>
-          ${(project.tasks && project.tasks.length > 0) ? `
+          ${(allTasks.length > 0) ? `
             <button class="btn btn-outline btn-sm text-danger" id="btn-delete-all-tasks" title="Xóa toàn bộ công việc để làm mới" style="border-color: rgba(239, 68, 68, 0.4);">
               🗑️ Xóa tất cả
             </button>
@@ -587,161 +883,165 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
       ` : currentTaskViewMode === 'gantt' ? `
         ${renderTasksGanttSection(project, isEditing, personnel, formatDate)}
       ` : `
-        <!-- Search & Filters -->
-        <div style="padding: 10px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-          <div style="flex: 1; min-width: 220px;">
-            <input type="text" id="task-search-input" class="form-input" placeholder="🔍 Tìm kiếm công việc..." style="width: 100%; padding: 6px 12px; font-size: 0.85rem;">
+        <!-- Nút lọc nhanh 1 chạm (Quick Status Filter Pills) -->
+        <div class="task-quick-filters" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; background: var(--bg-card); border-bottom: 1px solid var(--border-subtle);">
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-right: 4px;">Lọc trạng thái:</span>
+          <button type="button" class="btn-task-filter-pill ${currentTaskStatusFilter === 'all' ? 'active' : ''}" data-filter="all">
+            Tất cả <span class="badge-count">${allTasks.length}</span>
+          </button>
+          <button type="button" class="btn-task-filter-pill ${currentTaskStatusFilter === 'overdue' ? 'active' : ''}" data-filter="overdue" style="${overdueCount > 0 ? 'border-color: rgba(239, 68, 68, 0.5);' : ''}">
+            🔴 Quá hạn <span class="badge-count" style="${overdueCount > 0 ? 'color: #ef4444;' : ''}">${overdueCount}</span>
+          </button>
+          <button type="button" class="btn-task-filter-pill ${currentTaskStatusFilter === 'active' ? 'active' : ''}" data-filter="active">
+            🚀 Đang làm <span class="badge-count">${activeCount}</span>
+          </button>
+          <button type="button" class="btn-task-filter-pill ${currentTaskStatusFilter === 'completed' ? 'active' : ''}" data-filter="completed">
+            ✅ Hoàn thành <span class="badge-count">${completedCount}</span>
+          </button>
+          <button type="button" class="btn-task-filter-pill ${currentTaskStatusFilter === 'unstarted' ? 'active' : ''}" data-filter="unstarted">
+            ⏳ Chưa bắt đầu <span class="badge-count">${unstartedCount}</span>
+          </button>
+        </div>
+
+        <!-- Search, Filters & Grouping Bar -->
+        <div style="padding: 10px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+          <!-- Trái: Search & Dropdowns -->
+          <div style="display: flex; gap: 8px; align-items: center; flex: 1; min-width: 280px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 180px;">
+              <input type="text" id="task-search-input" class="form-input" placeholder="🔍 Tìm kiếm công việc, người làm..." style="width: 100%; padding: 6px 12px; font-size: 0.85rem;">
+            </div>
+            <div style="min-width: 150px;">
+              <select id="task-assignee-filter" class="form-select" style="width: 100%; padding: 6px 10px; font-size: 0.85rem;">
+                <option value="">👤 Tất cả nhân sự</option>
+                ${[...new Set(allTasks.map(t => t.assignee).filter(Boolean))].map(name => `
+                  <option value="${name}">${formatDisplayName(name)}</option>
+                `).join('')}
+              </select>
+            </div>
+            <div style="min-width: 150px;">
+              <select id="task-milestone-filter" class="form-select" style="width: 100%; padding: 6px 10px; font-size: 0.85rem;">
+                <option value="">🎯 Tất cả cột mốc</option>
+                ${(project.milestones || []).map((m, mIdx) => `<option value="${mIdx}">${m.name}</option>`).join('')}
+              </select>
+            </div>
+            <div style="min-width: 150px;">
+              <select id="task-segment-filter" class="form-select" style="width: 100%; padding: 6px 10px; font-size: 0.85rem;">
+                <option value="">🏷️ Tất cả phân đoạn</option>
+                ${(project.segments || []).map((s, sIdx) => `<option value="${sIdx}">${s.name}</option>`).join('')}
+              </select>
+            </div>
           </div>
-          <div style="min-width: 180px;">
-            <select id="task-assignee-filter" class="form-select" style="width: 100%; padding: 6px 10px; font-size: 0.85rem;">
-              <option value="">-- Tất cả nhân sự --</option>
-              ${[...new Set((project.tasks || []).map(t => t.assignee).filter(Boolean))].map(name => `
-                <option value="${name}">${formatDisplayName(name)}</option>
-              `).join('')}
-            </select>
+
+          <!-- Phải: Group By & Chế độ xem -->
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span style="font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); white-space: nowrap;">📁 Gom nhóm:</span>
+              <select id="task-group-by-select" class="form-select" style="padding: 5px 10px; font-size: 0.82rem; font-weight: 600; min-width: 150px;">
+                <option value="none" ${currentTaskGroupBy === 'none' ? 'selected' : ''}>Không gom nhóm</option>
+                <option value="milestone" ${currentTaskGroupBy === 'milestone' ? 'selected' : ''}>🎯 Theo Cột mốc</option>
+                <option value="segment" ${currentTaskGroupBy === 'segment' ? 'selected' : ''}>🏷️ Theo Phân đoạn</option>
+                <option value="assignee" ${currentTaskGroupBy === 'assignee' ? 'selected' : ''}>👤 Theo Nhân sự</option>
+                <option value="status" ${currentTaskGroupBy === 'status' ? 'selected' : ''}>📌 Theo Trạng thái</option>
+              </select>
+            </div>
+
+            ${currentTaskGroupBy !== 'none' ? `
+              <button id="btn-collapse-all-groups" type="button" class="btn btn-outline btn-sm" title="Gập/Mở tất cả nhóm" style="padding: 5px 9px; font-size: 0.8rem;">
+                ↕️ Gập/Mở nhóm
+              </button>
+            ` : ''}
+
+            ${isEditing ? `
+              <button id="btn-toggle-compact-table" type="button" class="btn btn-sm ${isTaskTableCompactMode ? 'btn-outline' : 'btn-primary'}" title="Chuyển đổi giữa Chế độ xem tinh gọn trực quan và Chế độ nhập liệu hàng loạt" style="padding: 5px 11px; font-size: 0.8rem;">
+                ${isTaskTableCompactMode ? '✏️ Chế độ sửa hàng loạt' : '👁️ Chế độ tinh gọn'}
+              </button>
+            ` : ''}
           </div>
         </div>
 
-      <!-- Task Table -->
-      <div style="overflow-x: auto;">
-        ${(project.tasks || []).length > 0 ? `
-          <table class="data-table" id="project-tasks-table" style="width: 100%;">
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;"><input type="checkbox" id="chk-select-all-tasks" title="Chọn tất cả"></th>
-                <th style="min-width: 240px;">Tên công việc / Hạng mục</th>
-                <th style="width: 170px;">Phụ trách</th>
-                <th style="width: 130px;">Tiến độ</th>
-                <th style="width: 140px;">Hạn chót</th>
-                <th style="width: 100px; text-align: center;">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(project.tasks || []).map((t, idx) => {
-                const isOverdue = new Date(t.dueDate) < new Date() && t.status !== 'completed';
-                const taskId = t.id || `t_${idx}`;
-                return `
-                  <tr class="task-row" data-id="${taskId}" data-name="${(t.name || '').toLowerCase()}" data-assignee="${t.assignee || ''}">
-                    <td style="text-align: center;">
-                      <input type="checkbox" class="task-select-chk" data-id="${taskId}" data-idx="${idx}">
-                    </td>
-                    <td>
-                      ${isEditing ? `
-                        <input type="text" class="form-input edit-task-name" data-id="${taskId}" data-idx="${idx}" value="${t.name || ''}" placeholder="Nhập tên công việc..." style="width: 100%; font-weight: 600; margin-bottom: 4px;">
-                        <div class="flex items-center gap-xs" style="flex-wrap: wrap;">
-                          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
-                            <span style="font-size: 0.65rem; margin-right: 4px;">🏷️</span>
-                            <select class="edit-task-segment" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
-                              <option value="-1">-- Phân đoạn --</option>
-                              ${project.segments.map((s, sIdx) => {
-                                let html = `<option value="${sIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx == null ? 'selected' : ''}>▶ ${s.name}</option>`;
-                                if (s.subSegments && s.subSegments.length > 0) {
-                                  s.subSegments.forEach((sub, subIdx) => {
-                                    html += `<option value="${sIdx}_${subIdx}" ${t.segmentIdx === sIdx && t.subSegmentIdx === subIdx ? 'selected' : ''}>&nbsp;&nbsp;↳ ${sub.name}</option>`;
-                                  });
-                                }
-                                return html;
-                              }).join('')}
-                            </select>
-                          </div>
-                          <div class="flex items-center" style="background: var(--bg-tertiary); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 2px 6px;">
-                            <span style="font-size: 0.65rem; margin-right: 4px;">🎯</span>
-                            <select class="edit-task-milestone" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.72rem; padding: 0; background: transparent; border: none; outline: none; color: var(--text-muted); cursor: pointer; max-width: 150px;">
-                              <option value="-1">-- Cột mốc --</option>
-                              ${(project.milestones || []).map((m, mIdx) => `
-                                <option value="${mIdx}" ${t.milestoneIdx === mIdx ? 'selected' : ''}>${m.name}</option>
-                              `).join('')}
-                            </select>
-                          </div>
-                        </div>
-                      ` : `
-                        <div class="font-semibold text-sm">${t.name}</div>
-                        <div class="flex items-center gap-xs" style="margin-top: 4px;">
-                          ${t.segmentIdx !== null && t.segmentIdx !== undefined && project.segments[t.segmentIdx] ? `
-                            <span class="badge" style="font-size: 0.68rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle);">
-                              🏷️ ${project.segments[t.segmentIdx].name}${t.subSegmentIdx != null && project.segments[t.segmentIdx].subSegments?.[t.subSegmentIdx] ? ` / ${project.segments[t.segmentIdx].subSegments[t.subSegmentIdx].name}` : ''}
-                            </span>
-                          ` : ''}
-                          ${t.milestoneIdx !== null && t.milestoneIdx !== undefined && (project.milestones || [])[t.milestoneIdx] ? `
-                            <span class="badge" style="font-size: 0.68rem; padding: 2px 6px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px solid var(--border-subtle);">
-                              🎯 ${(project.milestones || [])[t.milestoneIdx].name}
-                            </span>
-                          ` : ''}
-                        </div>
-                      `}
-                    </td>
-                    <td class="text-sm">
-                      ${isEditing ? `
-                        <select class="form-select edit-task-assignee" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.8rem; padding: 4px 8px;">
-                          <option value="">-- Chọn --</option>
-                          ${t.assignee && !(personnel || []).some(m => m.name === t.assignee) ? `
-                            <option value="${t.assignee}" selected>👤 ${formatDisplayName(t.assignee)}</option>
-                          ` : ''}
-                          ${(personnel || []).map(m => {
-                            let label = formatDisplayName(m.name);
-                            const alloc = m.totalAllocation || 0;
-                            if (alloc >= 100) label += ' [⚠️ Quá tải]';
-                            else label += ` [✅ Rảnh ${100 - alloc}%]`;
-                            return `<option value="${m.name}" ${t.assignee === m.name ? 'selected' : ''}>${label}</option>`;
-                          }).join('')}
-                        </select>
-                      ` : `
-                        <div class="flex items-center gap-xs">
-                          ${t.assignee ? (() => {
-                            const member = (personnel || []).find(m => m.name === t.assignee);
-                            if (member) {
-                              return `<img src="${(member.avatar && member.avatar.length > 5) ? member.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(formatDisplayName(member.name))}&background=random`}" style="width: 22px; height: 22px; border-radius: 50%;"> <span>${formatDisplayName(t.assignee)}</span>`;
-                            }
-                            return `<span>${formatDisplayName(t.assignee)}</span>`;
-                          })() : '<span class="text-muted italic">Chưa gán</span>'}
-                        </div>
-                      `}
-                    </td>
-                    <td>
-                      ${isEditing ? `
-                        <div class="flex items-center gap-xs">
-                          <input type="number" class="form-input edit-task-progress" data-id="${taskId}" data-idx="${idx}" value="${t.progress || 0}" min="0" max="100" style="width: 65px; font-weight: bold; text-align: center;">
-                          <span class="text-xs font-semibold">%</span>
-                        </div>
-                      ` : `
-                        <div class="flex items-center gap-sm">
-                          <div class="progress-bar" style="width: 75px; height: 6px;">
-                            <div class="progress-bar-fill ${t.progress >= 100 ? 'green' : t.progress >= 50 ? '' : 'orange'}" style="width: ${t.progress}%;"></div>
-                          </div>
-                          <span class="text-xs font-bold" style="color: ${t.progress >= 100 ? 'var(--text-success)' : 'inherit'};">${t.progress}%</span>
-                        </div>
-                      `}
-                    </td>
-                    <td>
-                      ${isEditing ? `
-                        <input type="date" class="form-input edit-task-due" data-id="${taskId}" data-idx="${idx}" value="${(t.dueDate || '').split('T')[0]}" style="font-size: 0.8rem; padding: 4px 6px;">
-                      ` : `
-                        <span class="text-xs ${isOverdue ? 'text-danger font-bold' : 'text-muted'}">${formatDate(t.dueDate)}${isOverdue ? ' ⚠️' : ''}</span>
-                      `}
-                    </td>
-                    <td style="text-align: center;">
-                      <div class="flex items-center justify-center gap-xs">
-                        <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
-                          🔍
-                        </button>
-                        <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
-                          🗑️
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-        ` : `
-          <div class="empty-state" style="padding: 32px 16px;">
-            <div class="empty-state__icon">📌</div>
-            <div class="empty-state__text">Chưa có công việc nào</div>
-            <div class="empty-state__subtext">Hãy bấm "+ Thêm công việc" để tạo mới nhiệm vụ cho dự án</div>
-          </div>
-        `}
-      </div>
+        <!-- Task Table -->
+        <div style="overflow-x: auto;">
+          ${allTasks.length > 0 ? `
+            <table class="data-table" id="project-tasks-table" style="width: 100%;">
+              <thead>
+                <tr>
+                  <th style="width: 38px; text-align: center;"><input type="checkbox" id="chk-select-all-tasks" title="Chọn tất cả"></th>
+                  <th style="min-width: 250px;">Tên công việc / Hạng mục</th>
+                  <th style="width: 170px;">Phụ trách</th>
+                  <th style="width: ${isTaskTableCompactMode ? '200px' : '130px'};">Tiến độ</th>
+                  <th style="width: 140px;">Hạn chót</th>
+                  <th style="width: 100px; text-align: center;">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${(() => {
+                  const groups = buildTaskGroups(project, allTasks, currentTaskGroupBy);
+                  return groups.map(g => {
+                    const gTotal = g.tasks.length;
+                    const gCompleted = g.tasks.filter(t => (t.progress || 0) >= 100).length;
+                    const gOverdue = g.tasks.filter(t => (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < now).length;
+                    const gAvg = gTotal > 0 ? Math.round(g.tasks.reduce((sum, t) => sum + (t.progress || 0), 0) / gTotal) : 0;
+                    const isCollapsed = taskGroupCollapsedMap[g.key] || false;
+
+                    let headerHTML = '';
+                    if (!g.isDefault) {
+                      headerHTML = `
+                        <tr class="task-group-header-row" data-group-key="${g.key}" style="background: var(--bg-tertiary); border-top: 1.5px solid var(--border-color); border-bottom: 1px solid var(--border-color); cursor: pointer; user-select: none;">
+                          <td colspan="6" style="padding: 10px 16px;">
+                            <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                              <div style="display: flex; align-items: center; gap: 8px;">
+                                <span class="group-toggle-icon" style="font-size: 0.85rem; font-weight: bold; transition: transform 0.2s; display: inline-block; ${isCollapsed ? '' : 'transform: rotate(90deg);'}">▶</span>
+                                <span style="font-size: 0.92rem; font-weight: 700; color: var(--text-primary);">${g.title}</span>
+                                <span class="badge" style="background: var(--bg-card); font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border: 1px solid var(--border-subtle);">
+                                  ${gTotal} công việc
+                                </span>
+                                ${gOverdue > 0 ? `
+                                  <span class="badge red" style="font-size: 0.72rem; padding: 2px 7px;">
+                                    ⚠️ ${gOverdue} quá hạn
+                                  </span>
+                                ` : ''}
+                              </div>
+
+                              <div style="display: flex; align-items: center; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 8px; min-width: 140px;">
+                                  <div class="progress-bar" style="width: 90px; height: 6px; background: rgba(0,0,0,0.1);">
+                                    <div class="progress-bar-fill ${gAvg >= 100 ? 'green' : gAvg >= 50 ? '' : 'orange'}" style="width: ${gAvg}%;"></div>
+                                  </div>
+                                  <span style="font-size: 0.8rem; font-weight: 700; color: ${gAvg >= 100 ? 'var(--text-success)' : 'inherit'};">
+                                    ${gAvg}%
+                                  </span>
+                                </div>
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">${isCollapsed ? 'Nhấp để mở' : 'Nhấp để gập'}</span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    }
+
+                    const rowsHTML = g.tasks.map(t => {
+                      const origIdx = allTasks.indexOf(t);
+                      const safeIdx = origIdx >= 0 ? origIdx : 0;
+                      if (isTaskTableCompactMode) {
+                        return renderCompactTaskRow(t, safeIdx, project, personnel, formatDate, isEditing, g.key, isCollapsed);
+                      } else {
+                        return renderEditableTaskRow(t, safeIdx, project, personnel, formatDate, isEditing, g.key, isCollapsed);
+                      }
+                    }).join('');
+
+                    return headerHTML + rowsHTML;
+                  }).join('');
+                })()}
+              </tbody>
+            </table>
+          ` : `
+            <div class="empty-state" style="padding: 32px 16px;">
+              <div class="empty-state__icon">📌</div>
+              <div class="empty-state__text">Chưa có công việc nào</div>
+              <div class="empty-state__subtext">Hãy bấm "+ Thêm công việc" để tạo mới nhiệm vụ cho dự án</div>
+            </div>
+          `}
+        </div>
       `}
     </div>
   `;
@@ -1077,6 +1377,93 @@ function applyTaskProgressUpdate(project, taskId, newProgress) {
   });
 
   showToast(`🎯 Đã cập nhật tiến độ ${task.progress}% cho "${task.name}" (Tiến độ dự án: ${project.progress}%)`);
+}
+
+/**
+ * INJECT STYLE CHO TASK MANAGEMENT (FILTER PILLS, ACCORDION GROUPS, COMPACT ROWS)
+ */
+function injectTaskManagementStyles() {
+  const styleId = 'task-management-custom-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+      .btn-task-filter-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        border: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        user-select: none;
+      }
+      .btn-task-filter-pill:hover {
+        border-color: var(--accent-primary);
+        color: var(--text-primary);
+        transform: translateY(-1px);
+      }
+      .btn-task-filter-pill.active {
+        background: var(--accent-primary) !important;
+        color: #ffffff !important;
+        border-color: var(--accent-primary) !important;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+      }
+      .btn-task-filter-pill .badge-count {
+        padding: 1px 6px;
+        border-radius: 10px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        background: rgba(0, 0, 0, 0.08);
+      }
+      .btn-task-filter-pill.active .badge-count {
+        background: rgba(255, 255, 255, 0.25) !important;
+        color: #ffffff !important;
+      }
+      .task-group-header-row {
+        background: var(--bg-tertiary);
+        border-top: 1.5px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color);
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .task-group-header-row:hover {
+        background: var(--bg-card);
+      }
+      .task-row-compact {
+        transition: background 0.15s ease;
+      }
+      .task-row-compact:hover {
+        background: rgba(59, 130, 246, 0.04);
+      }
+      .task-name-text:hover {
+        color: var(--accent-primary) !important;
+        text-decoration: underline;
+      }
+      .btn-row-step-prog, .btn-row-finish-prog {
+        transition: all 0.15s ease;
+        border: 1px solid var(--border-subtle);
+        background: var(--bg-card);
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .btn-row-step-prog:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+      }
+      .btn-row-finish-prog:hover {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: #10b981;
+      }
+    `;
+    document.head.appendChild(style);
+  }
 }
 
 /**
@@ -2486,23 +2873,139 @@ function bindTaskActions() {
     if (file && currentProj) importTasksFromCSV(file, currentProj);
   });
 
-  // 1. Tìm kiếm công việc thời gian thực
-  document.getElementById('task-search-input')?.addEventListener('input', (e) => {
-    const q = e.target.value.toLowerCase().trim();
-    document.querySelectorAll('.task-row').forEach(row => {
+  // 1. HÀM LỌC ĐA CHIỀU THỜI GIAN THỰC (SEARCH + ASSIGNEE + MILESTONE + SEGMENT + STATUS PILL)
+  const applyTaskTableFilters = () => {
+    const query = (document.getElementById('task-search-input')?.value || '').toLowerCase().trim();
+    const chosenAssignee = document.getElementById('task-assignee-filter')?.value || '';
+    const chosenMilestone = document.getElementById('task-milestone-filter')?.value || '';
+    const chosenSegment = document.getElementById('task-segment-filter')?.value || '';
+    const statusFilter = currentTaskStatusFilter; // 'all' | 'overdue' | 'active' | 'completed' | 'unstarted'
+
+    const rows = document.querySelectorAll('.task-row');
+    const groupRows = document.querySelectorAll('.task-group-header-row');
+    const groupCountMap = {};
+
+    rows.forEach(row => {
       const name = row.dataset.name || '';
-      row.style.display = name.includes(q) ? '' : 'none';
+      const assignee = row.dataset.assignee || '';
+      const milestone = row.dataset.milestone || '';
+      const segment = row.dataset.segment || '';
+      const status = row.dataset.status || '';
+      const groupKey = row.dataset.groupKey || 'all';
+
+      let matchSearch = !query || name.includes(query) || assignee.toLowerCase().includes(query);
+      let matchAssignee = !chosenAssignee || assignee === chosenAssignee;
+      let matchMilestone = !chosenMilestone || milestone === chosenMilestone;
+      let matchSegment = !chosenSegment || segment === chosenSegment;
+      let matchStatus = true;
+      if (statusFilter === 'overdue') matchStatus = status === 'overdue';
+      else if (statusFilter === 'active') matchStatus = status === 'active';
+      else if (statusFilter === 'completed') matchStatus = status === 'completed';
+      else if (statusFilter === 'unstarted') matchStatus = status === 'unstarted';
+
+      const isMatch = matchSearch && matchAssignee && matchMilestone && matchSegment && matchStatus;
+      const isGroupCollapsed = taskGroupCollapsedMap[groupKey] || false;
+
+      row.style.display = isMatch ? (isGroupCollapsed ? 'none' : '') : 'none';
+
+      if (isMatch) {
+        groupCountMap[groupKey] = (groupCountMap[groupKey] || 0) + 1;
+      }
+    });
+
+    // Ẩn tiêu đề nhóm nếu nhóm không còn việc nào khớp bộ lọc
+    groupRows.forEach(header => {
+      const gKey = header.dataset.groupKey;
+      header.style.display = (groupCountMap[gKey] || 0) > 0 ? '' : 'none';
+    });
+  };
+
+  document.getElementById('task-search-input')?.addEventListener('input', applyTaskTableFilters);
+  document.getElementById('task-assignee-filter')?.addEventListener('change', applyTaskTableFilters);
+  document.getElementById('task-milestone-filter')?.addEventListener('change', applyTaskTableFilters);
+  document.getElementById('task-segment-filter')?.addEventListener('change', applyTaskTableFilters);
+
+  // Nút lọc trạng thái 1-chạm (Quick Status Filter Pills)
+  document.querySelectorAll('.btn-task-filter-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      const targetFilter = e.currentTarget.dataset.filter;
+      if (currentTaskStatusFilter === targetFilter) return;
+      currentTaskStatusFilter = targetFilter;
+      document.querySelectorAll('.btn-task-filter-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.filter === targetFilter);
+      });
+      applyTaskTableFilters();
     });
   });
 
-  // 2. Lọc theo nhân sự
-  document.getElementById('task-assignee-filter')?.addEventListener('change', (e) => {
-    const val = e.target.value;
-    document.querySelectorAll('.task-row').forEach(row => {
-      const assignee = row.dataset.assignee || '';
-      row.style.display = (!val || assignee === val) ? '' : 'none';
+  // Gom nhóm (Group By)
+  document.getElementById('task-group-by-select')?.addEventListener('change', (e) => {
+    currentTaskGroupBy = e.target.value;
+    refreshDetail();
+  });
+
+  // Chuyển đổi Chế độ Tinh gọn / Sửa hàng loạt
+  document.getElementById('btn-toggle-compact-table')?.addEventListener('click', () => {
+    isTaskTableCompactMode = !isTaskTableCompactMode;
+    refreshDetail();
+  });
+
+  // Gập / Mở tất cả các nhóm
+  document.getElementById('btn-collapse-all-groups')?.addEventListener('click', () => {
+    const allHeaders = document.querySelectorAll('.task-group-header-row');
+    const hasAnyExpanded = Object.keys(taskGroupCollapsedMap).some(k => taskGroupCollapsedMap[k] === false) || 
+      allHeaders.length > Object.keys(taskGroupCollapsedMap).filter(k => taskGroupCollapsedMap[k] === true).length;
+    
+    allHeaders.forEach(header => {
+      const gKey = header.dataset.groupKey;
+      taskGroupCollapsedMap[gKey] = hasAnyExpanded;
+    });
+    refreshDetail();
+  });
+
+  // Gập / Mở từng nhóm riêng lẻ (Accordion)
+  document.querySelectorAll('.task-group-header-row').forEach(header => {
+    header.addEventListener('click', (e) => {
+      const gKey = e.currentTarget.dataset.groupKey;
+      taskGroupCollapsedMap[gKey] = !taskGroupCollapsedMap[gKey];
+      const isCollapsed = taskGroupCollapsedMap[gKey];
+      const icon = e.currentTarget.querySelector('.group-toggle-icon');
+      if (icon) icon.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(90deg)';
+      applyTaskTableFilters();
     });
   });
+
+  // Nút tăng nhanh tiến độ 1-chạm (+10%, +25%) trên từng dòng bảng
+  document.querySelectorAll('.btn-row-step-prog').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tId = e.currentTarget.dataset.id;
+      const step = Number(e.currentTarget.dataset.step) || 10;
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      if (!currentProj) return;
+      const task = (currentProj.tasks || []).find(t => t.id === tId);
+      if (task) {
+        const newVal = Math.min(100, (task.progress || 0) + step);
+        applyTaskProgressUpdate(currentProj, tId, newVal);
+        refreshDetail();
+      }
+    });
+  });
+
+  // Nút hoàn thành 100% 1-chạm trên từng dòng bảng
+  document.querySelectorAll('.btn-row-finish-prog').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tId = e.currentTarget.dataset.id;
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      if (!currentProj) return;
+      applyTaskProgressUpdate(currentProj, tId, 100);
+      refreshDetail();
+    });
+  });
+
+  // Áp dụng bộ lọc hiện tại ngay khi vừa khởi tạo
+  applyTaskTableFilters();
 
   // 3. Floating Bulk Toolbar logic
   const updateBulkToolbar = () => {

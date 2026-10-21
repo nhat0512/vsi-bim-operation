@@ -8,6 +8,9 @@ let filterSearch = '';
 let filterMemberId = '';
 let filterProjectId = '';
 let filterOnlyActive = false;
+let currentDisplayLevel = 'level-2'; // 'level-1' | 'level-2' | 'level-3'
+let currentWorkloadFilter = 'all'; // 'all' | 'overload' | 'underload' | 'balanced' | 'has_hours'
+let isInitializedLevel = false;
 let collapsedMembers = new Set();
 let collapsedProjects = new Set();
 
@@ -281,6 +284,56 @@ export function render() {
     }).filter(Boolean);
   }
 
+  // Tự động gập gọn cấp 2 (Dự án) khi tải lần đầu để màn hình không bị ngợp bởi hàng chục task trống
+  if (!isInitializedLevel) {
+    isInitializedLevel = true;
+    if (currentDisplayLevel === 'level-2') {
+      collapsedMembers.clear();
+      collapsedProjects.clear();
+      rawHierarchy.forEach(h => {
+        h.projects.forEach(pObj => {
+          collapsedProjects.add(`${h.person.id}_${pObj.project.id}`);
+        });
+      });
+    }
+  }
+
+  // Thống kê tải làm việc (Workload) cho từng nhân sự trong 2 tuần
+  const memberWorkloadMap = new Map();
+  let countOverload = 0;
+  let countUnderload = 0;
+  let countBalanced = 0;
+  let countHasHours = 0;
+
+  rawHierarchy.forEach(h => {
+    const pId = h.person.id;
+    const w1 = getUserWeekTotal(pId, planData[0]);
+    const w2 = getUserWeekTotal(pId, planData[1]);
+    const total = w1 + w2;
+    const isOver = w1 > 40 || w2 > 40;
+    const isBalanced = (w1 === 40 || w2 === 40) && !isOver;
+    const isUnder = (w1 > 0 && w1 < 40) || (w2 > 0 && w2 < 40);
+    const hasHours = total > 0;
+
+    if (isOver) countOverload++;
+    if (isUnder) countUnderload++;
+    if (isBalanced) countBalanced++;
+    if (hasHours) countHasHours++;
+
+    memberWorkloadMap.set(pId, { w1, w2, total, isOver, isUnder, isBalanced, hasHours });
+  });
+
+  // Áp dụng bộ lọc tải làm việc (Workload Filter)
+  if (currentWorkloadFilter === 'overload') {
+    filteredHierarchy = filteredHierarchy.filter(h => memberWorkloadMap.get(h.person.id)?.isOver);
+  } else if (currentWorkloadFilter === 'balanced') {
+    filteredHierarchy = filteredHierarchy.filter(h => memberWorkloadMap.get(h.person.id)?.isBalanced);
+  } else if (currentWorkloadFilter === 'underload') {
+    filteredHierarchy = filteredHierarchy.filter(h => memberWorkloadMap.get(h.person.id)?.isUnder);
+  } else if (currentWorkloadFilter === 'has_hours') {
+    filteredHierarchy = filteredHierarchy.filter(h => memberWorkloadMap.get(h.person.id)?.hasHours);
+  }
+
   // Deduplicate and resolve tasks for each project
   const resolveProjectItems = (personId, pObj) => {
     const itemsMap = new Map();
@@ -401,6 +454,10 @@ export function render() {
           <button class="btn btn-outline btn-sm" id="btn-export-csv" title="Xuất toàn bộ bảng ra file CSV">
             📥 Xuất CSV
           </button>
+
+          <button class="btn btn-primary btn-sm" id="btn-quick-alloc-trigger" title="Mở bảng phân bổ nhanh nhiều ngày/tuần cùng lúc" style="background: linear-gradient(135deg, #10b981, #059669); border-color: #10b981; font-weight: 700; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);">
+            ⚡ Phân bổ nhanh theo tuần
+          </button>
         </div>
       </div>
 
@@ -451,46 +508,82 @@ export function render() {
         </div>
       </div>
 
-      <!-- Quick Filter Toolbar (Khắc phục khó quản lý) -->
-      <div class="card p-sm" style="background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 8px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-        <!-- Search -->
-        <div style="flex: 1; min-width: 220px; position: relative;">
-          <input type="text" id="filter-search-input" class="form-input" placeholder="🔍 Tìm kiếm nhân sự, dự án, công việc..." value="${filterSearch}" style="width: 100%; padding: 6px 10px 6px 32px; font-size: 0.82rem;">
-          <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted);">🔍</span>
+      <!-- Quick Filter & Level Toolbar (Khắc phục khó quản lý) -->
+      <div class="card p-sm" style="background: var(--bg-secondary); border: 1px solid var(--border-subtle); border-radius: 10px; display: flex; flex-direction: column; gap: 8px;">
+        <!-- Row 1: Search & Entity Selectors -->
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 220px; position: relative;">
+            <input type="text" id="filter-search-input" class="form-input" placeholder="🔍 Tìm kiếm nhân sự, dự án, công việc..." value="${filterSearch}" style="width: 100%; padding: 6px 10px 6px 32px; font-size: 0.82rem;">
+            <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; color: var(--text-muted);">🔍</span>
+          </div>
+
+          <div style="min-width: 170px;">
+            <select id="filter-member-select" class="form-select" style="font-size: 0.82rem; padding: 5px 8px; width: 100%;">
+              <option value="">👤 Tất cả nhân sự (${targetPersonnel.length})</option>
+              ${targetPersonnel.map(p => `<option value="${p.id}" ${filterMemberId === p.id ? 'selected' : ''}>${formatDisplayName(p.name)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div style="min-width: 170px;">
+            <select id="filter-project-select" class="form-select" style="font-size: 0.82rem; padding: 5px 8px; width: 100%;">
+              <option value="">📁 Tất cả dự án (${(state.projects || []).length})</option>
+              ${(state.projects || []).map(p => `<option value="${p.id}" ${filterProjectId === p.id ? 'selected' : ''}>${p.code} - ${p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name}</option>`).join('')}
+            </select>
+          </div>
+
+          <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; user-select: none; margin: 0 4px;">
+            <input type="checkbox" id="filter-only-active" ${filterOnlyActive ? 'checked' : ''} style="cursor: pointer;">
+            <span>⚡ Chỉ hiện dòng có giờ</span>
+          </label>
         </div>
 
-        <!-- Member Filter -->
-        <div style="min-width: 170px;">
-          <select id="filter-member-select" class="form-select" style="font-size: 0.82rem; padding: 5px 8px; width: 100%;">
-            <option value="">👤 Tất cả nhân sự (${targetPersonnel.length})</option>
-            ${targetPersonnel.map(p => `<option value="${p.id}" ${filterMemberId === p.id ? 'selected' : ''}>${formatDisplayName(p.name)}</option>`).join('')}
-          </select>
-        </div>
+        <!-- Row 2: Level View Modes + Workload Filter Pills -->
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border-subtle); padding-top: 8px;">
+          <!-- Level Selector Buttons -->
+          <div style="display: inline-flex; align-items: center; gap: 4px;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600; margin-right: 4px;">Cấp độ xem:</span>
+            <div style="display: inline-flex; background: var(--bg-tertiary); border-radius: 8px; padding: 2px; border: 1px solid var(--border-subtle);">
+              <button id="btn-level-1" class="btn btn-sm ${currentDisplayLevel === 'level-1' ? 'btn-primary' : 'btn-ghost'}" title="Chỉ hiện dòng nhân sự (Thu gọn hết dự án & task)" style="padding: 3px 8px; font-size: 0.78rem; border-radius: 6px;">
+                👤 Cấp 1: Nhân sự
+              </button>
+              <button id="btn-level-2" class="btn btn-sm ${currentDisplayLevel === 'level-2' ? 'btn-primary' : 'btn-ghost'}" title="Hiện Nhân sự và Dự án (Gọn gàng nhất, gập sẵn task)" style="padding: 3px 8px; font-size: 0.78rem; border-radius: 6px;">
+                📁 Cấp 2: Dự án
+              </button>
+              <button id="btn-level-3" class="btn btn-sm ${currentDisplayLevel === 'level-3' ? 'btn-primary' : 'btn-ghost'}" title="Mở bung toàn bộ chi tiết từng Task" style="padding: 3px 8px; font-size: 0.78rem; border-radius: 6px;">
+                📝 Cấp 3: Chi tiết Task
+              </button>
+            </div>
+          </div>
 
-        <!-- Project Filter -->
-        <div style="min-width: 170px;">
-          <select id="filter-project-select" class="form-select" style="font-size: 0.82rem; padding: 5px 8px; width: 100%;">
-            <option value="">📁 Tất cả dự án (${(state.projects || []).length})</option>
-            ${(state.projects || []).map(p => `<option value="${p.id}" ${filterProjectId === p.id ? 'selected' : ''}>${p.code} - ${p.name.length > 20 ? p.name.substring(0, 20) + '...' : p.name}</option>`).join('')}
-          </select>
-        </div>
+          <!-- Workload Filter Pills -->
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: 600;">Lọc tải:</span>
+            <button class="btn-workload-filter-pill ${currentWorkloadFilter === 'all' ? 'active' : ''}" data-filter="all">
+              Tất cả (${targetPersonnel.length})
+            </button>
+            <button class="btn-workload-filter-pill ${currentWorkloadFilter === 'overload' ? 'active' : ''}" data-filter="overload" style="color: ${currentWorkloadFilter === 'overload' ? '#fff' : '#ef4444'};">
+              ⚠️ Quá tải >40h (${countOverload})
+            </button>
+            <button class="btn-workload-filter-pill ${currentWorkloadFilter === 'balanced' ? 'active' : ''}" data-filter="balanced" style="color: ${currentWorkloadFilter === 'balanced' ? '#fff' : '#10b981'};">
+              ✅ Chuẩn 40h (${countBalanced})
+            </button>
+            <button class="btn-workload-filter-pill ${currentWorkloadFilter === 'underload' ? 'active' : ''}" data-filter="underload" style="color: ${currentWorkloadFilter === 'underload' ? '#fff' : '#f59e0b'};">
+              ⏳ Thiếu tải <40h (${countUnderload})
+            </button>
+            <button class="btn-workload-filter-pill ${currentWorkloadFilter === 'has_hours' ? 'active' : ''}" data-filter="has_hours">
+              ⚡ Có giờ làm (${countHasHours})
+            </button>
+          </div>
 
-        <!-- Toggle Only Active -->
-        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 500; user-select: none; margin: 0 4px;">
-          <input type="checkbox" id="filter-only-active" ${filterOnlyActive ? 'checked' : ''} style="cursor: pointer;">
-          <span>⚡ Chỉ hiện dòng có giờ làm</span>
-        </label>
-
-        <div style="height: 18px; width: 1px; background: var(--border-subtle); margin: 0 4px;"></div>
-
-        <!-- Expand / Collapse All -->
-        <div style="display: flex; gap: 6px;">
-          <button class="btn btn-ghost btn-sm" id="btn-collapse-all" title="Thu gọn toàn bộ danh sách để quan sát tổng thể" style="font-size: 0.78rem; padding: 4px 8px;">
-            📁 Thu gọn hết
-          </button>
-          <button class="btn btn-ghost btn-sm" id="btn-expand-all" title="Mở rộng chi tiết từng công việc" style="font-size: 0.78rem; padding: 4px 8px;">
-            📂 Mở rộng hết
-          </button>
+          <!-- Expand / Collapse All -->
+          <div style="display: flex; gap: 4px; margin-left: auto;">
+            <button class="btn btn-ghost btn-sm" id="btn-collapse-all" title="Thu gọn toàn bộ danh sách" style="font-size: 0.75rem; padding: 3px 8px;">
+              📁 Thu gọn
+            </button>
+            <button class="btn btn-ghost btn-sm" id="btn-expand-all" title="Mở rộng chi tiết" style="font-size: 0.75rem; padding: 3px 8px;">
+              📂 Mở rộng
+            </button>
+          </div>
         </div>
       </div>
 
@@ -703,7 +796,12 @@ export function render() {
                           <div style="font-weight: 700; font-size: 0.88rem; color: var(--text-primary);">${formatDisplayName(h.person.name)}</div>
                           <div style="font-size: 0.72rem; color: var(--text-muted);">${h.person.role || 'BIM Member'} · ${h.projects.length} dự án</div>
                         </div>
-                        <button class="btn-icon btn-analytics" data-uid="${personId}" title="Xem biểu đồ phân bổ" style="margin-left: auto;">📊</button>
+                        <div style="margin-left: auto; display: flex; align-items: center; gap: 4px;">
+                          <button class="btn-icon btn-row-quick-alloc" data-uid="${personId}" title="Phân bổ nhanh theo tuần cho ${formatDisplayName(h.person.name)}" style="color: var(--accent-primary); font-size: 0.75rem; padding: 2px 6px; border: 1px solid var(--border-subtle); border-radius: 4px; background: var(--bg-card); display: flex; align-items: center; gap: 3px;">
+                            ⚡ Phân bổ
+                          </button>
+                          <button class="btn-icon btn-analytics" data-uid="${personId}" title="Xem biểu đồ phân bổ">📊</button>
+                        </div>
                       </div>
                     </td>
                     ${planData.map(w => {
@@ -728,9 +826,11 @@ export function render() {
 
                       const wTotal = getUserWeekTotal(personId, w);
                       const isOverWeek = wTotal > 40;
+                      const wCapPct = Math.round((wTotal / 40) * 100);
                       wHtml += `
                         <td style="text-align: center; font-size: 0.82rem; font-weight: 800; color: ${isOverWeek ? '#ef4444' : wTotal > 0 ? '#10b981' : 'var(--text-muted)'}; background: rgba(59, 130, 246, 0.05);">
-                          ${wTotal > 0 ? wTotal + 'h' : '—'}${isOverWeek ? ' ⚠️' : ''}
+                          <div>${wTotal > 0 ? wTotal + 'h' : '—'}${isOverWeek ? ' ⚠️' : ''}</div>
+                          ${wTotal > 0 ? `<div style="font-size: 0.68rem; font-weight: normal; opacity: 0.85;">(${wCapPct}%)</div>` : ''}
                         </td>
                       `;
                       return wHtml;
@@ -761,6 +861,9 @@ export function render() {
                           <span class="badge" style="font-size: 0.65rem; padding: 1px 5px; margin-left: 4px; background: var(--bg-tertiary); color: var(--text-muted);">
                             ${itemsToRender.length} việc
                           </span>
+                          <button class="btn-proj-quick-alloc" data-uid="${personId}" data-pid="${pObj.project.id}" title="Phân bổ nhanh vào dự án này" style="font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-card); color: var(--accent-primary); cursor: pointer; margin-left: 4px;">
+                            ⚡ Phân bổ
+                          </button>
                         </div>
                       </td>
                       ${planData.map(w => {
@@ -923,6 +1026,137 @@ export function render() {
         </div>
       </div>
 
+      <!-- Modal Phân Bổ Nhanh Theo Tuần (1-Click Fill 40h) -->
+      <div id="quick-alloc-modal" class="modal-backdrop" style="display: none; z-index: 9999;">
+        <div class="modal-content" style="max-width: 520px; border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,0.35);">
+          <div class="modal-header" style="border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
+                ⚡ Phân bổ kế hoạch theo tuần
+              </h3>
+              <div class="text-xs text-muted" style="margin-top: 4px;">
+                Tự động điền nhanh số giờ cho các ngày trong tuần chỉ với 1 cú click
+              </div>
+            </div>
+            <button class="btn-icon" id="quick-alloc-close" style="font-size: 1.2rem;">×</button>
+          </div>
+
+          <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; padding: 16px 0;">
+            <!-- Chọn nhân sự -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label font-bold" style="font-size: 0.82rem;">👤 Nhân sự áp dụng <span style="color: #ef4444;">*</span></label>
+              <select id="qa-member" class="form-select w-full" style="font-size: 0.85rem;">
+                ${targetPersonnel.map(p => `<option value="${p.id}">${formatDisplayName(p.name)} (${p.role || 'BIM Member'})</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Chọn dự án -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label font-bold" style="font-size: 0.82rem;">📁 Dự án <span style="color: #ef4444;">*</span></label>
+              <select id="qa-project" class="form-select w-full" style="font-size: 0.85rem;">
+                ${(state.projects || []).map(p => `<option value="${p.id}">${p.code} - ${p.name}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Chọn công việc (Task) -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label font-bold" style="font-size: 0.82rem;">📝 Hạng mục / Công việc</label>
+              <select id="qa-task" class="form-select w-full" style="font-size: 0.85rem;">
+                <option value="t_general">📌 Công việc chung (Chưa phân Task cụ thể)</option>
+              </select>
+            </div>
+
+            <!-- Chọn tuần áp dụng -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label font-bold" style="font-size: 0.82rem;">📅 Tuần kế hoạch áp dụng</label>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <label class="qa-week-choice" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; cursor: pointer; background: var(--bg-secondary);">
+                  <input type="radio" name="qa-week" value="0" checked style="accent-color: var(--accent-primary);">
+                  <span style="font-size: 0.82rem; font-weight: 600;">Tuần ${planData[0]?.weekNo} (${planData[0]?.days[0]?.dateLabel} - ${planData[0]?.days[4]?.dateLabel})</span>
+                </label>
+                <label class="qa-week-choice" style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; cursor: pointer; background: var(--bg-secondary);">
+                  <input type="radio" name="qa-week" value="1" style="accent-color: var(--accent-primary);">
+                  <span style="font-size: 0.82rem; font-weight: 600;">Tuần ${planData[1]?.weekNo} (${planData[1]?.days[0]?.dateLabel} - ${planData[1]?.days[4]?.dateLabel})</span>
+                </label>
+              </div>
+              <label class="qa-week-choice" style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border-subtle); border-radius: 8px; cursor: pointer; background: var(--bg-secondary); margin-top: 6px;">
+                <input type="radio" name="qa-week" value="both" style="accent-color: var(--accent-primary);">
+                <span style="font-size: 0.82rem; font-weight: 600;">Cả 2 tuần (${planData[0]?.days[0]?.dateLabel} - ${planData[1]?.days[6]?.dateLabel})</span>
+              </label>
+            </div>
+
+            <!-- Chọn các ngày trong tuần -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label font-bold" style="margin: 0; font-size: 0.82rem;">🗓️ Ngày trong tuần</label>
+                <div style="display: flex; gap: 6px;">
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-qa-days-weekdays" style="font-size: 0.72rem; padding: 2px 6px;">T2-T6</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-qa-days-sat" style="font-size: 0.72rem; padding: 2px 6px;">T2-T7</button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btn-qa-days-all" style="font-size: 0.72rem; padding: 2px 6px;">Cả 7 ngày</button>
+                </div>
+              </div>
+              <div style="display: flex; gap: 6px; justify-content: space-between;">
+                ${['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(day => `
+                  <label style="display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px; border: 1px solid var(--border-subtle); border-radius: 6px; flex: 1; cursor: pointer; background: var(--bg-secondary); text-align: center;">
+                    <span style="font-size: 0.75rem; font-weight: 700; color: ${day === 'T7' || day === 'CN' ? '#ef4444' : 'var(--text-primary)'};">${day}</span>
+                    <input type="checkbox" class="qa-day-chk" value="${day}" ${['T2','T3','T4','T5','T6'].includes(day) ? 'checked' : ''} style="cursor: pointer; accent-color: var(--accent-primary);">
+                  </label>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Số giờ mỗi ngày & Preset mẫu -->
+            <div class="form-group" style="margin-bottom: 0;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label class="form-label font-bold" style="margin: 0; font-size: 0.82rem;">⏱️ Số giờ phân bổ mỗi ngày</label>
+                <div style="display: flex; gap: 4px;">
+                  <button type="button" class="btn btn-outline btn-sm btn-qa-preset" data-hours="8" style="font-size: 0.72rem; padding: 2px 8px; font-weight: 600;">8h (40h/tuần)</button>
+                  <button type="button" class="btn btn-outline btn-sm btn-qa-preset" data-hours="4" style="font-size: 0.72rem; padding: 2px 8px;">4h (20h/tuần)</button>
+                  <button type="button" class="btn btn-outline btn-sm btn-qa-preset" data-hours="2" style="font-size: 0.72rem; padding: 2px 8px;">2h (10h/tuần)</button>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <input type="number" id="qa-hours" class="form-input" min="0.5" max="24" step="0.5" value="8" style="width: 100px; font-weight: 700; font-size: 1rem;">
+                <div id="qa-calc-summary" style="font-size: 0.82rem; color: #10b981; font-weight: 600;">
+                  = 5 ngày × 8h = 40h/tuần
+                </div>
+              </div>
+            </div>
+
+            <!-- OT & Ghi chú -->
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.82rem; font-weight: 600; color: #ef4444;">
+                <input type="checkbox" id="qa-isot" style="accent-color: #ef4444; width: 16px; height: 16px;">
+                <span>Làm ngoài giờ (OT)</span>
+              </label>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label font-bold" style="font-size: 0.82rem;">📝 Ghi chú phân bổ (Tùy chọn)</label>
+              <input type="text" id="qa-comment" class="form-input w-full" placeholder="VD: Triển khai mô hình kiến trúc & kết cấu..." style="font-size: 0.82rem;">
+            </div>
+
+            <!-- Tiện ích sao chép tuần -->
+            <div style="background: rgba(59, 130, 246, 0.08); border: 1px dashed rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+              <div>
+                <div style="font-size: 0.82rem; font-weight: 700; color: var(--accent-primary);">📋 Sao chép kế hoạch từ Tuần 1 sang Tuần 2</div>
+                <div class="text-xs text-muted">Nhân bản toàn bộ lịch tuần 1 sang tuần 2 cho nhân sự đang chọn</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline" id="btn-qa-copy-prev" style="font-size: 0.78rem; border-color: var(--accent-primary); color: var(--accent-primary); font-weight: 600; white-space: nowrap;">
+                Sao chép ngay
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-footer" style="border-top: 1px solid var(--border-subtle); padding-top: 12px; display: flex; justify-content: space-between;">
+            <button class="btn btn-outline" id="quick-alloc-cancel">Hủy bỏ</button>
+            <button class="btn btn-primary" id="quick-alloc-apply" style="font-weight: 700; background: #10b981; border-color: #10b981; display: flex; align-items: center; gap: 6px;">
+              ⚡ Áp dụng phân bổ
+            </button>
+          </div>
+        </div>
+      </div>
+
       <style>
         .planning-table th, .planning-table td {
           white-space: nowrap;
@@ -953,6 +1187,31 @@ export function render() {
         }
         .project-header-row:hover {
           filter: brightness(1.02);
+        }
+        .btn-workload-filter-pill {
+          padding: 3px 9px;
+          font-size: 0.76rem;
+          font-weight: 600;
+          border-radius: 16px;
+          border: 1px solid var(--border-subtle);
+          background: var(--bg-card);
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.15s ease;
+          user-select: none;
+        }
+        .btn-workload-filter-pill:hover {
+          background: var(--bg-tertiary);
+          border-color: var(--accent-primary);
+        }
+        .btn-workload-filter-pill.active {
+          background: var(--accent-primary) !important;
+          color: #fff !important;
+          border-color: var(--accent-primary) !important;
+          box-shadow: 0 2px 6px rgba(59, 130, 246, 0.3);
+        }
+        .qa-week-choice:hover {
+          border-color: var(--accent-primary) !important;
         }
       </style>
     </div>
@@ -1014,7 +1273,7 @@ export function init() {
     refreshView();
   });
 
-  // 4. Collapse / Expand All
+  // 4. Collapse / Expand All & Display Levels
   document.getElementById('btn-collapse-all')?.addEventListener('click', () => {
     const { personnel } = getState();
     (personnel || []).forEach(p => collapsedMembers.add(p.id));
@@ -1027,10 +1286,46 @@ export function init() {
     refreshView();
   });
 
+  document.getElementById('btn-level-1')?.addEventListener('click', () => {
+    currentDisplayLevel = 'level-1';
+    const { personnel } = getState();
+    collapsedMembers = new Set((personnel || []).map(p => p.id));
+    collapsedProjects.clear();
+    refreshView();
+  });
+
+  document.getElementById('btn-level-2')?.addEventListener('click', () => {
+    currentDisplayLevel = 'level-2';
+    collapsedMembers.clear();
+    collapsedProjects = new Set();
+    const state = getState();
+    (state.personnel || []).forEach(person => {
+      (state.projects || []).forEach(proj => {
+        collapsedProjects.add(`${person.id}_${proj.id}`);
+      });
+    });
+    refreshView();
+  });
+
+  document.getElementById('btn-level-3')?.addEventListener('click', () => {
+    currentDisplayLevel = 'level-3';
+    collapsedMembers.clear();
+    collapsedProjects.clear();
+    refreshView();
+  });
+
+  // Workload Filter Pills
+  document.querySelectorAll('.btn-workload-filter-pill').forEach(pill => {
+    pill.addEventListener('click', (e) => {
+      currentWorkloadFilter = e.currentTarget.dataset.filter || 'all';
+      refreshView();
+    });
+  });
+
   // 5. Interactive Accordion Click (Member level & Project level)
   document.querySelectorAll('.member-header-row').forEach(row => {
     row.addEventListener('click', (e) => {
-      if (e.target.closest('.btn-analytics')) return;
+      if (e.target.closest('.btn-analytics') || e.target.closest('.btn-row-quick-alloc')) return;
       const personId = row.dataset.personId;
       if (!personId) return;
 
@@ -1045,6 +1340,7 @@ export function init() {
 
   document.querySelectorAll('.project-header-row').forEach(row => {
     row.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-proj-quick-alloc')) return;
       const projKey = row.dataset.projKey;
       if (!projKey) return;
 
@@ -1186,6 +1482,385 @@ export function init() {
       modalTs.style.display = 'none';
     }
   });
+
+  // 10. Quick Weekly Allocation Modal Controls & Listeners
+  const modalQa = document.getElementById('quick-alloc-modal');
+
+  document.getElementById('btn-quick-alloc-trigger')?.addEventListener('click', () => {
+    openQuickAllocModal();
+  });
+
+  document.querySelectorAll('.btn-row-quick-alloc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openQuickAllocModal({ memberId: e.currentTarget.dataset.uid });
+    });
+  });
+
+  document.querySelectorAll('.btn-proj-quick-alloc').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openQuickAllocModal({
+        memberId: e.currentTarget.dataset.uid,
+        projectId: e.currentTarget.dataset.pid
+      });
+    });
+  });
+
+  document.getElementById('quick-alloc-close')?.addEventListener('click', () => {
+    if (modalQa) modalQa.style.display = 'none';
+  });
+  document.getElementById('quick-alloc-cancel')?.addEventListener('click', () => {
+    if (modalQa) modalQa.style.display = 'none';
+  });
+
+  document.getElementById('qa-project')?.addEventListener('change', (e) => {
+    updateQaTaskOptions(e.target.value);
+  });
+
+  document.getElementById('qa-hours')?.addEventListener('input', () => {
+    updateQaCalcSummary();
+  });
+
+  document.querySelectorAll('.qa-day-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      updateQaCalcSummary();
+    });
+  });
+
+  document.querySelectorAll('input[name="qa-week"]').forEach(r => {
+    r.addEventListener('change', () => {
+      updateQaCalcSummary();
+    });
+  });
+
+  // Day shortcuts
+  document.getElementById('btn-qa-days-weekdays')?.addEventListener('click', () => {
+    document.querySelectorAll('.qa-day-chk').forEach(chk => {
+      chk.checked = ['T2', 'T3', 'T4', 'T5', 'T6'].includes(chk.value);
+    });
+    updateQaCalcSummary();
+  });
+
+  document.getElementById('btn-qa-days-sat')?.addEventListener('click', () => {
+    document.querySelectorAll('.qa-day-chk').forEach(chk => {
+      chk.checked = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'].includes(chk.value);
+    });
+    updateQaCalcSummary();
+  });
+
+  document.getElementById('btn-qa-days-all')?.addEventListener('click', () => {
+    document.querySelectorAll('.qa-day-chk').forEach(chk => {
+      chk.checked = true;
+    });
+    updateQaCalcSummary();
+  });
+
+  // Hour presets
+  document.querySelectorAll('.btn-qa-preset').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const hInput = document.getElementById('qa-hours');
+      if (hInput) {
+        hInput.value = e.currentTarget.dataset.hours;
+        updateQaCalcSummary();
+      }
+    });
+  });
+
+  // Copy Week 1 to Week 2
+  document.getElementById('btn-qa-copy-prev')?.addEventListener('click', () => {
+    const memberId = document.getElementById('qa-member')?.value;
+    const projectId = document.getElementById('qa-project')?.value;
+    if (!memberId) {
+      showToast('⚠️ Vui lòng chọn nhân sự trước khi sao chép!', 'warning');
+      return;
+    }
+    const { personnel } = getState();
+    const p = (personnel || []).find(x => x.id === memberId);
+    if (confirm(`Bạn có chắc chắn muốn sao chép toàn bộ kế hoạch Tuần 1 sang Tuần 2 cho ${p ? p.name : memberId}?`)) {
+      copyPlanWeek1ToWeek2(memberId, projectId);
+      if (modalQa) modalQa.style.display = 'none';
+    }
+  });
+
+  // Apply Quick Allocation
+  document.getElementById('quick-alloc-apply')?.addEventListener('click', () => {
+    const memberId = document.getElementById('qa-member')?.value;
+    const projectId = document.getElementById('qa-project')?.value;
+    const taskId = document.getElementById('qa-task')?.value || 't_general';
+    const weekOption = document.querySelector('input[name="qa-week"]:checked')?.value || '0';
+    const selectedDays = Array.from(document.querySelectorAll('.qa-day-chk:checked')).map(c => c.value);
+    const rawH = document.getElementById('qa-hours')?.value?.trim();
+    const hours = parseFloat(rawH);
+    const isOT = !!document.getElementById('qa-isot')?.checked;
+    const comment = document.getElementById('qa-comment')?.value?.trim() || '';
+
+    if (!memberId || !projectId) {
+      showToast('⚠️ Vui lòng chọn nhân sự và dự án!', 'warning');
+      return;
+    }
+    if (isNaN(hours) || hours <= 0) {
+      showToast('⚠️ Số giờ mỗi ngày phải lớn hơn 0!', 'warning');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      showToast('⚠️ Vui lòng chọn ít nhất 1 ngày trong tuần!', 'warning');
+      return;
+    }
+
+    applyQuickWeeklyAllocation({
+      memberId,
+      projectId,
+      taskId,
+      weekOption,
+      selectedDays,
+      hoursPerDay: hours,
+      isOT,
+      comment
+    });
+
+    if (modalQa) modalQa.style.display = 'none';
+  });
+}
+
+function openQuickAllocModal(prefill = {}) {
+  const modal = document.getElementById('quick-alloc-modal');
+  if (!modal) return;
+
+  const memberSelect = document.getElementById('qa-member');
+  const projSelect = document.getElementById('qa-project');
+
+  if (prefill.memberId && memberSelect) {
+    memberSelect.value = prefill.memberId;
+  }
+  if (prefill.projectId && projSelect) {
+    projSelect.value = prefill.projectId;
+  }
+
+  updateQaTaskOptions(projSelect ? projSelect.value : '', prefill.taskId || '');
+  updateQaCalcSummary();
+  modal.style.display = 'flex';
+}
+
+function updateQaTaskOptions(projectId, preselectedTaskId = '') {
+  const taskSelect = document.getElementById('qa-task');
+  if (!taskSelect) return;
+  const { projects } = getState();
+  const proj = (projects || []).find(p => p.id === projectId);
+
+  let html = `<option value="t_general">📌 Công việc chung (Chưa phân Task cụ thể)</option>`;
+  if (proj && proj.tasks && proj.tasks.length > 0) {
+    proj.tasks.forEach((t, idx) => {
+      const effectiveId = t.id || `t_${idx}`;
+      let name = t.name;
+      if (t.segmentIdx !== undefined && proj.segments?.[t.segmentIdx]) {
+        name += ` - ${proj.segments[t.segmentIdx].name}`;
+      }
+      html += `<option value="${effectiveId}" ${preselectedTaskId === effectiveId ? 'selected' : ''}>📝 ${name}</option>`;
+    });
+  }
+  if (proj && proj.rfis && proj.rfis.length > 0) {
+    proj.rfis.forEach((r, idx) => {
+      const effectiveId = r.id || `rfi_${idx}`;
+      html += `<option value="${effectiveId}" ${preselectedTaskId === effectiveId ? 'selected' : ''}>❓ [RFI] ${r.title}</option>`;
+    });
+  }
+  taskSelect.innerHTML = html;
+}
+
+function updateQaCalcSummary() {
+  const summaryEl = document.getElementById('qa-calc-summary');
+  if (!summaryEl) return;
+  const hours = parseFloat(document.getElementById('qa-hours')?.value || 0) || 0;
+  const checkedDays = document.querySelectorAll('.qa-day-chk:checked').length;
+  const weekOption = document.querySelector('input[name="qa-week"]:checked')?.value;
+  const weeksCount = weekOption === 'both' ? 2 : 1;
+  const totalHours = checkedDays * hours * weeksCount;
+
+  summaryEl.textContent = `= ${checkedDays} ngày × ${hours}h${weeksCount > 1 ? ' × 2 tuần' : ''} = ${totalHours}h (${weeksCount === 1 ? '1 tuần' : '2 tuần'})`;
+}
+
+function applyQuickWeeklyAllocation({ memberId, projectId, taskId, weekOption, selectedDays, hoursPerDay, isOT, comment }) {
+  const planData = getPlanningData(currentOffset);
+  const { timesheets, projects, personnel } = getState();
+  const updated = [...(timesheets || [])];
+
+  const targetWeeks = [];
+  if (weekOption === '0') targetWeeks.push(planData[0]);
+  else if (weekOption === '1') targetWeeks.push(planData[1]);
+  else if (weekOption === 'both') targetWeeks.push(planData[0], planData[1]);
+
+  const targetDates = [];
+  targetWeeks.forEach(w => {
+    (w.days || []).forEach(d => {
+      if (selectedDays.includes(d.name)) {
+        targetDates.push(d.dateString);
+      }
+    });
+  });
+
+  if (targetDates.length === 0) {
+    showToast('⚠️ Vui lòng chọn ít nhất 1 ngày trong tuần!', 'warning');
+    return;
+  }
+
+  const proj = (projects || []).find(p => p.id === projectId);
+  let targetTask = null;
+  if (proj && proj.tasks) {
+    targetTask = proj.tasks.find(x => x.id === taskId) || (taskId.startsWith('t_') ? proj.tasks[parseInt(taskId.replace('t_', ''), 10)] : null);
+  }
+  const taskName = targetTask ? targetTask.name : (taskId.startsWith('rfi_') ? 'Xử lý RFI' : (taskId === 't_general' ? 'Công việc chung' : taskId));
+  const person = (personnel || []).find(p => p.id === memberId) || (personnel || []).find(p => matchUserTs({ userId: memberId, userName: memberId, email: memberId }, p.id, personnel));
+
+  let modifiedCount = 0;
+  const unblockKeys = [];
+
+  targetDates.forEach(dateStr => {
+    const existingIdx = updated.findIndex(t => 
+      matchTaskTs(t, memberId, taskId, projectId, projects, personnel) && 
+      (t.dateString === dateStr || t.date === dateStr) && 
+      !t.isActual
+    );
+
+    if (existingIdx >= 0) {
+      updated[existingIdx] = {
+        ...updated[existingIdx],
+        hours: hoursPerDay,
+        isOT: isOT,
+        comment: comment || updated[existingIdx].comment || '',
+        note: comment || updated[existingIdx].note || '',
+        dateString: dateStr,
+        date: dateStr,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      updated.unshift({
+        id: `ts-plan-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        userId: person ? person.id : memberId,
+        userName: person ? person.name : '',
+        email: person ? person.email : '',
+        projectId: projectId,
+        projectName: proj ? proj.name : '',
+        taskId: targetTask?.id || taskId,
+        taskName: taskName,
+        dateString: dateStr,
+        date: dateStr,
+        hours: hoursPerDay,
+        isActual: false,
+        isOT: isOT,
+        comment: comment,
+        note: comment,
+        createdAt: new Date().toISOString()
+      });
+    }
+
+    if (proj && targetTask) {
+      if (!targetTask.dailyHours_planned) targetTask.dailyHours_planned = {};
+      targetTask.dailyHours_planned[dateStr] = hoursPerDay;
+    }
+
+    unblockKeys.push(
+      `syn-plan-${taskId}-${dateStr}`,
+      `ts-plan-${taskId}-${dateStr}`,
+      targetTask?.id ? `syn-plan-${targetTask.id}-${dateStr}` : '',
+      targetTask?.id ? `ts-plan-${targetTask.id}-${dateStr}` : '',
+      `${memberId}_${projectId}_${taskId}_${dateStr}_false`
+    );
+    modifiedCount++;
+  });
+
+  if (proj && targetTask) {
+    updateProject(proj.id, { tasks: proj.tasks });
+  }
+
+  // Gỡ bỏ tombstone cũ nếu có
+  if (getState().deletedTimesheetIds && getState().deletedTimesheetIds.length > 0) {
+    const blockedKeys = new Set(unblockKeys.filter(Boolean));
+    const filteredDel = getState().deletedTimesheetIds.filter(k => !blockedKeys.has(k));
+    setState('deletedTimesheetIds', filteredDel);
+    try {
+      localStorage.setItem('bimTransPM_DeletedTimesheets', JSON.stringify(filteredDel));
+    } catch(e) {}
+  }
+
+  setState('timesheets', updated);
+  saveLocalSnapshot(`Phân bổ nhanh: ${hoursPerDay}h/ngày (${modifiedCount} ngày) cho ${person ? person.name : memberId}`);
+  showToast(`✅ Đã phân bổ ${modifiedCount * hoursPerDay}h kế hoạch cho ${formatDisplayName(person ? person.name : memberId)}!`);
+  refreshView();
+}
+
+function copyPlanWeek1ToWeek2(memberId, projectId) {
+  const planData = getPlanningData(currentOffset);
+  const { timesheets, projects, personnel } = getState();
+  const updated = [...(timesheets || [])];
+
+  const w1Days = planData[0].days;
+  const w2Days = planData[1].days;
+
+  let copiedCount = 0;
+  const person = (personnel || []).find(p => p.id === memberId);
+
+  for (let i = 0; i < 7; i++) {
+    const d1Str = w1Days[i].dateString;
+    const d2Str = w2Days[i].dateString;
+
+    const d1Records = updated.filter(t => 
+      matchUserTs(t, memberId, personnel) && 
+      (!projectId || t.projectId === projectId) && 
+      (t.dateString === d1Str || t.date === d1Str) && 
+      !t.isActual && 
+      Number(t.hours) > 0
+    );
+
+    d1Records.forEach(rec => {
+      const existingIdx = updated.findIndex(t => 
+        matchTaskTs(t, memberId, rec.taskId, rec.projectId, projects, personnel) && 
+        (t.dateString === d2Str || t.date === d2Str) && 
+        !t.isActual
+      );
+
+      if (existingIdx >= 0) {
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          hours: rec.hours,
+          isOT: rec.isOT,
+          comment: rec.comment || '',
+          dateString: d2Str,
+          date: d2Str,
+          updatedAt: new Date().toISOString()
+        };
+      } else {
+        updated.unshift({
+          id: `ts-plan-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          userId: rec.userId,
+          userName: rec.userName,
+          email: rec.email,
+          projectId: rec.projectId,
+          projectName: rec.projectName,
+          taskId: rec.taskId,
+          taskName: rec.taskName,
+          dateString: d2Str,
+          date: d2Str,
+          hours: rec.hours,
+          isActual: false,
+          isOT: rec.isOT,
+          comment: rec.comment,
+          createdAt: new Date().toISOString()
+        });
+      }
+      copiedCount++;
+    });
+  }
+
+  if (copiedCount === 0) {
+    showToast('⚠️ Tuần 1 chưa có dữ liệu giờ kế hoạch để sao chép!', 'warning');
+    return;
+  }
+
+  setState('timesheets', updated);
+  saveLocalSnapshot(`Sao chép kế hoạch Tuần 1 sang Tuần 2 cho ${person ? person.name : memberId}`);
+  showToast(`✅ Đã sao chép thành công ${copiedCount} lượt phân bổ sang Tuần 2!`);
+  refreshView();
 }
 
 function refreshView() {

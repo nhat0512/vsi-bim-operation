@@ -11,8 +11,10 @@ let hoursOverTimeChartInstance = null;
 let hoursByPhaseChartInstance = null;
 let hoursByMemberChartInstance = null;
 let currentHoursTimeView = 'week';
-let currentProjectTab = 'overview'; // 'overview' | 'tasks' | 'segments' | 'rfis' | 'all'
-let currentTaskViewMode = 'table'; // 'table' | 'kanban'
+let currentProjectTab = 'overview'; // 'overview' | 'tasks' | 'gantt' | 'segments' | 'rfis' | 'all'
+let currentTaskViewMode = 'table'; // 'table' | 'kanban' | 'gantt'
+let taskGanttScale = 'month'; // 'day' | 'week' | 'month' | 'quarter'
+let taskGanttInstance = null;
 let hoursSummaryCache = { key: '', data: null };
 
 function getIsEditing() {
@@ -215,6 +217,9 @@ export function render() {
         <button class="tab ${currentProjectTab === 'tasks' ? 'tab--active' : ''} btn-proj-tab" data-tab="tasks" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span>📌</span> <span>Công việc (${(project.tasks || []).length})</span>
         </button>
+        <button class="tab ${currentProjectTab === 'gantt' ? 'tab--active' : ''} btn-proj-tab" data-tab="gantt" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <span>📅</span> <span>Tiến độ & Gantt</span>
+        </button>
         <button class="tab ${currentProjectTab === 'segments' ? 'tab--active' : ''} btn-proj-tab" data-tab="segments" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span>📍</span> <span>Ma trận Phân đoạn (${(project.segments || []).length})</span>
         </button>
@@ -263,6 +268,8 @@ function renderTabContentHTML(tabName, project) {
       `;
     case 'tasks':
       return renderTasksSection(project, isEditing, personnel, formatDate);
+    case 'gantt':
+      return renderTasksGanttSection(project, isEditing, personnel, formatDate);
     case 'segments':
       return renderSegmentsSection(project, isEditing);
     case 'rfis':
@@ -520,10 +527,11 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
             </div>
           </div>
 
-          <!-- Chế độ xem: Bảng vs Kanban -->
+          <!-- Chế độ xem: Bảng vs Kanban vs Gantt -->
           <div style="display: inline-flex; background: var(--bg-tertiary); border-radius: 6px; padding: 2px; border: 1px solid var(--border-color); margin-left: 8px;">
             <button id="btn-view-table" type="button" class="btn btn-sm ${currentTaskViewMode === 'table' ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📋 Bảng</button>
             <button id="btn-view-kanban" type="button" class="btn btn-sm ${currentTaskViewMode === 'kanban' ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📊 Kanban</button>
+            <button id="btn-view-gantt" type="button" class="btn btn-sm ${currentTaskViewMode === 'gantt' ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📅 Gantt</button>
           </div>
         </div>
 
@@ -576,6 +584,8 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
 
       ${currentTaskViewMode === 'kanban' ? `
         ${renderTasksKanban(project, personnel, formatDate)}
+      ` : currentTaskViewMode === 'gantt' ? `
+        ${renderTasksGanttSection(project, isEditing, personnel, formatDate)}
       ` : `
         <!-- Search & Filters -->
         <div style="padding: 10px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -824,6 +834,461 @@ function renderTasksKanban(project, personnel, formatDate) {
       }).join('')}
     </div>
   `;
+}
+
+/**
+ * RENDER TAB TIẾN ĐỘ & BIỂU ĐỒ GANTT TƯƠNG TÁC (TASK-LEVEL GANTT & LIVE SLIDERS)
+ */
+function renderTasksGanttSection(project, isEditing, personnel, formatDate) {
+  const tasks = project.tasks || [];
+  const milestones = project.milestones || [];
+  const completedCount = tasks.filter(t => (t.progress || 0) >= 100).length;
+  const activeCount = tasks.filter(t => (t.progress || 0) > 0 && (t.progress || 0) < 100).length;
+  const overdueCount = tasks.filter(t => (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < new Date()).length;
+
+  return `
+    <div class="card mb-lg animate-fade-in" style="border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow-sm);">
+      <!-- Header Bar -->
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 20px; background: var(--bg-card); border-bottom: 1px solid var(--border-color);">
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <div>
+            <h3 class="card-title" style="margin: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 8px;">
+              <span>📅</span> <span>Biểu đồ Gantt & Kéo trượt Tiến độ Công việc</span>
+            </h3>
+            <div class="text-xs text-muted" style="margin-top: 3px;">
+              Kéo thanh bar để dời ngày · Kéo nút tròn bên trong bar hoặc kéo thanh trượt bên dưới để cập nhật tiến độ
+            </div>
+          </div>
+          
+          <!-- Chế độ xem: Bảng vs Kanban vs Gantt -->
+          <div style="display: inline-flex; background: var(--bg-tertiary); border-radius: 6px; padding: 2px; border: 1px solid var(--border-color); margin-left: 8px;">
+            <button id="btn-view-table-from-gantt" type="button" class="btn btn-sm btn-ghost" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📋 Bảng</button>
+            <button id="btn-view-kanban-from-gantt" type="button" class="btn btn-sm btn-ghost" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📊 Kanban</button>
+            <button id="btn-view-gantt-active" type="button" class="btn btn-sm btn-primary" style="padding: 4px 10px; font-size: 0.8rem; border-radius: 4px;">📅 Gantt</button>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <!-- Thang thời gian (Zoom Scale) -->
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);">Thang đo:</label>
+            <select id="task-gantt-scale-select" class="form-select" style="width: 125px; padding: 4px 8px; font-size: 0.8rem; font-weight: 600;">
+              <option value="day" ${taskGanttScale === 'day' ? 'selected' : ''}>Ngày (Day)</option>
+              <option value="week" ${taskGanttScale === 'week' ? 'selected' : ''}>Tuần (Week)</option>
+              <option value="month" ${taskGanttScale === 'month' ? 'selected' : ''}>Tháng (Month)</option>
+              <option value="quarter" ${taskGanttScale === 'quarter' ? 'selected' : ''}>Quý (Quarter)</option>
+            </select>
+          </div>
+
+          <button class="btn btn-primary btn-sm" id="btn-gantt-add-task">
+            ➕ Thêm công việc
+          </button>
+        </div>
+      </div>
+
+      <!-- Thanh tổng quan tiến độ tích hợp (Integrated Progress KPI Bar) -->
+      <div style="padding: 12px 20px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 280px;">
+          <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary); white-space: nowrap;">
+            Tiến độ tổng dự án: <strong style="color: var(--accent-primary); font-size: 1.15rem;" id="gantt-proj-progress-text">${project.progress || 0}%</strong>
+          </div>
+          <div class="progress-bar" style="flex: 1; height: 10px; background: rgba(148, 163, 184, 0.2); border-radius: 6px; overflow: hidden;">
+            <div id="gantt-proj-progress-bar" class="progress-bar-fill" style="width: ${project.progress || 0}%; background: linear-gradient(90deg, #3b82f6, #10b981); height: 100%; transition: width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 0.78rem;">
+          <span class="badge blue" style="font-weight: 600;">📌 ${tasks.length} công việc</span>
+          <span class="badge green" style="font-weight: 600;">✔ ${completedCount} Hoàn thành</span>
+          <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; font-weight: 600;">⚡ ${activeCount} Đang chạy</span>
+          ${overdueCount > 0 ? `<span class="badge red" style="font-weight: 600;">⚠️ ${overdueCount} Quá hạn</span>` : ''}
+          ${milestones.length > 0 ? `<span class="badge purple" style="font-weight: 600;">🚩 ${milestones.length} Cột mốc</span>` : ''}
+        </div>
+      </div>
+
+      <!-- Gantt Chart Canvas Container -->
+      <div style="padding: 16px; overflow-x: auto; background: var(--bg-card); position: relative; min-height: 280px;">
+        <div id="project-task-gantt-container" style="width: 100%; min-height: 280px;">
+          <svg id="project-task-gantt-svg" style="width: 100%; min-height: 280px;"></svg>
+        </div>
+      </div>
+
+      <!-- Bảng Thanh trượt Tiến độ Nhanh (Live Quick-Progress Sliders) -->
+      <div style="border-top: 2px solid var(--border-color); padding: 16px 20px; background: var(--bg-card);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+          <div>
+            <h4 style="margin: 0; font-size: 0.95rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+              ⚡ Bảng Cập nhật Nhanh Tiến độ (Kéo thanh trượt để cập nhật tức thì)
+            </h4>
+            <div style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">
+              Kéo thanh trượt hoặc bấm nút nhanh (+10%, +25%, 100%) để điều chỉnh tiến độ · Hệ thống tự động tính lại tiến độ toàn dự án
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="task-gantt-search-filter" class="form-input" placeholder="🔍 Tìm công việc..." style="font-size: 0.8rem; padding: 4px 10px; width: 180px;">
+          </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="data-table" style="width: 100%; font-size: 0.84rem;" id="task-gantt-sliders-table">
+            <thead>
+              <tr>
+                <th style="width: 40px; text-align: center;">STT</th>
+                <th>Tên công việc / Cột mốc</th>
+                <th style="width: 160px;">Phụ trách</th>
+                <th style="width: 110px; text-align: center;">Giai đoạn</th>
+                <th style="width: 110px; text-align: center;">Hạn chót</th>
+                <th style="width: 250px; text-align: center;">Kéo trượt Tiến độ</th>
+                <th style="width: 150px; text-align: center;">Tăng nhanh</th>
+                <th style="width: 120px; text-align: center;">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tasks.length === 0 ? `
+                <tr><td colspan="8" style="text-align: center; padding: 24px; color: var(--text-muted);">Dự án chưa có công việc nào. Bấm "+ Thêm công việc" để tạo mới.</td></tr>
+              ` : tasks.map((t, idx) => {
+                const isOverdue = (t.progress || 0) < 100 && t.dueDate && new Date(t.dueDate) < new Date();
+                const person = (personnel || []).find(p => p.name === t.assignee);
+                const avatar = person ? person.avatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(t.assignee || 'U')}&background=random`;
+                const progColor = (t.progress || 0) >= 100 ? '#10b981' : (t.progress || 0) >= 50 ? '#3b82f6' : (t.progress || 0) > 0 ? '#f59e0b' : '#94a3b8';
+                
+                return `
+                  <tr class="gantt-task-row" data-name="${(t.name || '').toLowerCase()}" data-assignee="${(t.assignee || '').toLowerCase()}">
+                    <td style="text-align: center; color: var(--text-muted); font-size: 0.78rem;">${idx + 1}</td>
+                    <td>
+                      <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 2px;">
+                        ${t.name}
+                      </div>
+                      ${(t.lod || t.chainage) ? `
+                        <div style="font-size: 0.72rem; color: var(--text-muted);">
+                          ${t.chainage ? `📍 ${t.chainage}` : ''} ${t.lod ? `· 🏷️ ${t.lod}` : ''}
+                        </div>
+                      ` : ''}
+                    </td>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 6px;">
+                        <img src="${avatar}" style="width: 20px; height: 20px; border-radius: 50%;">
+                        <span style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                          ${formatDisplayName(t.assignee) || 'Chưa gán'}
+                        </span>
+                      </div>
+                    </td>
+                    <td style="text-align: center;">
+                      <span class="badge blue" style="font-size: 0.72rem; padding: 2px 7px;">${t.phase || 'BVTC'}</span>
+                    </td>
+                    <td style="text-align: center; font-size: 0.8rem; ${isOverdue ? 'color: var(--accent-danger); font-weight: 600;' : ''}">
+                      ${formatDate(t.dueDate)}
+                      ${isOverdue ? `<div style="font-size: 0.68rem; color: #ef4444;">⚠️ Quá hạn</div>` : ''}
+                    </td>
+                    <td>
+                      <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+                        <input type="range" class="task-progress-slider" data-id="${t.id}" min="0" max="100" step="5" value="${t.progress || 0}" style="width: 130px; cursor: pointer; accent-color: var(--accent-primary);">
+                        <span class="task-progress-num" id="tp-num-${t.id}" style="font-weight: 700; min-width: 42px; text-align: right; font-size: 0.82rem; color: ${progColor};">
+                          ${t.progress || 0}%
+                        </span>
+                      </div>
+                    </td>
+                    <td style="text-align: center;">
+                      <div style="display: flex; gap: 3px; justify-content: center;">
+                        <button type="button" class="btn btn-ghost btn-xs btn-step-prog" data-id="${t.id}" data-step="10" title="Tăng 10%" style="padding: 2px 5px; font-size: 0.72rem;">+10%</button>
+                        <button type="button" class="btn btn-ghost btn-xs btn-step-prog" data-id="${t.id}" data-step="25" title="Tăng 25%" style="padding: 2px 5px; font-size: 0.72rem;">+25%</button>
+                        <button type="button" class="btn btn-outline btn-xs btn-finish-prog" data-id="${t.id}" title="Đánh dấu hoàn thành 100%" style="padding: 2px 6px; font-size: 0.72rem; color: #10b981; border-color: rgba(16, 185, 129, 0.4);">✔ 100%</button>
+                      </div>
+                    </td>
+                    <td style="text-align: center;" id="tp-badge-col-${t.id}">
+                      ${(t.progress || 0) >= 100 ? `
+                        <span class="badge green" style="font-size: 0.72rem; padding: 2px 7px;">Hoàn thành</span>
+                      ` : isOverdue ? `
+                        <span class="badge red" style="font-size: 0.72rem; padding: 2px 7px;">Quá hạn</span>
+                      ` : (t.progress || 0) > 0 ? `
+                        <span class="badge active" style="font-size: 0.72rem; padding: 2px 7px;">Đang chạy</span>
+                      ` : `
+                        <span class="badge planning" style="font-size: 0.72rem; padding: 2px 7px;">Lập KH</span>
+                      `}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * CẬP NHẬT TIẾN ĐỘ CÔNG VIỆC VÀ TÍNH LẠI TIẾN ĐỘ TOÀN DỰ ÁN
+ */
+function applyTaskProgressUpdate(project, taskId, newProgress) {
+  const task = (project.tasks || []).find(t => t.id === taskId);
+  if (!task) return;
+
+  task.progress = Math.min(100, Math.max(0, Number(newProgress) || 0));
+
+  if (task.progress >= 100) {
+    task.status = 'completed';
+  } else if (task.progress > 0 && task.status === 'planning') {
+    task.status = 'active';
+  }
+
+  // Tính lại tiến độ tổng thể của toàn dự án
+  const totalProg = (project.tasks || []).reduce((sum, t) => sum + (t.progress || 0), 0);
+  project.progress = project.tasks.length > 0 ? Math.round(totalProg / project.tasks.length) : 0;
+
+  // Cập nhật DOM tức thời (0ms phản hồi người dùng)
+  const slider = document.querySelector(`.task-progress-slider[data-id="${taskId}"]`);
+  if (slider) slider.value = task.progress;
+
+  const numEl = document.getElementById(`tp-num-${taskId}`);
+  if (numEl) {
+    numEl.textContent = `${task.progress}%`;
+    numEl.style.color = task.progress >= 100 ? '#10b981' : task.progress >= 50 ? '#3b82f6' : task.progress > 0 ? '#f59e0b' : '#94a3b8';
+  }
+
+  const badgeCol = document.getElementById(`tp-badge-col-${taskId}`);
+  if (badgeCol) {
+    const isOverdue = task.progress < 100 && task.dueDate && new Date(task.dueDate) < new Date();
+    if (task.progress >= 100) {
+      badgeCol.innerHTML = '<span class="badge green" style="font-size: 0.72rem; padding: 2px 7px;">Hoàn thành</span>';
+    } else if (isOverdue) {
+      badgeCol.innerHTML = '<span class="badge red" style="font-size: 0.72rem; padding: 2px 7px;">Quá hạn</span>';
+    } else if (task.progress > 0) {
+      badgeCol.innerHTML = '<span class="badge active" style="font-size: 0.72rem; padding: 2px 7px;">Đang chạy</span>';
+    } else {
+      badgeCol.innerHTML = '<span class="badge planning" style="font-size: 0.72rem; padding: 2px 7px;">Lập KH</span>';
+    }
+  }
+
+  // Cập nhật các chỉ số tổng hợp trên màn hình
+  const kpiText = document.getElementById('proj-kpi-progress');
+  if (kpiText) kpiText.textContent = `${project.progress}%`;
+
+  const ganttProgText = document.getElementById('gantt-proj-progress-text');
+  if (ganttProgText) ganttProgText.textContent = `${project.progress}%`;
+
+  const ganttProgBar = document.getElementById('gantt-proj-progress-bar');
+  if (ganttProgBar) ganttProgBar.style.width = `${project.progress}%`;
+
+  // Lưu an toàn qua updateProject (tự động đồng bộ Cloud & lưu Snapshot)
+  updateProject(project.id, {
+    tasks: [...project.tasks],
+    progress: project.progress
+  });
+
+  showToast(`🎯 Đã cập nhật tiến độ ${task.progress}% cho "${task.name}" (Tiến độ dự án: ${project.progress}%)`);
+}
+
+/**
+ * INJECT STYLE CHO TASK GANTT
+ */
+function injectTaskGanttStyles() {
+  const styleId = 'frappe-task-gantt-custom-colors';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+      .gantt-bar-milestone .bar { fill: #8b5cf6 !important; }
+      .gantt-bar-milestone .bar-progress { fill: #6d28d9 !important; }
+      .gantt .handle.progress {
+        cursor: ew-resize !important;
+        fill: #ffffff !important;
+        stroke: #3b82f6 !important;
+        stroke-width: 2px !important;
+      }
+      .task-progress-slider::-webkit-slider-thumb {
+        cursor: grab;
+      }
+      .task-progress-slider::-webkit-slider-thumb:active {
+        cursor: grabbing;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+/**
+ * KHỞI TẠO SỰ KIỆN GANTT CÔNG VIỆC
+ */
+function initTaskGanttEvents(project) {
+  if (!project) return;
+  const container = document.getElementById('project-task-gantt-container');
+  const svgEl = document.getElementById('project-task-gantt-svg');
+  if (!container || !svgEl) return;
+
+  const isManager = getIsEditing();
+
+  // Helper chuyển đổi view mode của Frappe Gantt
+  let viewMode = 'Month';
+  if (taskGanttScale === 'day') viewMode = 'Day';
+  else if (taskGanttScale === 'week') viewMode = 'Week';
+  else if (taskGanttScale === 'quarter') viewMode = 'Year';
+
+  // Inject styles cho Frappe Gantt
+  injectTaskGanttStyles();
+
+  // Chuẩn bị danh sách ganttTasks
+  const ganttTasks = [];
+
+  // 1. Cột mốc Milestones
+  (project.milestones || []).forEach((m, idx) => {
+    let mDateStr = m.date ? m.date.split('T')[0] : (project.endDate ? project.endDate.split('T')[0] : '2026-12-31');
+    let d = new Date(mDateStr);
+    if (isNaN(d.getTime())) d = new Date('2026-12-31');
+    const safeDate = formatLocalDate(d);
+
+    ganttTasks.push({
+      id: m.id || `ms-${idx}`,
+      name: `🚩 ${m.name || 'Cột mốc'}`,
+      start: safeDate,
+      end: safeDate,
+      progress: 100,
+      custom_class: 'gantt-bar-purple'
+    });
+  });
+
+  // 2. Danh sách Công việc Tasks
+  (project.tasks || []).forEach((t, idx) => {
+    let endStr = t.dueDate ? t.dueDate.split('T')[0] : (project.endDate ? project.endDate.split('T')[0] : '2026-12-31');
+    let dEnd = new Date(endStr);
+    if (isNaN(dEnd.getTime())) dEnd = new Date('2026-12-31');
+
+    let startStr = t.startDate ? t.startDate.split('T')[0] : '';
+    let dStart = startStr ? new Date(startStr) : null;
+    if (!dStart || isNaN(dStart.getTime()) || dStart >= dEnd) {
+      dStart = new Date(dEnd.getTime() - 14 * 24 * 60 * 60 * 1000); // 14 ngày trước hạn
+    }
+    startStr = formatLocalDate(dStart);
+    endStr = formatLocalDate(dEnd);
+
+    let customClass = 'gantt-bar-blue';
+    const now = new Date();
+    if ((t.progress || 0) >= 100) customClass = 'gantt-bar-green';
+    else if (dEnd < now) customClass = 'gantt-bar-red';
+    else if ((t.progress || 0) === 0) customClass = 'gantt-bar-orange';
+
+    const shortAssignee = t.assignee ? t.assignee.split(' ').pop() : '';
+    ganttTasks.push({
+      id: t.id || `t-${idx}`,
+      name: `${t.name}${shortAssignee ? ' (' + shortAssignee + ')' : ''}`,
+      start: startStr,
+      end: endStr,
+      progress: Math.min(100, Math.max(0, Number(t.progress) || 0)),
+      custom_class: customClass
+    });
+  });
+
+  // Khởi tạo Frappe Gantt nếu có thư viện
+  const GanttClass = window.Gantt || (typeof Gantt !== 'undefined' ? Gantt : null);
+  if (GanttClass && ganttTasks.length > 0) {
+    try {
+      svgEl.innerHTML = '';
+      taskGanttInstance = new GanttClass('#project-task-gantt-svg', ganttTasks, {
+        header_height: 50,
+        column_width: viewMode === 'Month' ? 45 : (viewMode === 'Day' ? 38 : (viewMode === 'Week' ? 55 : 85)),
+        step: 24,
+        view_modes: ['Quarter Day', 'Half Day', 'Day', 'Week', 'Month', 'Year'],
+        bar_height: 24,
+        bar_corner_radius: 5,
+        arrow_curve: 5,
+        padding: 16,
+        view_mode: viewMode,
+        date_format: 'YYYY-MM-DD',
+        language: 'en',
+        readonly: !isManager,
+        on_date_change: function(task, start, end) {
+          if (!isManager) {
+            showToast('Bạn không có quyền dời lịch công việc', 'warning');
+            return;
+          }
+          const targetTask = (project.tasks || []).find(t => t.id === task.id);
+          if (targetTask) {
+            targetTask.startDate = formatLocalDate(start);
+            targetTask.dueDate = formatLocalDate(end);
+            updateProject(project.id, { tasks: [...project.tasks] });
+            showToast(`✅ Đã dời lịch công việc "${targetTask.name}": ${targetTask.startDate} → ${targetTask.dueDate}`);
+          }
+        },
+        on_progress_change: function(task, progress) {
+          if (!isManager) return;
+          applyTaskProgressUpdate(project, task.id, progress);
+        }
+      });
+    } catch (err) {
+      console.warn('Frappe Gantt task init error:', err);
+    }
+  }
+
+  // Gán sự kiện cho Thang đo
+  document.getElementById('task-gantt-scale-select')?.addEventListener('change', (e) => {
+    taskGanttScale = e.target.value;
+    initTaskGanttEvents(project);
+  });
+
+  // Nút Thêm công việc từ Gantt
+  document.getElementById('btn-gantt-add-task')?.addEventListener('click', () => {
+    document.getElementById('btn-add-task')?.click();
+  });
+
+  // Chuyển view mode từ thanh bar của Gantt
+  document.getElementById('btn-view-table-from-gantt')?.addEventListener('click', () => {
+    currentTaskViewMode = 'table';
+    refreshDetail();
+  });
+  document.getElementById('btn-view-kanban-from-gantt')?.addEventListener('click', () => {
+    currentTaskViewMode = 'kanban';
+    refreshDetail();
+  });
+
+  // Lọc tìm kiếm công việc trong bảng thanh trượt
+  document.getElementById('task-gantt-search-filter')?.addEventListener('input', (e) => {
+    const q = (e.target.value || '').toLowerCase().trim();
+    document.querySelectorAll('#task-gantt-sliders-table .gantt-task-row').forEach(row => {
+      const name = row.dataset.name || '';
+      const assignee = row.dataset.assignee || '';
+      row.style.display = (!q || name.includes(q) || assignee.includes(q)) ? '' : 'none';
+    });
+  });
+
+  // Sự kiện kéo trượt thanh tiến độ (Live Slider)
+  document.querySelectorAll('.task-progress-slider').forEach(slider => {
+    slider.addEventListener('input', (e) => {
+      const tId = e.target.dataset.id;
+      const val = Number(e.target.value);
+      const numEl = document.getElementById(`tp-num-${tId}`);
+      if (numEl) {
+        numEl.textContent = `${val}%`;
+        numEl.style.color = val >= 100 ? '#10b981' : val >= 50 ? '#3b82f6' : val > 0 ? '#f59e0b' : '#94a3b8';
+      }
+    });
+
+    slider.addEventListener('change', (e) => {
+      const tId = e.target.dataset.id;
+      const val = Number(e.target.value);
+      applyTaskProgressUpdate(project, tId, val);
+    });
+  });
+
+  // Nút tăng nhanh +10%, +25%
+  document.querySelectorAll('.btn-step-prog').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tId = e.currentTarget.dataset.id;
+      const step = Number(e.currentTarget.dataset.step) || 10;
+      const task = (project.tasks || []).find(t => t.id === tId);
+      if (task) {
+        const newVal = Math.min(100, (task.progress || 0) + step);
+        applyTaskProgressUpdate(project, tId, newVal);
+      }
+    });
+  });
+
+  // Nút đánh dấu hoàn thành 100%
+  document.querySelectorAll('.btn-finish-prog').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const tId = e.currentTarget.dataset.id;
+      applyTaskProgressUpdate(project, tId, 100);
+    });
+  });
 }
 
 /**
@@ -1398,6 +1863,13 @@ function switchProjectTab(targetTab) {
   }
   if (targetTab === 'tasks' || targetTab === 'all') {
     bindTaskActions();
+    if (currentTaskViewMode === 'gantt') {
+      initTaskGanttEvents(project);
+    }
+  }
+  if (targetTab === 'gantt') {
+    bindTaskActions();
+    initTaskGanttEvents(project);
   }
   if (targetTab === 'segments' || targetTab === 'all') {
     bindSegmentActions();
@@ -1778,9 +2250,12 @@ export function init() {
     bindOverviewActions();
   }
 
-  // 3. Khởi tạo sự kiện Công việc (nếu ở tab tasks hoặc all)
-  if (currentProjectTab === 'tasks' || currentProjectTab === 'all') {
+  // 3. Khởi tạo sự kiện Công việc & Gantt (nếu ở tab tasks, gantt hoặc all)
+  if (currentProjectTab === 'tasks' || currentProjectTab === 'gantt' || currentProjectTab === 'all') {
     bindTaskActions();
+    if (currentProjectTab === 'gantt' || currentTaskViewMode === 'gantt') {
+      initTaskGanttEvents(project);
+    }
   }
 
   // 4. Khởi tạo sự kiện Phân đoạn (nếu ở tab segments hoặc all)
@@ -1987,6 +2462,11 @@ function bindTaskActions() {
   document.getElementById('btn-view-kanban')?.addEventListener('click', () => {
     if (currentTaskViewMode === 'kanban') return;
     currentTaskViewMode = 'kanban';
+    refreshDetail();
+  });
+  document.getElementById('btn-view-gantt')?.addEventListener('click', () => {
+    if (currentTaskViewMode === 'gantt') return;
+    currentTaskViewMode = 'gantt';
     refreshDetail();
   });
 
@@ -2781,4 +3261,5 @@ export function destroy() {
     try { hoursByMemberChartInstance.destroy(); } catch (e) {}
     hoursByMemberChartInstance = null;
   }
+  taskGanttInstance = null;
 }

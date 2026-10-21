@@ -1,7 +1,7 @@
 // ============================================
 // PROJECT DETAIL — Single project view
 // ============================================
-import { getState, updateProject } from '../state.js';
+import { getState, updateProject, calculateProjectProgressFromTasks, syncProjectProgress } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
 import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
@@ -205,7 +205,24 @@ export function render() {
 
       <!-- Project KPIs (6 thẻ thống kê nhanh) -->
       <div class="kpi-grid stagger-children mb-lg" style="grid-template-columns: repeat(6, 1fr);">
-        <div class="kpi-card blue"><div class="kpi-card-value" id="proj-kpi-progress">${project.progress}%</div><div class="kpi-card-label">Tiến độ</div></div>
+        <div class="kpi-card blue" style="position: relative; display: flex; flex-direction: column; justify-content: space-between;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 4px;">
+            <div class="kpi-card-value" id="proj-kpi-progress">${project.progress || 0}%</div>
+            ${(project.tasks && project.tasks.length > 0) ? `
+              <span id="proj-rollup-badge" class="badge ${project.autoRollupProgress !== false ? 'green' : 'planning'}" style="font-size: 0.65rem; padding: 2px 6px; cursor: pointer; transition: all 0.2s;" title="${project.autoRollupProgress !== false ? 'Tiến độ đang tự động tính từ ' + project.tasks.length + ' công việc (Nhấp để đổi sang Thủ công)' : 'Tiến độ đang ở chế độ Thủ công (Nhấp để bật Tự động)'}">
+                ${project.autoRollupProgress !== false ? '⚡ Tự động' : '✏️ Thủ công'}
+              </span>
+            ` : ''}
+          </div>
+          <div class="kpi-card-label" style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span>Tiến độ</span>
+            ${(project.tasks && project.tasks.length > 0) ? `
+              <button id="btn-sync-kpi-progress" type="button" class="btn btn-ghost btn-sm" title="Tính lại & đồng bộ tiến độ từ danh sách công việc" style="padding: 1px 5px; font-size: 0.7rem; color: var(--accent-primary); line-height: 1; border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 4px;">
+                🔄 Đồng bộ
+              </button>
+            ` : ''}
+          </div>
+        </div>
         <div class="kpi-card green"><div class="kpi-card-value">${project.modelHealth}%</div><div class="kpi-card-label">Model Health</div></div>
         <div class="kpi-card purple"><div class="kpi-card-value">LOD ${project.lodCurrent}</div><div class="kpi-card-label">LOD hiện tại</div></div>
         <div class="kpi-card cyan"><div class="kpi-card-value">${project.teamSize}</div><div class="kpi-card-label">Thành viên</div></div>
@@ -832,6 +849,11 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
         </div>
 
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          ${(allTasks.length > 0) ? `
+            <button class="btn btn-outline btn-sm" id="btn-sync-tasks-progress" title="Tính lại & đồng bộ ngay tiến độ toàn dự án từ danh sách công việc này" style="color: var(--accent-primary); border-color: rgba(59, 130, 246, 0.4); font-weight: 600;">
+              🔄 Đồng bộ tiến độ (${project.progress || 0}%)
+            </button>
+          ` : ''}
           <button class="btn btn-outline btn-sm" id="btn-export-tasks" title="Xuất danh sách công việc ra file CSV/Excel">
             📥 Xuất CSV
           </button>
@@ -1195,6 +1217,11 @@ function renderTasksGanttSection(project, isEditing, personnel, formatDate) {
           <div class="progress-bar" style="flex: 1; height: 10px; background: rgba(148, 163, 184, 0.2); border-radius: 6px; overflow: hidden;">
             <div id="gantt-proj-progress-bar" class="progress-bar-fill" style="width: ${project.progress || 0}%; background: linear-gradient(90deg, #3b82f6, #10b981); height: 100%; transition: width 0.3s ease;"></div>
           </div>
+          ${(tasks.length > 0) ? `
+            <button id="btn-sync-gantt-progress" type="button" class="btn btn-ghost btn-sm" title="Tính lại & đồng bộ tiến độ từ công việc" style="padding: 2px 8px; font-size: 0.75rem; color: var(--accent-primary); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 4px; white-space: nowrap;">
+              🔄 Đồng bộ
+            </button>
+          ` : ''}
         </div>
 
         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 0.78rem;">
@@ -1332,9 +1359,13 @@ function applyTaskProgressUpdate(project, taskId, newProgress) {
     task.status = 'active';
   }
 
-  // Tính lại tiến độ tổng thể của toàn dự án
-  const totalProg = (project.tasks || []).reduce((sum, t) => sum + (t.progress || 0), 0);
-  project.progress = project.tasks.length > 0 ? Math.round(totalProg / project.tasks.length) : 0;
+  // Tính lại tiến độ tổng thể của toàn dự án (sử dụng calculateProjectProgressFromTasks)
+  if (project.autoRollupProgress !== false && project.tasks && project.tasks.length > 0) {
+    const calculated = calculateProjectProgressFromTasks(project.tasks);
+    if (calculated !== null) {
+      project.progress = calculated;
+    }
+  }
 
   // Cập nhật DOM tức thời (0ms phản hồi người dùng)
   const slider = document.querySelector(`.task-progress-slider[data-id="${taskId}"]`);
@@ -1369,6 +1400,9 @@ function applyTaskProgressUpdate(project, taskId, newProgress) {
 
   const ganttProgBar = document.getElementById('gantt-proj-progress-bar');
   if (ganttProgBar) ganttProgBar.style.width = `${project.progress}%`;
+
+  const syncTasksBtn = document.getElementById('btn-sync-tasks-progress');
+  if (syncTasksBtn) syncTasksBtn.textContent = `🔄 Đồng bộ tiến độ (${project.progress}%)`;
 
   // Lưu an toàn qua updateProject (tự động đồng bộ Cloud & lưu Snapshot)
   updateProject(project.id, {
@@ -1625,6 +1659,15 @@ function initTaskGanttEvents(project) {
   document.getElementById('btn-view-kanban-from-gantt')?.addEventListener('click', () => {
     currentTaskViewMode = 'kanban';
     refreshDetail();
+  });
+
+  // Đồng bộ tiến độ từ Gantt view
+  document.getElementById('btn-sync-gantt-progress')?.addEventListener('click', () => {
+    const newProg = syncProjectProgress(project.id);
+    if (newProg !== null) {
+      showToast(`🎯 Đã đồng bộ tiến độ dự án: ${newProg}% từ danh sách công việc!`);
+      refreshDetail();
+    }
   });
 
   // Lọc tìm kiếm công việc trong bảng thanh trượt
@@ -2516,8 +2559,10 @@ function performSilentSave() {
     });
     updates.tasks = newTasks;
     if (updates.progress === undefined && newTasks.length > 0) {
-      const totalTaskProgress = newTasks.reduce((sum, t) => sum + (t.progress || 0), 0);
-      updates.progress = Math.round(totalTaskProgress / newTasks.length);
+      const calculated = calculateProjectProgressFromTasks(newTasks);
+      if (calculated !== null) {
+        updates.progress = calculated;
+      }
     }
   }
 
@@ -2697,6 +2742,42 @@ export function init() {
       window.location.hash = '#projects';
     });
   });
+
+  // 7. Đồng bộ tiến độ 1-chạm & Chuyển đổi Auto-Rollup từ KPI Card
+  document.getElementById('btn-sync-kpi-progress')?.addEventListener('click', () => {
+    const newProg = syncProjectProgress(project.id);
+    if (newProg !== null) {
+      const kpiEl = document.getElementById('proj-kpi-progress');
+      if (kpiEl) kpiEl.textContent = `${newProg}%`;
+      const ganttText = document.getElementById('gantt-proj-progress-text');
+      if (ganttText) ganttText.textContent = `${newProg}%`;
+      const ganttBar = document.getElementById('gantt-proj-progress-bar');
+      if (ganttBar) ganttBar.style.width = `${newProg}%`;
+      const tasksSyncBtn = document.getElementById('btn-sync-tasks-progress');
+      if (tasksSyncBtn) tasksSyncBtn.textContent = `🔄 Đồng bộ tiến độ (${newProg}%)`;
+
+      showToast(`🎯 Đã đồng bộ tiến độ dự án: ${newProg}% từ ${(project.tasks || []).length} công việc!`);
+    }
+  });
+
+  document.getElementById('proj-rollup-badge')?.addEventListener('click', () => {
+    const isCurrentlyAuto = project.autoRollupProgress !== false;
+    const nextAuto = !isCurrentlyAuto;
+    
+    if (nextAuto) {
+      const calculated = calculateProjectProgressFromTasks(project.tasks || []);
+      const newProgress = calculated !== null ? calculated : project.progress;
+      project.autoRollupProgress = true;
+      project.progress = newProgress;
+      updateProject(project.id, { autoRollupProgress: true, progress: newProgress });
+      showToast(`⚡ Đã bật tự động đồng bộ tiến độ từ công việc! (${newProgress}%)`);
+    } else {
+      project.autoRollupProgress = false;
+      updateProject(project.id, { autoRollupProgress: false });
+      showToast(`✏️ Đã chuyển sang chế độ tiến độ thủ công (không tự động ghi đè từ công việc).`, 'info');
+    }
+    refreshDetail();
+  });
 }
 
 /**
@@ -2861,6 +2942,15 @@ function bindTaskActions() {
   document.getElementById('btn-export-tasks')?.addEventListener('click', () => {
     const currentProj = getState().projects.find(p => p.id === selectedProjectId);
     if (currentProj) exportTasksToCSV(currentProj);
+  });
+
+  // Đồng bộ tiến độ từ danh sách công việc
+  document.getElementById('btn-sync-tasks-progress')?.addEventListener('click', () => {
+    const newProg = syncProjectProgress(selectedProjectId);
+    if (newProg !== null) {
+      showToast(`🎯 Đã đồng bộ tiến độ dự án: ${newProg}% từ danh sách công việc!`);
+      refreshDetail();
+    }
   });
 
   document.getElementById('btn-import-tasks-trigger')?.addEventListener('click', () => {

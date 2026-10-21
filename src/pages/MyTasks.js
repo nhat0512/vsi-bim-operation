@@ -1503,7 +1503,9 @@ function openQuickLogModal({ project, task, taskIdx, isRfi = false, rfiIdx = nul
     saveLocalSnapshot(`Ghi nhận ${hoursNum}h làm cho ${itemName}`);
 
     closeModal();
-    showToast(`✅ Đã lưu ${hoursNum}h làm việc cho "${itemName}"!`);
+    const updatedProj = getState().projects.find(p => p.id === project.id);
+    const projProgText = updatedProj ? ` (Tiến độ ${updatedProj.code || 'dự án'}: ${updatedProj.progress}%)` : '';
+    showToast(`✅ Đã lưu ${hoursNum}h làm việc cho "${itemName}"!${projProgText}`);
     refreshPage();
   });
 }
@@ -2184,7 +2186,8 @@ export function init() {
       
       updateProject(projectId, { tasks: project.tasks });
       saveLocalSnapshot(`Cập nhật tiến độ "${project.tasks[taskIdx].name}" → ${newProgress}%`);
-      showToast(`✅ Đã cập nhật tiến độ "${project.tasks[taskIdx].name}" → ${newProgress}%`);
+      const updatedProj = getState().projects.find(p => p.id === projectId) || project;
+      showToast(`✅ Đã cập nhật "${project.tasks[taskIdx].name}" → ${newProgress}% (Tiến độ ${updatedProj.code || 'dự án'}: ${updatedProj.progress}%)`);
       refreshPage();
     });
   });

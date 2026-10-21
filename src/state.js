@@ -160,9 +160,11 @@ export async function syncToFirestore(forceResetTombstones = false) {
       // TỰ ĐỘNG ĐỒNG BỘ DỮ LIỆU LIÊN KẾT (Single Source of Truth)
       if (state.projects) {
         state.projects.forEach(proj => {
-          if (proj.tasks && proj.tasks.length > 0) {
-             const totalProgress = proj.tasks.reduce((sum, t) => sum + (t.progress || 0), 0);
-             proj.progress = Math.round(totalProgress / proj.tasks.length);
+          if (proj.autoRollupProgress !== false && proj.tasks && proj.tasks.length > 0) {
+            const calculated = calculateProjectProgressFromTasks(proj.tasks);
+            if (calculated !== null) {
+              proj.progress = calculated;
+            }
           }
         });
       }
@@ -1223,15 +1225,124 @@ export function addProject(projectData) {
 }
 
 /**
+ * TÍNH TOÁN TIẾN ĐỘ TỔNG THỂ DỰ ÁN TỪ DANH SÁCH CÔNG VIỆC (WEIGHTED ROLLUP PROGRESS)
+ * Hỗ trợ:
+ * 1. Trọng số tùy biến (task.weight)
+ * 2. Kế hoạch giờ dự kiến (task.plannedHours / task.estimatedHours / tổng dailyHours_planned)
+ * 3. Trung bình cộng chuẩn xác nếu các task không có trọng số riêng
+ * 4. Bảo vệ an toàn: Trả về null nếu không có task hoặc tasks rỗng (không xóa đè tiến độ thủ công)
+ * @param {Array} tasks - Danh sách công việc của dự án
+ * @returns {number|null} Tiến độ từ 0 đến 100, hoặc null nếu không có tasks
+ */
+export function calculateProjectProgressFromTasks(tasks) {
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    return null;
+  }
+
+  // Kiểm tra xem có task nào có trọng số hoặc số giờ kế hoạch không
+  const hasCustomWeights = tasks.some(t => {
+    if (t.weight && Number(t.weight) > 0) return true;
+    if (t.plannedHours && Number(t.plannedHours) > 0) return true;
+    if (t.estimatedHours && Number(t.estimatedHours) > 0) return true;
+    if (t.dailyHours_planned && typeof t.dailyHours_planned === 'object') {
+      const sum = Object.values(t.dailyHours_planned).reduce((a, b) => a + (Number(b) || 0), 0);
+      if (sum > 0) return true;
+    }
+    return false;
+  });
+
+  let totalWeightedProgress = 0;
+  let totalWeight = 0;
+
+  for (const t of tasks) {
+    const prog = Math.min(100, Math.max(0, Number(t.progress) || 0));
+    let w = 1;
+
+    if (hasCustomWeights) {
+      if (t.weight && Number(t.weight) > 0) {
+        w = Number(t.weight);
+      } else if (t.plannedHours && Number(t.plannedHours) > 0) {
+        w = Number(t.plannedHours);
+      } else if (t.estimatedHours && Number(t.estimatedHours) > 0) {
+        w = Number(t.estimatedHours);
+      } else if (t.dailyHours_planned && typeof t.dailyHours_planned === 'object') {
+        const sum = Object.values(t.dailyHours_planned).reduce((a, b) => a + (Number(b) || 0), 0);
+        if (sum > 0) w = sum;
+      }
+    }
+
+    totalWeightedProgress += prog * w;
+    totalWeight += w;
+  }
+
+  if (totalWeight <= 0) return 0;
+  return Math.min(100, Math.max(0, Math.round(totalWeightedProgress / totalWeight)));
+}
+
+/**
+ * ĐỒNG BỘ TIẾN ĐỘ DỰ ÁN TỪ CÁC CÔNG VIỆC CON (1-CLICK SYNC)
+ * @param {string} projectId - ID dự án
+ * @param {Object} options - Tùy chọn ({ saveSnapshot: true })
+ * @returns {number|null} Tiến độ mới hoặc null
+ */
+export function syncProjectProgress(projectId, options = { saveSnapshot: true }) {
+  const project = (state.projects || []).find(p => p.id === projectId);
+  if (!project) return null;
+
+  if (!Array.isArray(project.tasks) || project.tasks.length === 0) {
+    return project.progress || 0;
+  }
+
+  const newProgress = calculateProjectProgressFromTasks(project.tasks);
+  if (newProgress !== null) {
+    const oldProgress = project.progress;
+    if (options.saveSnapshot && oldProgress !== newProgress) {
+      saveLocalSnapshot(`Đồng bộ tiến độ dự án "${project.name}" (${oldProgress}% → ${newProgress}%)`);
+    }
+    updateProject(projectId, { 
+      progress: newProgress,
+      autoRollupProgress: true
+    });
+    return newProgress;
+  }
+
+  return project.progress;
+}
+
+/**
  * Update an existing project
  * @param {string} projectId - ID of the project to update
  * @param {Object} updates - Fields to update
  * @returns {Object|null} The updated project or null if not found
  */
 export function updateProject(projectId, updates) {
+  const currentProj = (state.projects || []).find(p => p.id === projectId);
+  if (!currentProj) return null;
+
+  let finalUpdates = { ...updates };
+  const targetTasks = updates.tasks !== undefined ? updates.tasks : currentProj.tasks;
+  const isAutoRollupEnabled = updates.autoRollupProgress !== undefined 
+    ? (updates.autoRollupProgress !== false) 
+    : (currentProj.autoRollupProgress !== false);
+
+  // TỰ ĐỘNG ĐỒNG BỘ TIẾN ĐỘ (AUTO-ROLLUP PROGRESS)
+  // Chỉ tự động tính toán khi:
+  // 1. autoRollupProgress không bị tắt chủ động (khác false)
+  // 2. updates có thay đổi tasks HOẶC người dùng vừa kích hoạt autoRollupProgress: true
+  // 3. updates.progress KHÔNG bị chỉ định thủ công
+  // 4. Dự án thực sự có tasks (tránh xóa đè dữ liệu đối với dự án chỉ nhập thủ công hoặc chưa tạo tasks)
+  if (isAutoRollupEnabled && (updates.tasks !== undefined || updates.autoRollupProgress === true) && updates.progress === undefined) {
+    if (Array.isArray(targetTasks) && targetTasks.length > 0) {
+      const calculated = calculateProjectProgressFromTasks(targetTasks);
+      if (calculated !== null) {
+        finalUpdates.progress = calculated;
+      }
+    }
+  }
+
   const projects = state.projects.map(p => {
     if (p.id === projectId) {
-      return { ...p, ...updates };
+      return { ...p, ...finalUpdates };
     }
     return p;
   });
@@ -1243,7 +1354,7 @@ export function updateProject(projectId, updates) {
   pushToHistory(projects);
   addActivityLog(`cập nhật dự án "${updated.name}"`, updated.name);
 
-  console.log(`✅ Project ${projectId} updated`);
+  console.log(`✅ Project ${projectId} updated:`, updated.name, 'Progress:', updated.progress);
   return updated;
 }
 

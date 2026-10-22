@@ -2,7 +2,7 @@ import { getState, setState, subscribe, deleteProject } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES, LOD_LEVELS } from '../data/constants.js';
 import { openProjectForm, showToast } from '../components/ProjectFormModal.js';
 import { openModal, closeModal } from '../components/Modal.js';
-import { formatDisplayName } from '../utils/formatters.js';
+import { formatDisplayName, parseBudgetValue } from '../utils/formatters.js';
 
 let currentViewMode = 'table'; // 'table' | 'cards'
 let localSearch = '';
@@ -34,17 +34,7 @@ function isProjectAtRisk(p) {
   return false;
 }
 
-/**
- * Trích xuất giá trị số từ chuỗi ngân sách để sắp xếp
- */
-function parseBudgetValue(budgetStr) {
-  if (!budgetStr) return 0;
-  const str = String(budgetStr).toLowerCase();
-  let val = parseFloat(str.replace(/[^\d.-]/g, '')) || 0;
-  if (str.includes('tỷ')) val *= 1000000000;
-  else if (str.includes('triệu')) val *= 1000000;
-  return val;
-}
+
 
 /**
  * Định dạng ngày hiển thị dd/mm/yyyy

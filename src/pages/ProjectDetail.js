@@ -4,7 +4,7 @@
 import { getState, updateProject, calculateProjectProgressFromTasks, syncProjectProgress } from '../state.js';
 import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.js';
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
-import { formatDisplayName, formatLocalDate } from '../utils/formatters.js';
+import { formatDisplayName, formatLocalDate, parseBudgetValue, formatCurrency } from '../utils/formatters.js';
 import { promptSafeDeleteProject } from './ProjectList.js';
 
 let hoursOverTimeChartInstance = null;
@@ -54,17 +54,8 @@ function showToast(message, type = 'success') {
   }, 3000);
 }
 
-function formatCurrency(val) {
-  if (val >= 1000000000) return (val / 1000000000).toFixed(2) + ' Tỷ';
-  if (val >= 1000000) return (val / 1000000).toFixed(0) + ' Tr';
-  return Math.round(val).toLocaleString('vi-VN') + ' ₫';
-}
-
 function computeProjectMetrics(project, personnel, timesheets) {
-  const budgetStr = String(project.budget || '0');
-  let BAC = parseFloat(budgetStr.replace(/[^\d.-]/g, ''));
-  if (budgetStr.toLowerCase().includes('tỷ')) BAC *= 1000000000;
-  else if (budgetStr.toLowerCase().includes('triệu')) BAC *= 1000000;
+  let BAC = parseBudgetValue(project.budget);
   if (isNaN(BAC) || BAC === 0) BAC = 5000000000;
 
   const EV = BAC * (project.progress / 100);

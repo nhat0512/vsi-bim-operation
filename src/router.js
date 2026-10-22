@@ -35,13 +35,17 @@ async function handleRoute() {
   
   const { setState, getState } = await import('./state.js');
 
-  // Phân quyền: Member chỉ được xem một số trang nhất định
-  const { currentUser } = getState();
-  const role = currentUser?.role || 'Member';
+  // Phân quyền: Nhân sự chỉ được xem 'my-tasks', admin xem tất cả
+  const { currentUser, currentUserRole, currentUserAuth } = getState();
+  const role = currentUser?.role || currentUserRole || 'Member';
+  const email = (currentUserAuth?.email || currentUser?.email || '').toLowerCase().trim();
+  const isAdmin = ['BIM Manager', 'Project Manager', 'Admin'].includes(role) || 
+                  email === 'admin@vsibim.com' || 
+                  email === 'nhattedisouth@gmail.com';
   const adminOnlyPages = ['dashboard', 'projects', 'project-detail', 'planning', 'project-costing', 'resources', 'quality', 'analytics', 'settings'];
   
   let targetPage = page;
-  if (role !== 'BIM Manager' && role !== 'Project Manager' && adminOnlyPages.includes(page)) {
+  if (!isAdmin && adminOnlyPages.includes(page)) {
     targetPage = 'my-tasks';
     window.location.hash = 'my-tasks';
     return; // hashchange sẽ gọi lại handleRoute

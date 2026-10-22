@@ -83,7 +83,12 @@ function toggleCommandMenu() {
 }
 
 function getCommands() {
-  const { projects, theme } = getState();
+  const { projects, theme, currentUser, currentUserRole, currentUserAuth } = getState();
+  const role = currentUser?.role || currentUserRole || 'Member';
+  const email = (currentUserAuth?.email || currentUser?.email || '').toLowerCase().trim();
+  const isAdmin = ['BIM Manager', 'Project Manager', 'Admin'].includes(role) || 
+                  email === 'admin@vsibim.com' || 
+                  email === 'nhattedisouth@gmail.com';
   
   const commands = [
     {
@@ -103,38 +108,57 @@ function getCommands() {
       }
     },
     {
-      id: 'cmd-dashboard',
-      title: 'Đi tới Tổng quan (Dashboard)',
-      icon: '📊',
+      id: 'cmd-my-tasks',
+      title: 'Đi tới Việc của tôi',
+      icon: '🙋',
       category: 'Điều hướng',
-      action: () => navigateTo('dashboard')
-    },
-    {
-      id: 'cmd-resources',
-      title: 'Đi tới Nguồn lực (Resources)',
-      icon: '👥',
-      category: 'Điều hướng',
-      action: () => navigateTo('resources')
-    },
-    {
-      id: 'cmd-quality',
-      title: 'Đi tới Chất lượng (QA/QC)',
-      icon: '✅',
-      category: 'Điều hướng',
-      action: () => navigateTo('quality')
+      action: () => navigateTo('my-tasks')
     }
   ];
 
-  // Add project specific commands
-  projects.forEach(p => {
-    commands.push({
-      id: `proj-${p.id}`,
-      title: `Mở dự án: ${p.name} (${p.code})`,
-      icon: '🏗️',
-      category: 'Dự án',
-      action: () => navigateTo(`project-detail/${p.id}`)
+  if (isAdmin) {
+    commands.push(
+      {
+        id: 'cmd-dashboard',
+        title: 'Đi tới Tổng quan (Dashboard)',
+        icon: '📊',
+        category: 'Điều hướng',
+        action: () => navigateTo('dashboard')
+      },
+      {
+        id: 'cmd-costing',
+        title: 'Đi tới Báo giá Chi phí (Project Costing)',
+        icon: '💰',
+        category: 'Điều hướng',
+        action: () => navigateTo('project-costing')
+      },
+      {
+        id: 'cmd-resources',
+        title: 'Đi tới Nguồn lực (Resources)',
+        icon: '👥',
+        category: 'Điều hướng',
+        action: () => navigateTo('resources')
+      },
+      {
+        id: 'cmd-quality',
+        title: 'Đi tới Chất lượng (QA/QC)',
+        icon: '✅',
+        category: 'Điều hướng',
+        action: () => navigateTo('quality')
+      }
+    );
+
+    // Add project specific commands for admin
+    projects.forEach(p => {
+      commands.push({
+        id: `proj-${p.id}`,
+        title: `Mở dự án: ${p.name} (${p.code})`,
+        icon: '🏗️',
+        category: 'Dự án',
+        action: () => navigateTo(`project-detail/${p.id}`)
+      });
     });
-  });
+  }
 
   return commands;
 }

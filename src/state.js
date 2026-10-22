@@ -50,6 +50,18 @@ if (savedState) {
     const parsed = JSON.parse(savedState);
     state = { ...state, ...parsed };
 
+    // Đồng bộ ngay quyền UI khi tải trạng thái từ localStorage
+    if (typeof document !== 'undefined') {
+      const savedRole = state.currentUser?.role || state.currentUserRole;
+      const savedEmail = (state.currentUserAuth?.email || state.currentUser?.email || '').toLowerCase();
+      const isAdmin = ['BIM Manager', 'Project Manager', 'Admin'].includes(savedRole) || savedEmail === 'admin@vsibim.com' || savedEmail === 'nhattedisouth@gmail.com';
+      if (!isAdmin) {
+        document.body.classList.add('restricted-mode');
+      } else {
+        document.body.classList.remove('restricted-mode');
+      }
+    }
+
     // Phục hồi tombstone các timesheet đã xóa từ localStorage
     try {
       const savedDeleted = localStorage.getItem('bimTransPM_DeletedTimesheets');
@@ -899,6 +911,19 @@ export function recalculateUserRole() {
     role = 'BIM Manager';
   }
 
+  const isAdmin = ['BIM Manager', 'Project Manager', 'Admin'].includes(role) || 
+                  authEmail === 'admin@vsibim.com' || 
+                  authEmail === 'nhattedisouth@gmail.com';
+
+  // Apply UI Restrictions unconditionally on every recalculation
+  if (typeof document !== 'undefined') {
+    if (!isAdmin) {
+      document.body.classList.add('restricted-mode');
+    } else {
+      document.body.classList.remove('restricted-mode');
+    }
+  }
+
   // Prevent infinite loop if already set to same values (shallow check)
   if (!state.currentUser || state.currentUser.role !== role || state.currentUser.name !== canonicalName || state.currentUser.allocation?.length !== allocation.length) {
     setState('currentUser', {
@@ -909,15 +934,6 @@ export function recalculateUserRole() {
       allocation: allocation
     });
     setState('currentUserRole', role);
-    
-    // Apply UI Restrictions
-    if (typeof document !== 'undefined') {
-      if (role !== 'BIM Manager' && role !== 'Project Manager') {
-        document.body.classList.add('restricted-mode');
-      } else {
-        document.body.classList.remove('restricted-mode');
-      }
-    }
   }
 }
 

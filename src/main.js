@@ -2,7 +2,7 @@
 // BIM TransPM — Main Application Entry Point
 // ============================================
 
-import { loadInitialData } from './state.js';
+import { loadInitialData, recalculateUserRole } from './state.js';
 import { initRouter } from './router.js';
 import { renderSidebar, initSidebar } from './components/Sidebar.js';
 import { renderTopbar, initTopbar } from './components/Topbar.js';
@@ -42,6 +42,7 @@ async function initApp() {
 
   // === BƯỚC 2: Đã đăng nhập — tải dữ liệu từ Firestore ===
   await loadInitialData();
+  recalculateUserRole();
 
 
   // Restore normal layout if logged in

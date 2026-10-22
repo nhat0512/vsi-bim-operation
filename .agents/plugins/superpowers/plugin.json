@@ -1,0 +1,19 @@
+{
+  "name": "superpowers",
+  "displayName": "Superpowers",
+  "version": "7.0.1",
+  "description": "Make your coding agent a better engineer with disciplined software engineering skills (TDD, systematic debugging, planning, subagent execution, and verification).",
+  "category": "Developer Tools",
+  "author": {
+    "name": "Jesse Vincent (obra)",
+    "url": "https://github.com/obra/superpowers"
+  },
+  "keywords": [
+    "skills",
+    "tdd",
+    "debugging",
+    "subagents",
+    "planning",
+    "verification"
+  ]
+}

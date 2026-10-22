@@ -175,6 +175,9 @@ export function render() {
           </span>
           ${getIsEditing() ? `
             <div style="display: flex; gap: 8px; align-items: center;">
+              <a href="#project-costing/${project.id}" class="btn btn-outline" style="color: #10b981; border-color: rgba(16, 185, 129, 0.4); text-decoration: none; display: flex; align-items: center; gap: 6px;" title="Mở bảng tính báo giá chi phí dự án này">
+                💰 Báo giá Chi phí
+              </a>
               <button class="btn btn-outline" id="btn-edit-project">✏️ Chỉnh sửa</button>
               <button class="btn btn-outline text-danger" id="btn-delete-project-detail" style="border-color: rgba(239, 68, 68, 0.4); color: var(--accent-danger, #ef4444);" title="Xóa dự án này">
                 🗑️ Xóa dự án
@@ -241,6 +244,9 @@ export function render() {
         <button class="tab ${currentProjectTab === 'all' ? 'tab--active' : ''} btn-proj-tab" data-tab="all" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span>📄</span> <span>Xem tất cả</span>
         </button>
+        <a href="#project-costing/${project.id}" class="tab" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px; text-decoration: none; color: #10b981;" title="Xem báo giá & dự toán chi phí nội bộ">
+          <span>💰</span> <span>Báo giá Chi phí</span>
+        </a>
       </div>
 
       <!-- Tab Content -->

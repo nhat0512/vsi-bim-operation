@@ -7,6 +7,7 @@ const routes = {
   'projects': () => import('./pages/ProjectList.js'),
   'project-detail': () => import('./pages/ProjectDetail.js'),
   'planning': () => import('./pages/Planning.js'),
+  'project-costing': () => import('./pages/ProjectCosting.js'),
   'resources': () => import('./pages/Resources.js'),
   'quality': () => import('./pages/Quality.js'),
   'my-tasks': () => import('./pages/MyTasks.js'),
@@ -37,7 +38,7 @@ async function handleRoute() {
   // Phân quyền: Member chỉ được xem một số trang nhất định
   const { currentUser } = getState();
   const role = currentUser?.role || 'Member';
-  const adminOnlyPages = ['dashboard', 'projects', 'project-detail', 'planning', 'resources', 'quality', 'analytics', 'settings'];
+  const adminOnlyPages = ['dashboard', 'projects', 'project-detail', 'planning', 'project-costing', 'resources', 'quality', 'analytics', 'settings'];
   
   let targetPage = page;
   if (role !== 'BIM Manager' && role !== 'Project Manager' && adminOnlyPages.includes(page)) {
@@ -48,8 +49,8 @@ async function handleRoute() {
 
   setState('currentPage', targetPage);
 
-  // Store project ID if navigating to project detail
-  if (targetPage === 'project-detail' && params[0]) {
+  // Store project ID if navigating to project detail or costing
+  if ((targetPage === 'project-detail' || targetPage === 'project-costing') && params[0]) {
     setState('selectedProjectId', params[0]);
   }
 

@@ -17,6 +17,7 @@ const NAV_SECTIONS = [
     items: [
       { id: 'projects', label: 'Danh sách dự án', icon: '📁', adminOnly: true },
       { id: 'planning', label: 'General Planning', icon: '📅', adminOnly: true },
+      { id: 'project-costing', label: 'Báo giá Chi phí', icon: '💰', adminOnly: true },
 
       { id: 'resources', label: 'Nguồn lực', icon: '👥', adminOnly: true },
       { id: 'quality', label: 'Chất lượng BIM', icon: '✅', adminOnly: true },

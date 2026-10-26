@@ -1,8 +1,12 @@
 // ============================================
-// COSTING STORAGE — LocalStorage Manager & Math Helpers for Project Costing
+// COSTING STORAGE — LocalStorage & Firestore Manager & Math Helpers for Project Costing
 // ============================================
 
+import { db, getState } from '../state.js';
+import { doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
 export const STORAGE_KEY = 'bimTransPM_CostingData';
+export const FIRESTORE_COLLECTION = 'project_costings';
 
 export const DEFAULT_CATEGORIES = [
   'ATGT',
@@ -23,6 +27,25 @@ export const DEFAULT_RATES = [
   { id: 'R004', name: 'BIM Coordinator (Senior)', role: 'BIM Coordinator', level: 'senior', rate: 250000 },
   { id: 'R005', name: 'BIM Manager (Senior)', role: 'BIM Manager', level: 'senior', rate: 350000 }
 ];
+
+// Debounce timer for background Firestore sync
+let cloudSyncTimeout = null;
+
+// Listeners for sync status notifications
+let syncStatusListeners = [];
+
+export function onCostingSyncStatusChange(callback) {
+  syncStatusListeners.push(callback);
+  return () => {
+    syncStatusListeners = syncStatusListeners.filter(cb => cb !== callback);
+  };
+}
+
+function notifySyncStatus(status, detail = '') {
+  syncStatusListeners.forEach(cb => {
+    try { cb(status, detail); } catch (e) {}
+  });
+}
 
 /**
  * Load entire costing data from localStorage, fallback to initial schema
@@ -63,7 +86,7 @@ export function loadCostingData() {
 }
 
 /**
- * Save entire costing data to localStorage
+ * Save entire costing data to localStorage (instant 0ms response)
  */
 export function saveCostingData(data) {
   try {
@@ -74,7 +97,7 @@ export function saveCostingData(data) {
 }
 
 /**
- * Get costing entries for a specific project
+ * Get costing entries for a specific project from local cache
  */
 export function getProjectCosting(projectId) {
   const data = loadCostingData();
@@ -87,26 +110,192 @@ export function getProjectCosting(projectId) {
 
 /**
  * Save costing entries for a specific project
+ * Optimistic UI: writes to localStorage instantly, then syncs to Firestore with 1000ms debounce
  */
-export function saveProjectCosting(projectId, entries) {
+export function saveProjectCosting(projectId, entries, projectMeta = null) {
   const data = loadCostingData();
   data.projects[projectId] = {
     updatedAt: new Date().toISOString(),
     entries: Array.isArray(entries) ? entries : []
   };
   saveCostingData(data);
+
+  // Background sync to Firestore
+  syncProjectCostingToCloud(projectId, entries, projectMeta);
+}
+
+/**
+ * Background sync project costing entries to Firestore
+ */
+export function syncProjectCostingToCloud(projectId, entries, projectMeta = null) {
+  if (!db) {
+    notifySyncStatus('local', 'Đã lưu cục bộ (chưa kết nối Cloud)');
+    return;
+  }
+
+  notifySyncStatus('syncing', 'Đang lưu lên Cloud...');
+
+  if (cloudSyncTimeout) clearTimeout(cloudSyncTimeout);
+  cloudSyncTimeout = setTimeout(async () => {
+    try {
+      const docRef = doc(db, FIRESTORE_COLLECTION, projectId);
+      const { rates } = loadCostingData();
+
+      let totalCost = 0;
+      let totalCostAfterTax = 0;
+      let totalHours = 0;
+      let totalKm = 0;
+
+      const sanitizedEntries = (entries || []).map(e => {
+        const calc = calculateRowCost(e, rates);
+        totalCost += calc.cost;
+        totalCostAfterTax += calc.costAfterTax;
+        totalHours += calc.hoursPerKm;
+        totalKm += calc.km;
+
+        return {
+          id: e.id,
+          category: e.category || 'Khác',
+          rateId: e.rateId || 'R001',
+          appliedRate: e.appliedRate !== undefined && e.appliedRate !== null ? Number(e.appliedRate) : calc.rate,
+          km: Number(e.km) || 0,
+          hoursPerKm: Number(e.hoursPerKm) || 0,
+          cost: calc.cost,
+          costAfterTax: calc.costAfterTax
+        };
+      });
+
+      const avgCostPerKm = totalKm > 0 ? Math.round(totalCost / totalKm) : 0;
+      const currentUser = getState()?.currentUser;
+
+      const docData = {
+        projectId,
+        projectCode: projectMeta?.code || projectId,
+        projectName: projectMeta?.name || 'Dự án',
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser?.email || currentUser?.name || 'User',
+        summary: {
+          totalKm,
+          totalHours,
+          totalCost,
+          totalCostAfterTax,
+          avgCostPerKm
+        },
+        entries: sanitizedEntries
+      };
+
+      await setDoc(docRef, docData, { merge: true });
+      console.log(`☁️ [Firestore] Đã đồng bộ chi phí dự án [${projectId}] lên collection "${FIRESTORE_COLLECTION}"`);
+      notifySyncStatus('synced', 'Đã đồng bộ Cloud');
+    } catch (err) {
+      console.error('❌ [Firestore] Lỗi đồng bộ costing lên Cloud:', err);
+      notifySyncStatus('error', 'Lỗi đồng bộ Cloud');
+    }
+  }, 1000); // 1000ms debounce
+}
+
+/**
+ * Fetch project costing data from Firestore on project load
+ */
+export async function fetchProjectCostingFromCloud(projectId) {
+  if (!db || !projectId) return null;
+  try {
+    const docRef = doc(db, FIRESTORE_COLLECTION, projectId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const cloudData = snap.data();
+      if (cloudData && Array.isArray(cloudData.entries)) {
+        // Cache to localStorage
+        const localData = loadCostingData();
+        localData.projects[projectId] = {
+          updatedAt: cloudData.updatedAt || new Date().toISOString(),
+          entries: cloudData.entries
+        };
+        saveCostingData(localData);
+        notifySyncStatus('synced', 'Đã đồng bộ Cloud');
+        return cloudData.entries;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Firestore] Không thể tải dữ liệu costing từ Cloud, dùng localStorage:', err);
+  }
+  return null;
+}
+
+/**
+ * Sync Costing Configuration (categories & rates) to Firestore
+ */
+export async function syncCostingConfigToCloud() {
+  if (!db) return;
+  try {
+    const data = loadCostingData();
+    const docRef = doc(db, FIRESTORE_COLLECTION, '_config');
+    await setDoc(docRef, {
+      updatedAt: new Date().toISOString(),
+      categories: data.categories,
+      rates: data.rates
+    }, { merge: true });
+    console.log('☁️ [Firestore] Đã đồng bộ cấu hình bảng đơn giá & danh mục lên Cloud');
+  } catch (err) {
+    console.error('❌ [Firestore] Lỗi đồng bộ cấu hình costing lên Cloud:', err);
+  }
+}
+
+/**
+ * Fetch Costing Configuration from Firestore
+ */
+export async function fetchCostingConfigFromCloud() {
+  if (!db) return null;
+  try {
+    const docRef = doc(db, FIRESTORE_COLLECTION, '_config');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const config = snap.data();
+      if (config) {
+        const localData = loadCostingData();
+        let changed = false;
+        if (Array.isArray(config.categories) && config.categories.length > 0) {
+          localData.categories = config.categories;
+          changed = true;
+        }
+        if (Array.isArray(config.rates) && config.rates.length > 0) {
+          localData.rates = config.rates;
+          changed = true;
+        }
+        if (changed) {
+          saveCostingData(localData);
+        }
+        return config;
+      }
+    }
+  } catch (err) {
+    console.warn('⚠️ [Firestore] Không thể tải cấu hình costing từ Cloud, dùng localStorage:', err);
+  }
+  return null;
 }
 
 /**
  * Calculate cost for a single row
- * Formula requested: Chi phí = Số giờ thực tế theo Km * Đơn giá của Nhân sự
- * Chi phí sau thuế = Chi phí * 0.9 (-10% khấu trừ thuế)
+ * Rate Snapshot Mechanics:
+ * - Uses entry.appliedRate (frozen rate) if present.
+ * - Otherwise falls back to current rate in rateObj.
+ * - Automatically initializes appliedRate if missing.
  */
 export function calculateRowCost(entry, rates = []) {
   if (!entry) return { cost: 0, costAfterTax: 0, rate: 0, hoursPerKm: 0, km: 0 };
   
   const rateObj = rates.find(r => r.id === entry.rateId) || rates[0];
-  const rate = rateObj ? Number(rateObj.rate) || 0 : 0;
+  
+  // Rate Snapshot: prioritize appliedRate
+  let rate;
+  if (entry.appliedRate !== undefined && entry.appliedRate !== null && !isNaN(Number(entry.appliedRate))) {
+    rate = Number(entry.appliedRate);
+  } else {
+    rate = rateObj ? Number(rateObj.rate) || 0 : 0;
+    // Auto backfill appliedRate so row is frozen
+    entry.appliedRate = rate;
+  }
+
   const hoursPerKm = Number(entry.hoursPerKm) || 0;
   const km = Number(entry.km) || 0;
 
@@ -121,6 +310,20 @@ export function calculateRowCost(entry, rates = []) {
     km,
     rateObj
   };
+}
+
+/**
+ * Refresh all rows in a project to use the current rates from Rate Table
+ */
+export function refreshAllRowRates(entries, rates = []) {
+  return (entries || []).map(entry => {
+    const rateObj = rates.find(r => r.id === entry.rateId) || rates[0];
+    const newRate = rateObj ? Number(rateObj.rate) || 0 : 0;
+    return {
+      ...entry,
+      appliedRate: newRate
+    };
+  });
 }
 
 /**
@@ -143,6 +346,7 @@ export function addCategory(categoryName) {
   if (!data.categories.includes(name)) {
     data.categories.push(name);
     saveCostingData(data);
+    syncCostingConfigToCloud();
     return true;
   }
   return false;
@@ -157,6 +361,7 @@ export function deleteCategory(categoryName) {
   if (index > -1) {
     data.categories.splice(index, 1);
     saveCostingData(data);
+    syncCostingConfigToCloud();
     return true;
   }
   return false;
@@ -169,6 +374,7 @@ export function updateRates(rates) {
   const data = loadCostingData();
   data.rates = rates;
   saveCostingData(data);
+  syncCostingConfigToCloud();
 }
 
 /**
@@ -339,9 +545,13 @@ export function parseExcelTSV(tsvText, costingData) {
       hoursPerKm = 10;
     }
 
+    const rateObj = costingData.rates.find(r => r.id === rateId) || costingData.rates[0];
+    const appliedRate = rateObj ? Number(rateObj.rate) || 0 : 0;
+
     result.push({
       category,
       rateId,
+      appliedRate,
       km,
       hoursPerKm
     });

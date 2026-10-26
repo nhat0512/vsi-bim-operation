@@ -409,3 +409,72 @@
   text-align: right;
   font-weight: 600;
 }
+
+/* Rate Snapshot & Cloud Sync UI */
+.costing-cell-rate-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.costing-rate-snapshot-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  width: fit-content;
+  border: 1px solid var(--border-color);
+}
+
+.costing-rate-snapshot-badge.snapshot-legacy {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.badge-legacy-tag {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #f59e0b;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.costing-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  background: #10b981;
+  transition: all 0.3s ease;
+}
+
+.costing-sync-dot.syncing {
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  animation: costingPulseDot 1s infinite;
+}
+
+.costing-sync-dot.synced {
+  background: #10b981;
+}
+
+.costing-sync-dot.local {
+  background: #94a3b8;
+}
+
+.costing-sync-dot.error {
+  background: #ef4444;
+}
+
+@keyframes costingPulseDot {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}

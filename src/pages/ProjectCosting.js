@@ -14,7 +14,11 @@ import {
   deleteCategory,
   updateRates,
   exportCostingToCSV,
-  parseExcelTSV
+  parseExcelTSV,
+  refreshAllRowRates,
+  fetchProjectCostingFromCloud,
+  fetchCostingConfigFromCloud,
+  onCostingSyncStatusChange
 } from '../utils/costingStorage.js';
 import { openModal, closeModal } from '../components/Modal.js';
 import { showToast } from '../components/ProjectFormModal.js';
@@ -31,6 +35,7 @@ let lastActiveRowIndex = 0;
 let cellPreEditSnapshot = null;
 let handleKeyDown = null;
 let handleDocumentPaste = null;
+let unsubscribeSyncStatus = null;
 
 /**
  * Get active project object
@@ -60,13 +65,15 @@ function getActiveProject(projects) {
 function getOrSeedEntries(projectId) {
   let entries = getProjectCosting(projectId);
   if (!entries || entries.length === 0) {
-    // Seed default sample data matching user spec
+    // Seed default sample data matching user spec with frozen appliedRate
     entries = [
-      { id: 'ce_1', category: 'ATGT', rateId: 'R001', km: 5.2, hoursPerKm: 13 },
-      { id: 'ce_2', category: 'Đường', rateId: 'R002', km: 3.0, hoursPerKm: 10 },
-      { id: 'ce_3', category: 'Cầu', rateId: 'R003', km: 2.5, hoursPerKm: 8 }
+      { id: 'ce_1', category: 'ATGT', rateId: 'R001', appliedRate: 150000, km: 5.2, hoursPerKm: 13 },
+      { id: 'ce_2', category: 'Đường', rateId: 'R002', appliedRate: 120000, km: 3.0, hoursPerKm: 10 },
+      { id: 'ce_3', category: 'Cầu', rateId: 'R003', appliedRate: 100000, km: 2.5, hoursPerKm: 8 }
     ];
-    saveProjectCosting(projectId, entries);
+    const { projects } = getState();
+    const currentProj = (projects || []).find(p => p.id === projectId);
+    saveProjectCosting(projectId, entries, currentProj);
   }
   return entries;
 }
@@ -145,6 +152,9 @@ export function render() {
           <button class="btn btn-outline costing-btn-history" id="btn-costing-redo" title="Làm lại thao tác vừa hoàn tác (Ctrl+Y)" disabled>
             ↷ Làm lại
           </button>
+          <button class="btn btn-outline" id="btn-costing-refresh-rates" title="Áp dụng lại đơn giá chuẩn mới nhất từ Bảng đơn giá cho toàn bộ các dòng">
+            🔄 Áp đơn giá mới
+          </button>
           <button class="btn btn-outline" id="btn-costing-manage-rates" title="Chỉnh sửa bảng đơn giá tham chiếu theo cấp bậc">
             📋 Bảng đơn giá
           </button>
@@ -203,8 +213,9 @@ export function render() {
             <span>📝 Bảng Tính Chi Phí Hạng Mục</span>
             <span class="badge blue" style="font-size: 0.75rem;">${project.code || project.id}</span>
           </div>
-          <div style="font-size: 0.8rem; color: var(--text-muted);" id="costing-save-indicator">
-            💾 Đã lưu tự động
+          <div style="font-size: 0.8rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;" id="costing-save-indicator">
+            <span class="costing-sync-dot synced"></span>
+            <span id="costing-save-indicator-text">☁️ Đã đồng bộ Cloud</span>
           </div>
         </div>
 
@@ -214,7 +225,7 @@ export function render() {
               <tr>
                 <th style="width: 44px; text-align: center;">#</th>
                 <th style="width: 180px;">Hạng mục</th>
-                <th style="width: 230px;">Nhân sự / Cấp bậc</th>
+                <th style="width: 260px;">Nhân sự / Cấp bậc</th>
                 <th style="width: 110px; text-align: right;">Số Km</th>
                 <th style="width: 130px; text-align: right;">Giờ / Km</th>
                 <th style="width: 170px; text-align: right;">Chi phí (VNĐ)</th>
@@ -251,6 +262,7 @@ function renderTableRowsHTML(entries, categories, rates) {
 
   return entries.map((entry, index) => {
     const calc = calculateRowCost(entry, rates);
+    const isRateDifferent = calc.rateObj && entry.appliedRate !== undefined && entry.appliedRate !== calc.rateObj.rate;
     return `
       <tr data-id="${entry.id}" class="costing-row">
         <td class="costing-row-num">${index + 1}</td>
@@ -262,13 +274,20 @@ function renderTableRowsHTML(entries, categories, rates) {
           </select>
         </td>
         <td>
-          <select class="costing-select cell-rate" data-field="rateId" data-id="${entry.id}">
-            ${rates.map(r => `
-              <option value="${r.id}" ${r.id === entry.rateId ? 'selected' : ''}>
-                ${r.name} (${formatVND(r.rate).replace(' ₫', '')}/h)
-              </option>
-            `).join('')}
-          </select>
+          <div class="costing-cell-rate-wrapper">
+            <select class="costing-select cell-rate" data-field="rateId" data-id="${entry.id}">
+              ${rates.map(r => `
+                <option value="${r.id}" ${r.id === entry.rateId ? 'selected' : ''}>
+                  ${r.name} (${formatVND(r.rate).replace(' ₫', '')}/h)
+                </option>
+              `).join('')}
+            </select>
+            <div class="costing-rate-snapshot-badge ${isRateDifferent ? 'snapshot-legacy' : ''}"
+              title="Đơn giá cố định đã khóa: ${formatVND(calc.rate)}/h ${isRateDifferent ? `(Đơn giá chuẩn hiện hành: ${formatVND(calc.rateObj.rate)}/h)` : ''}">
+              <span>🔒 ${formatVND(calc.rate).replace(' ₫', '')}/h</span>
+              ${isRateDifferent ? `<span class="badge-legacy-tag">Khóa giá cũ</span>` : ''}
+            </div>
+          </div>
         </td>
         <td>
           <input type="number" step="0.1" min="0" class="costing-input costing-input-number cell-km"
@@ -469,6 +488,7 @@ function handleExcelPaste(clipboardText, startRowIndex = 0) {
       const entry = currentEntries[targetIndex];
       entry.category = row.category;
       entry.rateId = row.rateId;
+      entry.appliedRate = row.appliedRate;
       entry.km = row.km;
       entry.hoursPerKm = row.hoursPerKm;
       pastedRowIds.push(entry.id);
@@ -479,6 +499,7 @@ function handleExcelPaste(clipboardText, startRowIndex = 0) {
         id: newId,
         category: row.category,
         rateId: row.rateId,
+        appliedRate: row.appliedRate,
         km: row.km,
         hoursPerKm: row.hoursPerKm
       };
@@ -487,8 +508,10 @@ function handleExcelPaste(clipboardText, startRowIndex = 0) {
     }
   });
 
-  // Save to persistence
-  saveProjectCosting(selectedProjectId, currentEntries);
+  // Save to persistence & Cloud
+  const { projects } = getState();
+  const currentProj = (projects || []).find(p => p.id === selectedProjectId);
+  saveProjectCosting(selectedProjectId, currentEntries, currentProj);
 
   // Render updated table
   const tbody = document.getElementById('costing-table-body');
@@ -524,6 +547,59 @@ export function init() {
   cellPreEditSnapshot = null;
   updateHistoryButtonsState();
 
+  // Subscribe to Cloud Sync status changes
+  if (unsubscribeSyncStatus) {
+    unsubscribeSyncStatus();
+    unsubscribeSyncStatus = null;
+  }
+  unsubscribeSyncStatus = onCostingSyncStatusChange((status, detail) => {
+    const textEl = document.getElementById('costing-save-indicator-text');
+    const dotEl = document.querySelector('.costing-sync-dot');
+    if (!textEl) return;
+
+    if (status === 'syncing') {
+      textEl.textContent = '☁️ Đang lưu Cloud...';
+      textEl.style.color = 'var(--accent-primary)';
+      if (dotEl) dotEl.className = 'costing-sync-dot syncing';
+    } else if (status === 'synced') {
+      textEl.textContent = '☁️ Đã đồng bộ Cloud';
+      textEl.style.color = '#10b981';
+      if (dotEl) dotEl.className = 'costing-sync-dot synced';
+    } else if (status === 'local') {
+      textEl.textContent = '💾 Đã lưu cục bộ';
+      textEl.style.color = '#94a3b8';
+      if (dotEl) dotEl.className = 'costing-sync-dot local';
+    } else if (status === 'error') {
+      textEl.textContent = '⚠️ Lỗi đồng bộ Cloud';
+      textEl.style.color = '#ef4444';
+      if (dotEl) dotEl.className = 'costing-sync-dot error';
+    }
+  });
+
+  // Asynchronously fetch latest Config and Project Costings from Firestore Cloud
+  (async () => {
+    try {
+      const cloudConfig = await fetchCostingConfigFromCloud();
+      if (cloudConfig) {
+        costingData = loadCostingData();
+      }
+      if (selectedProjectId) {
+        const cloudEntries = await fetchProjectCostingFromCloud(selectedProjectId);
+        if (cloudEntries && cloudEntries.length > 0) {
+          currentEntries = cloudEntries;
+          const tbody = document.getElementById('costing-table-body');
+          if (tbody) {
+            tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+            bindTableEvents();
+          }
+          updateTotalsDOM();
+        }
+      }
+    } catch (err) {
+      console.warn('Lỗi kiểm tra dữ liệu Cloud khi tải trang:', err);
+    }
+  })();
+
   // 1. Switch project
   const projectSelect = document.getElementById('costing-project-select');
   if (projectSelect) {
@@ -544,6 +620,19 @@ export function init() {
       }
       updateTotalsDOM();
       showToast(`Đã chuyển sang bảng tính: ${currentProj ? currentProj.name : selectedProjectId}`);
+
+      // Background check Cloud for project entries
+      fetchProjectCostingFromCloud(selectedProjectId).then(cloudEntries => {
+        if (cloudEntries && cloudEntries.length > 0 && selectedProjectId === e.target.value) {
+          currentEntries = cloudEntries;
+          const currentTbody = document.getElementById('costing-table-body');
+          if (currentTbody) {
+            currentTbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+            bindTableEvents();
+          }
+          updateTotalsDOM();
+        }
+      });
     });
   }
 
@@ -554,15 +643,20 @@ export function init() {
       pushHistory();
 
       const newId = 'ce_' + Date.now();
+      const rateObj = costingData.rates[0];
       const newEntry = {
         id: newId,
         category: costingData.categories[0] || 'ATGT',
-        rateId: costingData.rates[0].id,
+        rateId: rateObj ? rateObj.id : 'R001',
+        appliedRate: rateObj ? Number(rateObj.rate) || 0 : 0,
         km: 1.0,
         hoursPerKm: 10
       };
       currentEntries.push(newEntry);
-      saveProjectCosting(selectedProjectId, currentEntries);
+      
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === selectedProjectId);
+      saveProjectCosting(selectedProjectId, currentEntries, currentProj);
 
       const tbody = document.getElementById('costing-table-body');
       if (tbody) {
@@ -593,7 +687,33 @@ export function init() {
     });
   }
 
-  // 4. Manage Rates Modal
+  // 4. Refresh Rates to Current Rate Table
+  const btnRefreshRates = document.getElementById('btn-costing-refresh-rates');
+  if (btnRefreshRates) {
+    btnRefreshRates.addEventListener('click', () => {
+      if (!currentEntries || currentEntries.length === 0) {
+        showToast('Bảng tính đang rỗng, không có dòng nào để cập nhật');
+        return;
+      }
+      if (confirm('Bạn có muốn cập nhật toàn bộ các dòng theo Bảng đơn giá mới nhất không? Đơn giá đóng băng cũ sẽ được thay bằng giá hiện hành.')) {
+        pushHistory();
+        currentEntries = refreshAllRowRates(currentEntries, costingData.rates);
+        const { projects } = getState();
+        const currentProj = (projects || []).find(p => p.id === selectedProjectId);
+        saveProjectCosting(selectedProjectId, currentEntries, currentProj);
+
+        const tbody = document.getElementById('costing-table-body');
+        if (tbody) {
+          tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+          bindTableEvents();
+        }
+        updateTotalsDOM();
+        showToast('🔄 Đã cập nhật toàn bộ bảng tính theo Bảng đơn giá mới nhất!');
+      }
+    });
+  }
+
+  // 5. Manage Rates Modal
   const btnRates = document.getElementById('btn-costing-manage-rates');
   if (btnRates) {
     btnRates.addEventListener('click', () => {
@@ -601,7 +721,7 @@ export function init() {
     });
   }
 
-  // 5. Manage Categories Modal
+  // 6. Manage Categories Modal
   const btnCategories = document.getElementById('btn-costing-manage-categories');
   if (btnCategories) {
     btnCategories.addEventListener('click', () => {
@@ -609,7 +729,7 @@ export function init() {
     });
   }
 
-  // 6. Export CSV
+  // 7. Export CSV
   const btnExport = document.getElementById('btn-costing-export-csv');
   if (btnExport) {
     btnExport.addEventListener('click', () => {
@@ -620,7 +740,7 @@ export function init() {
     });
   }
 
-  // 7. Global Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)
+  // 8. Global Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)
   handleKeyDown = (e) => {
     if (!document.getElementById('project-costing-container')) return;
     // Don't intercept shortcuts when editing inside modals
@@ -645,7 +765,7 @@ export function init() {
   };
   window.addEventListener('keydown', handleKeyDown);
 
-  // 8. Multi-row Excel Paste Event Listener
+  // 9. Multi-row Excel Paste Event Listener
   handleDocumentPaste = (e) => {
     const pageContainer = document.getElementById('project-costing-container');
     if (!pageContainer) return;
@@ -747,7 +867,12 @@ function bindTableEvents() {
         cellPreEditSnapshot = null;
       }
 
-      if (field === 'km' || field === 'hoursPerKm') {
+      if (field === 'rateId') {
+        entry.rateId = target.value;
+        const rateObj = costingData.rates.find(r => r.id === target.value);
+        // Rate Snapshot: lock in the newly chosen rate
+        entry.appliedRate = rateObj ? Number(rateObj.rate) || 0 : 0;
+      } else if (field === 'km' || field === 'hoursPerKm') {
         const val = parseFloat(target.value);
         entry[field] = isNaN(val) ? 0 : val;
       } else {
@@ -761,8 +886,19 @@ function bindTableEvents() {
       if (costCell) costCell.textContent = formatVND(calc.cost);
       if (taxCell) taxCell.textContent = formatVND(calc.costAfterTax);
 
-      // Save to localStorage
-      saveProjectCosting(selectedProjectId, currentEntries);
+      // Update rate snapshot badge in cell
+      const badge = tbody.querySelector(`tr[data-id="${id}"] .costing-rate-snapshot-badge`);
+      if (badge) {
+        const isRateDiff = calc.rateObj && entry.appliedRate !== undefined && entry.appliedRate !== calc.rateObj.rate;
+        badge.className = `costing-rate-snapshot-badge ${isRateDiff ? 'snapshot-legacy' : ''}`;
+        badge.title = `Đơn giá cố định đã khóa: ${formatVND(calc.rate)}/h ${isRateDiff ? `(Đơn giá chuẩn hiện hành: ${formatVND(calc.rateObj.rate)}/h)` : ''}`;
+        badge.innerHTML = `<span>🔒 ${formatVND(calc.rate).replace(' ₫', '')}/h</span>${isRateDiff ? '<span class="badge-legacy-tag">Khóa giá cũ</span>' : ''}`;
+      }
+
+      // Save to localStorage & Cloud
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === selectedProjectId);
+      saveProjectCosting(selectedProjectId, currentEntries, currentProj);
       updateTotalsDOM();
     };
 
@@ -784,7 +920,10 @@ function bindTableEvents() {
 
       const id = e.currentTarget.dataset.id;
       currentEntries = currentEntries.filter(item => item.id !== id);
-      saveProjectCosting(selectedProjectId, currentEntries);
+      
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === selectedProjectId);
+      saveProjectCosting(selectedProjectId, currentEntries, currentProj);
       
       tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
       bindTableEvents();
@@ -973,6 +1112,10 @@ export function destroy() {
   if (handleDocumentPaste) {
     document.removeEventListener('paste', handleDocumentPaste);
     handleDocumentPaste = null;
+  }
+  if (unsubscribeSyncStatus) {
+    unsubscribeSyncStatus();
+    unsubscribeSyncStatus = null;
   }
   selectedProjectId = null;
   currentEntries = [];

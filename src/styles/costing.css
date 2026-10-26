@@ -57,6 +57,54 @@
   flex-wrap: wrap;
 }
 
+.costing-btn-history {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.costing-btn-history:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  filter: grayscale(1);
+}
+
+.costing-btn-history:not(:disabled):hover {
+  background: var(--bg-primary);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  transform: translateY(-1px);
+}
+
+.costing-btn-history:not(:disabled):active {
+  transform: translateY(0);
+}
+
+.costing-row.costing-row-active td {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+.costing-row-pasted td {
+  animation: costingPasteFlash 1.4s ease-out;
+}
+
+@keyframes costingPasteFlash {
+  0% {
+    background-color: rgba(16, 185, 129, 0.35) !important;
+  }
+  100% {
+    background-color: inherit;
+  }
+}
+
 /* KPI Summary Cards */
 .costing-kpi-grid {
   display: grid;

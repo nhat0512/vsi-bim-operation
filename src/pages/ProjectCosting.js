@@ -13,7 +13,8 @@ import {
   addCategory,
   deleteCategory,
   updateRates,
-  exportCostingToCSV
+  exportCostingToCSV,
+  parseExcelTSV
 } from '../utils/costingStorage.js';
 import { openModal, closeModal } from '../components/Modal.js';
 import { showToast } from '../components/ProjectFormModal.js';
@@ -21,6 +22,15 @@ import { showToast } from '../components/ProjectFormModal.js';
 let selectedProjectId = null;
 let currentEntries = [];
 let costingData = null;
+
+// State History (Undo / Redo) Management
+let undoStack = []; // Max 20 snapshots of currentEntries
+let redoStack = [];
+const MAX_HISTORY = 20;
+let lastActiveRowIndex = 0;
+let cellPreEditSnapshot = null;
+let handleKeyDown = null;
+let handleDocumentPaste = null;
 
 /**
  * Get active project object
@@ -128,6 +138,12 @@ export function render() {
         <div class="costing-action-buttons">
           <button class="btn btn-primary" id="btn-costing-add-row" title="Thêm dòng mới vào bảng tính">
             + Thêm dòng
+          </button>
+          <button class="btn btn-outline costing-btn-history" id="btn-costing-undo" title="Hoàn tác thao tác trước (Ctrl+Z)" disabled>
+            ↶ Hoàn tác
+          </button>
+          <button class="btn btn-outline costing-btn-history" id="btn-costing-redo" title="Làm lại thao tác vừa hoàn tác (Ctrl+Y)" disabled>
+            ↷ Làm lại
           </button>
           <button class="btn btn-outline" id="btn-costing-manage-rates" title="Chỉnh sửa bảng đơn giá tham chiếu theo cấp bậc">
             📋 Bảng đơn giá
@@ -348,17 +364,175 @@ function updateTotalsDOM() {
 }
 
 /**
+ * Deep clone entries array to avoid mutation reference bugs
+ */
+function cloneEntries(entries) {
+  return JSON.parse(JSON.stringify(entries || []));
+}
+
+/**
+ * Record a state snapshot to the undo stack
+ */
+function pushHistory(snapshot) {
+  const stateToPush = snapshot ? cloneEntries(snapshot) : cloneEntries(currentEntries);
+  undoStack.push(stateToPush);
+  if (undoStack.length > MAX_HISTORY) {
+    undoStack.shift();
+  }
+  redoStack = []; // Clear redo stack on new user action
+  updateHistoryButtonsState();
+}
+
+/**
+ * Perform Undo (Ctrl+Z)
+ */
+function handleUndo() {
+  if (undoStack.length === 0) return;
+  const previousState = undoStack.pop();
+  redoStack.push(cloneEntries(currentEntries));
+  if (redoStack.length > MAX_HISTORY) {
+    redoStack.shift();
+  }
+
+  currentEntries = previousState;
+  saveProjectCosting(selectedProjectId, currentEntries);
+
+  const tbody = document.getElementById('costing-table-body');
+  if (tbody) {
+    tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+    bindTableEvents();
+  }
+  updateTotalsDOM();
+  updateHistoryButtonsState();
+  showToast('↶ Đã hoàn tác (Undo)');
+}
+
+/**
+ * Perform Redo (Ctrl+Y)
+ */
+function handleRedo() {
+  if (redoStack.length === 0) return;
+  const nextState = redoStack.pop();
+  undoStack.push(cloneEntries(currentEntries));
+  if (undoStack.length > MAX_HISTORY) {
+    undoStack.shift();
+  }
+
+  currentEntries = nextState;
+  saveProjectCosting(selectedProjectId, currentEntries);
+
+  const tbody = document.getElementById('costing-table-body');
+  if (tbody) {
+    tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+    bindTableEvents();
+  }
+  updateTotalsDOM();
+  updateHistoryButtonsState();
+  showToast('↷ Đã làm lại (Redo)');
+}
+
+/**
+ * Update disabled states & tooltips of Undo/Redo buttons
+ */
+function updateHistoryButtonsState() {
+  const btnUndo = document.getElementById('btn-costing-undo');
+  const btnRedo = document.getElementById('btn-costing-redo');
+  if (btnUndo) {
+    btnUndo.disabled = undoStack.length === 0;
+    btnUndo.title = undoStack.length > 0 ? `Hoàn tác (Ctrl+Z) — còn ${undoStack.length} bước` : 'Hoàn tác thao tác trước (Ctrl+Z)';
+  }
+  if (btnRedo) {
+    btnRedo.disabled = redoStack.length === 0;
+    btnRedo.title = redoStack.length > 0 ? `Làm lại (Ctrl+Y) — còn ${redoStack.length} bước` : 'Làm lại thao tác vừa hoàn tác (Ctrl+Y)';
+  }
+}
+
+/**
+ * Handle Multi-row Excel Paste (TSV data)
+ */
+function handleExcelPaste(clipboardText, startRowIndex = 0) {
+  if (!clipboardText || !clipboardText.trim()) return;
+
+  const parsedRows = parseExcelTSV(clipboardText, costingData);
+  if (!parsedRows || parsedRows.length === 0) return;
+
+  // Snapshot current state for undo BEFORE modifying
+  pushHistory();
+
+  const startIndex = Math.max(0, startRowIndex);
+  const pastedRowIds = [];
+
+  parsedRows.forEach((row, i) => {
+    const targetIndex = startIndex + i;
+    if (targetIndex < currentEntries.length) {
+      // Overwrite existing row
+      const entry = currentEntries[targetIndex];
+      entry.category = row.category;
+      entry.rateId = row.rateId;
+      entry.km = row.km;
+      entry.hoursPerKm = row.hoursPerKm;
+      pastedRowIds.push(entry.id);
+    } else {
+      // Append new row
+      const newId = 'ce_' + Date.now() + '_' + i;
+      const newEntry = {
+        id: newId,
+        category: row.category,
+        rateId: row.rateId,
+        km: row.km,
+        hoursPerKm: row.hoursPerKm
+      };
+      currentEntries.push(newEntry);
+      pastedRowIds.push(newId);
+    }
+  });
+
+  // Save to persistence
+  saveProjectCosting(selectedProjectId, currentEntries);
+
+  // Render updated table
+  const tbody = document.getElementById('costing-table-body');
+  if (tbody) {
+    tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+    bindTableEvents();
+
+    // Trigger highlight flash on pasted rows
+    pastedRowIds.forEach(id => {
+      const tr = tbody.querySelector(`tr[data-id="${id}"]`);
+      if (tr) {
+        tr.classList.add('costing-row-pasted');
+        setTimeout(() => tr.classList.remove('costing-row-pasted'), 1500);
+      }
+    });
+  }
+
+  updateTotalsDOM();
+  showToast(`📋 Đã dán thành công ${parsedRows.length} dòng từ Excel!`);
+}
+
+/**
  * Initialize event listeners
  */
 export function init() {
   const container = document.getElementById('project-costing-container');
   if (!container) return;
 
+  // Reset history stack on page load
+  undoStack = [];
+  redoStack = [];
+  lastActiveRowIndex = 0;
+  cellPreEditSnapshot = null;
+  updateHistoryButtonsState();
+
   // 1. Switch project
   const projectSelect = document.getElementById('costing-project-select');
   if (projectSelect) {
     projectSelect.addEventListener('change', (e) => {
       selectedProjectId = e.target.value;
+      undoStack = [];
+      redoStack = [];
+      updateHistoryButtonsState();
+
       const { projects } = getState();
       const currentProj = (projects || []).find(p => p.id === selectedProjectId);
       currentEntries = getOrSeedEntries(selectedProjectId);
@@ -377,6 +551,8 @@ export function init() {
   const btnAddRow = document.getElementById('btn-costing-add-row');
   if (btnAddRow) {
     btnAddRow.addEventListener('click', () => {
+      pushHistory();
+
       const newId = 'ce_' + Date.now();
       const newEntry = {
         id: newId,
@@ -402,7 +578,22 @@ export function init() {
     });
   }
 
-  // 3. Manage Rates Modal
+  // 3. Undo / Redo Toolbar Buttons
+  const btnUndo = document.getElementById('btn-costing-undo');
+  if (btnUndo) {
+    btnUndo.addEventListener('click', () => {
+      handleUndo();
+    });
+  }
+
+  const btnRedo = document.getElementById('btn-costing-redo');
+  if (btnRedo) {
+    btnRedo.addEventListener('click', () => {
+      handleRedo();
+    });
+  }
+
+  // 4. Manage Rates Modal
   const btnRates = document.getElementById('btn-costing-manage-rates');
   if (btnRates) {
     btnRates.addEventListener('click', () => {
@@ -410,7 +601,7 @@ export function init() {
     });
   }
 
-  // 4. Manage Categories Modal
+  // 5. Manage Categories Modal
   const btnCategories = document.getElementById('btn-costing-manage-categories');
   if (btnCategories) {
     btnCategories.addEventListener('click', () => {
@@ -418,7 +609,7 @@ export function init() {
     });
   }
 
-  // 5. Export CSV
+  // 6. Export CSV
   const btnExport = document.getElementById('btn-costing-export-csv');
   if (btnExport) {
     btnExport.addEventListener('click', () => {
@@ -428,6 +619,80 @@ export function init() {
       showToast('Đã xuất file báo giá thành công!');
     });
   }
+
+  // 7. Global Keyboard Shortcuts (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z)
+  handleKeyDown = (e) => {
+    if (!document.getElementById('project-costing-container')) return;
+    // Don't intercept shortcuts when editing inside modals
+    if (document.querySelector('.modal-backdrop') || document.querySelector('.modal-container')) {
+      return;
+    }
+
+    const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+    if (!isCtrlOrCmd) return;
+
+    if (e.key.toLowerCase() === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) {
+        handleRedo();
+      } else {
+        handleUndo();
+      }
+    } else if (e.key.toLowerCase() === 'y') {
+      e.preventDefault();
+      handleRedo();
+    }
+  };
+  window.addEventListener('keydown', handleKeyDown);
+
+  // 8. Multi-row Excel Paste Event Listener
+  handleDocumentPaste = (e) => {
+    const pageContainer = document.getElementById('project-costing-container');
+    if (!pageContainer) return;
+
+    // Do not intercept if user is typing in a modal
+    if (e.target.closest('.modal-container') || e.target.closest('.modal-backdrop')) {
+      return;
+    }
+
+    // Only process if within costing page or document body
+    if (!pageContainer.contains(e.target) && e.target !== document.body) {
+      return;
+    }
+
+    const clipboardText = (e.clipboardData || window.clipboardData)?.getData('text') || '';
+    if (!clipboardText) return;
+
+    const hasTabs = clipboardText.includes('\t');
+    const lines = clipboardText.trim().split(/\r?\n/).filter(line => line.trim().length > 0);
+    const isMultiRow = lines.length > 1;
+
+    // If single non-tabular value and target is an input/textarea: allow normal single-cell paste!
+    if (!hasTabs && !isMultiRow) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) {
+        return;
+      }
+    }
+
+    // Tabular Excel range paste detected
+    e.preventDefault();
+    e.stopPropagation();
+
+    let startRowIndex = 0;
+    const targetRow = e.target.closest('tr[data-id]');
+    if (targetRow) {
+      const rowId = targetRow.dataset.id;
+      const foundIdx = currentEntries.findIndex(item => item.id === rowId);
+      if (foundIdx !== -1) {
+        startRowIndex = foundIdx;
+      }
+    } else if (lastActiveRowIndex >= 0 && lastActiveRowIndex < currentEntries.length) {
+      startRowIndex = lastActiveRowIndex;
+    }
+
+    handleExcelPaste(clipboardText, startRowIndex);
+  };
+  document.addEventListener('paste', handleDocumentPaste);
 
   // Bind initial table row events
   bindTableEvents();
@@ -440,13 +705,47 @@ function bindTableEvents() {
   const tbody = document.getElementById('costing-table-body');
   if (!tbody) return;
 
+  // Track active row click
+  tbody.querySelectorAll('tr.costing-row').forEach((tr, index) => {
+    tr.addEventListener('click', (e) => {
+      if (e.target.closest('.costing-btn-delete-row')) return;
+      lastActiveRowIndex = index;
+      tbody.querySelectorAll('tr.costing-row').forEach(r => r.classList.remove('costing-row-active'));
+      tr.classList.add('costing-row-active');
+    });
+  });
+
   // Input & Change listener on all fields
   tbody.querySelectorAll('.costing-input, .costing-select').forEach(el => {
+    // Record snapshot on focus for undo
+    el.addEventListener('focus', (e) => {
+      cellPreEditSnapshot = cloneEntries(currentEntries);
+      const tr = e.target.closest('tr[data-id]');
+      if (tr) {
+        const idx = currentEntries.findIndex(item => item.id === tr.dataset.id);
+        if (idx !== -1) {
+          lastActiveRowIndex = idx;
+          tbody.querySelectorAll('tr.costing-row').forEach(r => r.classList.remove('costing-row-active'));
+          tr.classList.add('costing-row-active');
+        }
+      }
+    });
+
+    el.addEventListener('blur', () => {
+      cellPreEditSnapshot = null;
+    });
+
     const handleFieldChange = (target) => {
       const id = target.dataset.id;
       const field = target.dataset.field;
       const entry = currentEntries.find(e => e.id === id);
       if (!entry) return;
+
+      // Push history before saving first change in an edit session
+      if (cellPreEditSnapshot) {
+        pushHistory(cellPreEditSnapshot);
+        cellPreEditSnapshot = null;
+      }
 
       if (field === 'km' || field === 'hoursPerKm') {
         const val = parseFloat(target.value);
@@ -481,6 +780,8 @@ function bindTableEvents() {
   // Delete Row buttons
   tbody.querySelectorAll('.costing-btn-delete-row').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      pushHistory();
+
       const id = e.currentTarget.dataset.id;
       currentEntries = currentEntries.filter(item => item.id !== id);
       saveProjectCosting(selectedProjectId, currentEntries);
@@ -665,7 +966,19 @@ function openRatesModal() {
 }
 
 export function destroy() {
+  if (handleKeyDown) {
+    window.removeEventListener('keydown', handleKeyDown);
+    handleKeyDown = null;
+  }
+  if (handleDocumentPaste) {
+    document.removeEventListener('paste', handleDocumentPaste);
+    handleDocumentPaste = null;
+  }
   selectedProjectId = null;
   currentEntries = [];
   costingData = null;
+  undoStack = [];
+  redoStack = [];
+  lastActiveRowIndex = 0;
+  cellPreEditSnapshot = null;
 }

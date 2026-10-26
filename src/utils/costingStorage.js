@@ -172,6 +172,185 @@ export function updateRates(rates) {
 }
 
 /**
+ * Parse a numeric value from string (supporting comma decimals e.g. 5,2 or 1.250,5)
+ */
+export function parseNumericValue(str) {
+  if (typeof str === 'number') return isNaN(str) ? 0 : str;
+  if (!str) return 0;
+  let clean = String(str).trim();
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(clean)) {
+    clean = clean.replace(/\./g, '').replace(',', '.');
+  } else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(clean)) {
+    clean = clean.replace(/,/g, '');
+  } else {
+    clean = clean.replace(',', '.');
+  }
+  const match = clean.match(/-?\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : 0;
+}
+
+/**
+ * Check if string looks like a numeric value
+ */
+export function isLikelyNumeric(str) {
+  if (typeof str === 'number') return true;
+  if (!str) return false;
+  const clean = String(str).trim().replace(',', '.');
+  return /^-?\d+(\.\d+)?$/.test(clean);
+}
+
+/**
+ * Match text against existing rates by ID, name, role, level or rate amount
+ */
+export function matchRateFromText(text, rates = []) {
+  if (!text || !Array.isArray(rates) || rates.length === 0) {
+    return rates && rates[0] ? rates[0].id : 'R001';
+  }
+  const raw = String(text).trim().toLowerCase();
+
+  // 1. Exact ID
+  const byId = rates.find(r => r.id.toLowerCase() === raw);
+  if (byId) return byId.id;
+
+  // 2. Exact Name
+  const byExactName = rates.find(r => r.name.toLowerCase() === raw);
+  if (byExactName) return byExactName.id;
+
+  // 3. Keyword matching
+  if (raw.includes('manager')) {
+    const r = rates.find(x => x.name.toLowerCase().includes('manager') || (x.role && x.role.toLowerCase().includes('manager')));
+    if (r) return r.id;
+  }
+  if (raw.includes('coordinator')) {
+    const r = rates.find(x => x.name.toLowerCase().includes('coordinator') || (x.role && x.role.toLowerCase().includes('coordinator')));
+    if (r) return r.id;
+  }
+  if (raw.includes('modeler 1') || raw.includes('m1') || raw.includes('150')) {
+    const r = rates.find(x => x.name.toLowerCase().includes('modeler 1') || x.rate === 150000);
+    if (r) return r.id;
+  }
+  if (raw.includes('modeler 2') || raw.includes('m2') || raw.includes('120')) {
+    const r = rates.find(x => x.name.toLowerCase().includes('modeler 2') || x.rate === 120000);
+    if (r) return r.id;
+  }
+  if (raw.includes('modeler 3') || raw.includes('m3') || raw.includes('100')) {
+    const r = rates.find(x => x.name.toLowerCase().includes('modeler 3') || x.rate === 100000);
+    if (r) return r.id;
+  }
+  if (raw.includes('senior')) {
+    const r = rates.find(x => x.level === 'senior' && x.name.toLowerCase().includes('modeler'));
+    if (r) return r.id;
+  }
+  if (raw.includes('mid')) {
+    const r = rates.find(x => x.level === 'mid');
+    if (r) return r.id;
+  }
+  if (raw.includes('junior')) {
+    const r = rates.find(x => x.level === 'junior');
+    if (r) return r.id;
+  }
+
+  // 4. Substring in rate name
+  const bySub = rates.find(r => r.name.toLowerCase().includes(raw) || raw.includes(r.name.toLowerCase()));
+  if (bySub) return bySub.id;
+
+  return rates[0].id;
+}
+
+/**
+ * Match a category or create a new one dynamically
+ */
+export function matchOrAddCategory(text, costingData) {
+  if (!text) return costingData?.categories?.[0] || 'ATGT';
+  const clean = String(text).trim();
+  if (!clean) return costingData?.categories?.[0] || 'ATGT';
+
+  const existing = (costingData.categories || []).find(c => c.toLowerCase() === clean.toLowerCase());
+  if (existing) return existing;
+
+  // Add new category
+  addCategory(clean);
+  if (costingData.categories && !costingData.categories.includes(clean)) {
+    costingData.categories.push(clean);
+  }
+  return clean;
+}
+
+/**
+ * Parse TSV text from Excel/Sheets clipboard into structured costing row objects
+ */
+export function parseExcelTSV(tsvText, costingData) {
+  if (!tsvText || typeof tsvText !== 'string') return [];
+  const lines = tsvText.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return [];
+
+  // Detect and skip header row if present
+  const firstLower = lines[0].toLowerCase();
+  const isHeader = firstLower.includes('hạng mục') || 
+                   firstLower.includes('stt') || 
+                   firstLower.includes('nhân sự') || 
+                   firstLower.includes('đơn giá') || 
+                   firstLower.includes('số km') || 
+                   firstLower.includes('category');
+  const dataLines = isHeader ? lines.slice(1) : lines;
+
+  const result = [];
+  dataLines.forEach(line => {
+    let cols = line.split('\t').map(c => c.trim());
+    if (cols.length === 1 && cols[0] === '') return;
+
+    // Skip STT column if present as first numeric column when >= 5 cols
+    if (cols.length >= 5 && /^\d+$/.test(cols[0])) {
+      cols = cols.slice(1);
+    }
+
+    let category = '';
+    let rateId = '';
+    let km = 0;
+    let hoursPerKm = 0;
+
+    if (cols.length >= 4) {
+      category = matchOrAddCategory(cols[0], costingData);
+      rateId = matchRateFromText(cols[1], costingData.rates);
+      km = parseNumericValue(cols[2]);
+      hoursPerKm = parseNumericValue(cols[3]);
+    } else if (cols.length === 3) {
+      category = matchOrAddCategory(cols[0], costingData);
+      const isCol1Num = isLikelyNumeric(cols[1]);
+      const isCol2Num = isLikelyNumeric(cols[2]);
+      if (isCol1Num && isCol2Num) {
+        rateId = costingData.rates[0]?.id || 'R001';
+        km = parseNumericValue(cols[1]);
+        hoursPerKm = parseNumericValue(cols[2]);
+      } else {
+        rateId = matchRateFromText(cols[1], costingData.rates);
+        km = parseNumericValue(cols[2]);
+        hoursPerKm = 10;
+      }
+    } else if (cols.length === 2) {
+      category = matchOrAddCategory(cols[0], costingData);
+      rateId = costingData.rates[0]?.id || 'R001';
+      km = parseNumericValue(cols[1]);
+      hoursPerKm = 10;
+    } else if (cols.length === 1) {
+      category = matchOrAddCategory(cols[0], costingData);
+      rateId = costingData.rates[0]?.id || 'R001';
+      km = 1.0;
+      hoursPerKm = 10;
+    }
+
+    result.push({
+      category,
+      rateId,
+      km,
+      hoursPerKm
+    });
+  });
+
+  return result;
+}
+
+/**
  * Export project costing entries to CSV with UTF-8 BOM
  */
 export function exportCostingToCSV(project, entries, rates) {

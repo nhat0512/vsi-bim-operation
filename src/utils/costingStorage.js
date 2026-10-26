@@ -97,37 +97,209 @@ export function saveCostingData(data) {
 }
 
 /**
- * Get costing entries for a specific project from local cache
+/**
+ * Get full project costing object including revisions
+ * Automatically ensures backwards compatibility for projects with legacy flat entries
  */
-export function getProjectCosting(projectId) {
+export function getProjectRevisions(projectId) {
   const data = loadCostingData();
-  const proj = data.projects[projectId];
-  if (proj && Array.isArray(proj.entries)) {
-    return proj.entries;
+  let proj = data.projects[projectId];
+
+  if (!proj) {
+    const initialBaseline = {
+      id: 'rev_0',
+      name: 'Rev 0 - Baseline',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: getState()?.currentUser?.name || 'Hệ thống',
+      entries: []
+    };
+    proj = {
+      updatedAt: new Date().toISOString(),
+      activeRevisionId: 'rev_0',
+      revisions: [initialBaseline],
+      entries: []
+    };
+    data.projects[projectId] = proj;
+    saveCostingData(data);
+    return proj;
   }
-  return [];
+
+  // Backwards compatibility: If project only has flat entries or missing revisions
+  if (!Array.isArray(proj.revisions) || proj.revisions.length === 0) {
+    const existingEntries = Array.isArray(proj.entries) ? proj.entries : [];
+    const baseline = {
+      id: 'rev_0',
+      name: 'Rev 0 - Baseline',
+      createdAt: proj.updatedAt || new Date().toISOString(),
+      updatedAt: proj.updatedAt || new Date().toISOString(),
+      createdBy: getState()?.currentUser?.name || 'Hệ thống',
+      entries: existingEntries
+    };
+    proj.revisions = [baseline];
+    proj.activeRevisionId = 'rev_0';
+    proj.entries = existingEntries;
+    saveCostingData(data);
+  }
+
+  if (!proj.activeRevisionId) {
+    proj.activeRevisionId = proj.revisions[0]?.id || 'rev_0';
+  }
+
+  return proj;
 }
 
 /**
- * Save costing entries for a specific project
+ * Get costing entries for a specific project from local cache (active revision or specified revision)
+ */
+export function getProjectCosting(projectId, revisionId = null) {
+  const proj = getProjectRevisions(projectId);
+  const targetId = revisionId || proj.activeRevisionId || 'rev_0';
+  const rev = proj.revisions.find(r => r.id === targetId) || proj.revisions[0];
+  return rev && Array.isArray(rev.entries) ? rev.entries : [];
+}
+
+/**
+ * Set active revision for a project
+ */
+export function setActiveRevision(projectId, revisionId) {
+  const data = loadCostingData();
+  const proj = data.projects[projectId];
+  if (!proj || !Array.isArray(proj.revisions)) return false;
+
+  const rev = proj.revisions.find(r => r.id === revisionId);
+  if (!rev) return false;
+
+  proj.activeRevisionId = rev.id;
+  proj.entries = rev.entries || [];
+  proj.updatedAt = new Date().toISOString();
+  saveCostingData(data);
+  return true;
+}
+
+/**
+ * Create a new revision by cloning the current or specified revision
+ */
+export function createProjectRevision(projectId, fromRevId, newRevName = '') {
+  const data = loadCostingData();
+  const proj = getProjectRevisions(projectId);
+
+  const sourceRev = proj.revisions.find(r => r.id === fromRevId) || 
+                    proj.revisions.find(r => r.id === proj.activeRevisionId) || 
+                    proj.revisions[0];
+
+  const nextIndex = proj.revisions.length;
+  const letterCode = String.fromCharCode(65 + Math.min(nextIndex - 1, 25)); // A, B, C...
+  const name = (newRevName || '').trim() || `Rev ${letterCode} - Bản sao điều chỉnh`;
+  const newId = `rev_${Date.now()}`;
+
+  // Deep clone entries with fresh IDs
+  const clonedEntries = (sourceRev?.entries || []).map((e, idx) => ({
+    ...e,
+    id: `ce_${Date.now()}_${idx}_${Math.random().toString(36).substr(2, 5)}`
+  }));
+
+  const currentUser = getState()?.currentUser;
+  const newRev = {
+    id: newId,
+    name: name,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    createdBy: currentUser?.name || currentUser?.email || 'User',
+    entries: clonedEntries
+  };
+
+  proj.revisions.push(newRev);
+  proj.activeRevisionId = newId;
+  proj.entries = clonedEntries;
+  proj.updatedAt = new Date().toISOString();
+
+  saveCostingData(data);
+
+  // Sync to Cloud
+  const projects = getState()?.projects || [];
+  const meta = projects.find(p => p.id === projectId);
+  syncProjectCostingToCloud(projectId, clonedEntries, meta, proj);
+
+  return newRev;
+}
+
+/**
+ * Delete a revision (prohibits deleting the only remaining revision)
+ */
+export function deleteProjectRevision(projectId, revisionId) {
+  const data = loadCostingData();
+  const proj = data.projects[projectId];
+  if (!proj || !Array.isArray(proj.revisions) || proj.revisions.length <= 1) {
+    return { success: false, message: 'Không thể xóa phiên bản duy nhất của dự án!' };
+  }
+
+  const idx = proj.revisions.findIndex(r => r.id === revisionId);
+  if (idx === -1) return { success: false, message: 'Không tìm thấy phiên bản cần xóa.' };
+
+  const deletedName = proj.revisions[idx].name;
+  proj.revisions.splice(idx, 1);
+
+  if (proj.activeRevisionId === revisionId) {
+    const fallbackRev = proj.revisions[Math.max(0, idx - 1)];
+    proj.activeRevisionId = fallbackRev.id;
+    proj.entries = fallbackRev.entries || [];
+  }
+  proj.updatedAt = new Date().toISOString();
+  saveCostingData(data);
+
+  // Sync to Cloud
+  const projects = getState()?.projects || [];
+  const meta = projects.find(p => p.id === projectId);
+  syncProjectCostingToCloud(projectId, proj.entries, meta, proj);
+
+  return { success: true, message: `Đã xóa phiên bản "${deletedName}"`, activeRevisionId: proj.activeRevisionId };
+}
+
+/**
+ * Save costing entries for a specific project and active/specified revision
  * Optimistic UI: writes to localStorage instantly, then syncs to Firestore with 1000ms debounce
  */
-export function saveProjectCosting(projectId, entries, projectMeta = null) {
+export function saveProjectCosting(projectId, entries, projectMeta = null, revisionId = null) {
   const data = loadCostingData();
-  data.projects[projectId] = {
-    updatedAt: new Date().toISOString(),
-    entries: Array.isArray(entries) ? entries : []
-  };
+  let proj = data.projects[projectId];
+
+  if (!proj || !Array.isArray(proj.revisions) || proj.revisions.length === 0) {
+    getProjectRevisions(projectId);
+    proj = data.projects[projectId];
+  }
+
+  const targetId = revisionId || proj.activeRevisionId || 'rev_0';
+  let targetRev = proj.revisions.find(r => r.id === targetId);
+
+  if (!targetRev) {
+    targetRev = {
+      id: targetId,
+      name: targetId === 'rev_0' ? 'Rev 0 - Baseline' : `Rev ${targetId}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      entries: Array.isArray(entries) ? entries : []
+    };
+    proj.revisions.push(targetRev);
+  } else {
+    targetRev.entries = Array.isArray(entries) ? entries : [];
+    targetRev.updatedAt = new Date().toISOString();
+  }
+
+  proj.activeRevisionId = targetId;
+  proj.entries = targetRev.entries;
+  proj.updatedAt = new Date().toISOString();
+
   saveCostingData(data);
 
   // Background sync to Firestore
-  syncProjectCostingToCloud(projectId, entries, projectMeta);
+  syncProjectCostingToCloud(projectId, targetRev.entries, projectMeta, proj);
 }
 
 /**
- * Background sync project costing entries to Firestore
+ * Background sync project costing entries and revisions to Firestore
  */
-export function syncProjectCostingToCloud(projectId, entries, projectMeta = null) {
+export function syncProjectCostingToCloud(projectId, entries, projectMeta = null, projObj = null) {
   if (!db) {
     notifySyncStatus('local', 'Đã lưu cục bộ (chưa kết nối Cloud)');
     return;
@@ -139,7 +311,8 @@ export function syncProjectCostingToCloud(projectId, entries, projectMeta = null
   cloudSyncTimeout = setTimeout(async () => {
     try {
       const docRef = doc(db, FIRESTORE_COLLECTION, projectId);
-      const { rates } = loadCostingData();
+      const { rates, projects } = loadCostingData();
+      const proj = projObj || projects[projectId] || {};
 
       let totalCost = 0;
       let totalCostAfterTax = 0;
@@ -168,12 +341,36 @@ export function syncProjectCostingToCloud(projectId, entries, projectMeta = null
       const avgCostPerKm = totalKm > 0 ? Math.round(totalCost / totalKm) : 0;
       const currentUser = getState()?.currentUser;
 
+      // Sanitize revisions for Firestore
+      const sanitizedRevisions = (proj.revisions || []).map(r => ({
+        id: r.id,
+        name: r.name,
+        createdAt: r.createdAt || new Date().toISOString(),
+        updatedAt: r.updatedAt || new Date().toISOString(),
+        createdBy: r.createdBy || 'User',
+        entries: (r.entries || []).map(re => {
+          const c = calculateRowCost(re, rates);
+          return {
+            id: re.id,
+            category: re.category || 'Khác',
+            rateId: re.rateId || 'R001',
+            appliedRate: re.appliedRate !== undefined && re.appliedRate !== null ? Number(re.appliedRate) : c.rate,
+            km: Number(re.km) || 0,
+            hoursPerKm: Number(re.hoursPerKm) || 0,
+            cost: c.cost,
+            costAfterTax: c.costAfterTax
+          };
+        })
+      }));
+
       const docData = {
         projectId,
         projectCode: projectMeta?.code || projectId,
         projectName: projectMeta?.name || 'Dự án',
         updatedAt: new Date().toISOString(),
         updatedBy: currentUser?.email || currentUser?.name || 'User',
+        activeRevisionId: proj.activeRevisionId || 'rev_0',
+        revisions: sanitizedRevisions,
         summary: {
           totalKm,
           totalHours,
@@ -185,7 +382,7 @@ export function syncProjectCostingToCloud(projectId, entries, projectMeta = null
       };
 
       await setDoc(docRef, docData, { merge: true });
-      console.log(`☁️ [Firestore] Đã đồng bộ chi phí dự án [${projectId}] lên collection "${FIRESTORE_COLLECTION}"`);
+      console.log(`☁️ [Firestore] Đã đồng bộ chi phí & revisions dự án [${projectId}] lên collection "${FIRESTORE_COLLECTION}"`);
       notifySyncStatus('synced', 'Đã đồng bộ Cloud');
     } catch (err) {
       console.error('❌ [Firestore] Lỗi đồng bộ costing lên Cloud:', err);
@@ -195,7 +392,7 @@ export function syncProjectCostingToCloud(projectId, entries, projectMeta = null
 }
 
 /**
- * Fetch project costing data from Firestore on project load
+ * Fetch project costing data and revisions from Firestore on project load
  */
 export async function fetchProjectCostingFromCloud(projectId) {
   if (!db || !projectId) return null;
@@ -204,16 +401,37 @@ export async function fetchProjectCostingFromCloud(projectId) {
     const snap = await getDoc(docRef);
     if (snap.exists()) {
       const cloudData = snap.data();
-      if (cloudData && Array.isArray(cloudData.entries)) {
+      if (cloudData) {
         // Cache to localStorage
         const localData = loadCostingData();
-        localData.projects[projectId] = {
-          updatedAt: cloudData.updatedAt || new Date().toISOString(),
-          entries: cloudData.entries
-        };
+
+        if (Array.isArray(cloudData.revisions) && cloudData.revisions.length > 0) {
+          localData.projects[projectId] = {
+            updatedAt: cloudData.updatedAt || new Date().toISOString(),
+            activeRevisionId: cloudData.activeRevisionId || cloudData.revisions[0].id,
+            revisions: cloudData.revisions,
+            entries: cloudData.entries || cloudData.revisions[0].entries || []
+          };
+        } else if (Array.isArray(cloudData.entries)) {
+          const baseline = {
+            id: 'rev_0',
+            name: 'Rev 0 - Baseline',
+            createdAt: cloudData.updatedAt || new Date().toISOString(),
+            updatedAt: cloudData.updatedAt || new Date().toISOString(),
+            createdBy: cloudData.updatedBy || 'Cloud',
+            entries: cloudData.entries
+          };
+          localData.projects[projectId] = {
+            updatedAt: cloudData.updatedAt || new Date().toISOString(),
+            activeRevisionId: 'rev_0',
+            revisions: [baseline],
+            entries: cloudData.entries
+          };
+        }
+
         saveCostingData(localData);
         notifySyncStatus('synced', 'Đã đồng bộ Cloud');
-        return cloudData.entries;
+        return localData.projects[projectId].entries;
       }
     }
   } catch (err) {
@@ -599,4 +817,223 @@ export function exportCostingToCSV(project, entries, rates) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * =========================================================================
+ * WBS & TIMESHEET READ-ONLY AGGREGATOR
+ * Strictly READ-ONLY extraction of actual hours from WBS tasks & Timesheets
+ * =========================================================================
+ */
+export function aggregateWBSActualHours(projectId) {
+  const state = getState() || {};
+  const projects = state.projects || [];
+  const project = projects.find(p => p.id === projectId);
+  const timesheets = state.timesheets || [];
+  const personnel = state.personnel || [];
+  const registeredUsers = state.registeredUsers || [];
+  const costingData = loadCostingData();
+  const rates = costingData.rates || DEFAULT_RATES;
+  const categories = costingData.categories || DEFAULT_CATEGORIES;
+
+  // 1. Gather all actual timesheet records for this project
+  const projectTimesheets = timesheets.filter(ts => ts.projectId === projectId && ts.isActual);
+
+  const actualWorkItems = [];
+
+  projectTimesheets.forEach(ts => {
+    const hours = Number(ts.hours) || 0;
+    if (hours > 0) {
+      actualWorkItems.push({
+        source: 'timesheet',
+        taskId: ts.taskId || '',
+        taskName: ts.taskName || '',
+        userName: ts.userName || '',
+        userId: ts.userId || '',
+        email: ts.email || '',
+        hours: hours,
+        dateString: ts.dateString || ts.date || ''
+      });
+    }
+  });
+
+  // 2. Check project tasks for dailyHours_actual (de-duplicate against projectTimesheets)
+  if (project && Array.isArray(project.tasks)) {
+    project.tasks.forEach(task => {
+      if (task.dailyHours_actual && typeof task.dailyHours_actual === 'object') {
+        Object.entries(task.dailyHours_actual).forEach(([dStr, hrs]) => {
+          const hNum = Number(hrs) || 0;
+          if (hNum > 0) {
+            const alreadyInTimesheets = projectTimesheets.some(ts => 
+              (ts.taskId === task.id || ts.taskName === task.name) &&
+              (ts.dateString === dStr || ts.date === dStr) &&
+              ts.isActual
+            );
+            if (!alreadyInTimesheets) {
+              actualWorkItems.push({
+                source: 'task_dailyHours',
+                taskId: task.id || '',
+                taskName: task.name || '',
+                userName: task.assignee || '',
+                userId: '',
+                email: '',
+                hours: hNum,
+                dateString: dStr
+              });
+            }
+          }
+        });
+      }
+    });
+  }
+
+  // Helper: Map Task Name -> Costing Category
+  function resolveCategory(taskName) {
+    if (!taskName) return 'Khác';
+    const lower = taskName.toLowerCase();
+
+    if (lower.includes('atgt') || lower.includes('an toan') || lower.includes('an toàn') || 
+        lower.includes('biển báo') || lower.includes('vạch sơn') || lower.includes('hộ lan')) {
+      return categories.find(c => c.toLowerCase() === 'atgt') || 'ATGT';
+    }
+    if (lower.includes('đường') || lower.includes('duong') || lower.includes('tuyến chính') || 
+        lower.includes('tuyen chinh') || lower.includes('nền mặt') || lower.includes('trắc dọc') || 
+        lower.includes('trắc ngang') || lower.includes('nền đường')) {
+      return categories.find(c => c.toLowerCase() === 'đường' || c.toLowerCase() === 'duong') || 'Đường';
+    }
+    if (lower.includes('cầu') || lower.includes('cau') || lower.includes('mố') || 
+        lower.includes('trụ') || lower.includes('dầm') || lower.includes('dây văng') || 
+        lower.includes('bản quá độ')) {
+      return categories.find(c => c.toLowerCase() === 'cầu' || c.toLowerCase() === 'cau') || 'Cầu';
+    }
+    if (lower.includes('hầm') || lower.includes('ham') || lower.includes('vỏ hầm') || 
+        lower.includes('đào hầm') || lower.includes('cửa hầm')) {
+      return categories.find(c => c.toLowerCase() === 'hầm' || c.toLowerCase() === 'ham') || 'Hầm';
+    }
+    if (lower.includes('thoát nước') || lower.includes('thoat nuoc') || lower.includes('cống') || 
+        lower.includes('mương') || lower.includes('rãnh') || lower.includes('hố ga')) {
+      return categories.find(c => c.toLowerCase() === 'thoát nước' || c.toLowerCase() === 'thoat nuoc') || 'Thoát nước';
+    }
+    if (lower.includes('chiếu sáng') || lower.includes('chieu sang') || lower.includes('điện') || 
+        lower.includes('đèn') || lower.includes('trạm biến áp')) {
+      return categories.find(c => c.toLowerCase() === 'chiếu sáng' || c.toLowerCase() === 'chieu sang') || 'Chiếu sáng';
+    }
+    if (lower.includes('cảnh quan') || lower.includes('canh quan') || lower.includes('cây xanh') || 
+        lower.includes('thảm cỏ')) {
+      return categories.find(c => c.toLowerCase() === 'cảnh quan' || c.toLowerCase() === 'canh quan') || 'Cảnh quan';
+    }
+    if (lower.includes('nút giao') || lower.includes('nut giao') || lower.includes('vòng xuyến') || 
+        lower.includes('nhánh ram')) {
+      return categories.find(c => c.toLowerCase() === 'nút giao' || c.toLowerCase() === 'nut giao') || 'Nút giao';
+    }
+
+    const matchedCat = categories.find(c => lower.includes(c.toLowerCase()));
+    if (matchedCat) return matchedCat;
+
+    return 'Khác';
+  }
+
+  // Helper: Map Personnel -> Rate ID (R001 - R005)
+  function resolveRateId(userName, userId, email) {
+    const allPeople = [...personnel, ...registeredUsers];
+    const person = allPeople.find(p => 
+      (userId && p.id === userId) ||
+      (email && p.email && p.email.toLowerCase() === email.toLowerCase()) ||
+      (userName && p.name && p.name.trim().toLowerCase() === userName.trim().toLowerCase())
+    );
+
+    const role = (person?.role || '').toLowerCase();
+    const level = (person?.level || '').toLowerCase();
+
+    if (role.includes('manager')) {
+      return rates.find(r => r.id === 'R005' || r.role === 'BIM Manager')?.id || 'R005';
+    }
+    if (role.includes('coordinator')) {
+      return rates.find(r => r.id === 'R004' || r.role === 'BIM Coordinator')?.id || 'R004';
+    }
+    if (role.includes('modeler') || role.includes('engineer')) {
+      if (level === 'senior') return rates.find(r => r.id === 'R001')?.id || 'R001';
+      if (level === 'mid') return rates.find(r => r.id === 'R002')?.id || 'R002';
+      if (level === 'junior') return rates.find(r => r.id === 'R003')?.id || 'R003';
+      return 'R001';
+    }
+
+    return rates[0]?.id || 'R001';
+  }
+
+  // 3. Group by Category + RateId
+  const groupMap = new Map();
+
+  actualWorkItems.forEach(item => {
+    const cat = resolveCategory(item.taskName);
+    const rateId = resolveRateId(item.userName, item.userId, item.email);
+    const key = `${cat}___${rateId}`;
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        category: cat,
+        rateId: rateId,
+        totalHours: 0,
+        tasksCount: 0,
+        taskNames: new Set(),
+        users: new Set()
+      });
+    }
+
+    const grp = groupMap.get(key);
+    grp.totalHours += item.hours;
+    grp.tasksCount += 1;
+    if (item.taskName) grp.taskNames.add(item.taskName);
+    if (item.userName) grp.users.add(item.userName);
+  });
+
+  // Determine fallback Km from project length (e.g. "32.5 km" -> 32.5)
+  let defaultKm = 1.0;
+  if (project && project.length) {
+    const m = String(project.length).match(/[\d.,]+/);
+    if (m) {
+      defaultKm = parseFloat(m[0].replace(',', '.')) || 1.0;
+    }
+  }
+
+  // Get current project entries to reuse Km for same category if available
+  const existingEntries = getProjectCosting(projectId);
+
+  const aggregatedList = [];
+  groupMap.forEach(grp => {
+    // Reuse existing Km for this category if already configured
+    const existingRow = existingEntries.find(e => e.category === grp.category && Number(e.km) > 0);
+    const km = existingRow ? Number(existingRow.km) : defaultKm;
+    const hoursPerKm = km > 0 ? Math.round((grp.totalHours / km) * 10) / 10 : grp.totalHours;
+
+    const rateObj = rates.find(r => r.id === grp.rateId) || rates[0];
+    const appliedRate = rateObj ? Number(rateObj.rate) || 0 : 0;
+    const cost = Math.round(hoursPerKm * km * appliedRate);
+    const costAfterTax = Math.round(cost * 0.9);
+
+    aggregatedList.push({
+      category: grp.category,
+      rateId: grp.rateId,
+      rateName: rateObj ? rateObj.name : 'Nhân sự',
+      appliedRate: appliedRate,
+      km: km,
+      hoursPerKm: hoursPerKm,
+      totalHours: Math.round(grp.totalHours * 10) / 10,
+      cost: cost,
+      costAfterTax: costAfterTax,
+      taskNames: Array.from(grp.taskNames),
+      users: Array.from(grp.users)
+    });
+  });
+
+  // Sort by category name then rate
+  aggregatedList.sort((a, b) => a.category.localeCompare(b.category));
+
+  return {
+    projectId,
+    projectName: project?.name || 'Dự án',
+    totalActualItems: actualWorkItems.length,
+    totalActualHours: Math.round(actualWorkItems.reduce((acc, cur) => acc + cur.hours, 0) * 10) / 10,
+    aggregatedList
+  };
 }

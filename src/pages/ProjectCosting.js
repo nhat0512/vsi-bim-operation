@@ -8,6 +8,11 @@ import {
   saveCostingData,
   getProjectCosting,
   saveProjectCosting,
+  getProjectRevisions,
+  setActiveRevision,
+  createProjectRevision,
+  deleteProjectRevision,
+  aggregateWBSActualHours,
   calculateRowCost,
   formatVND,
   addCategory,
@@ -62,20 +67,23 @@ function getActiveProject(projects) {
 /**
  * Seed initial demonstration data if project has never had entries
  */
-function getOrSeedEntries(projectId) {
-  let entries = getProjectCosting(projectId);
+function getOrSeedEntries(projectId, revisionId = null) {
+  let entries = getProjectCosting(projectId, revisionId);
   if (!entries || entries.length === 0) {
-    // Seed default sample data matching user spec with frozen appliedRate
-    entries = [
-      { id: 'ce_1', category: 'ATGT', rateId: 'R001', appliedRate: 150000, km: 5.2, hoursPerKm: 13 },
-      { id: 'ce_2', category: 'Đường', rateId: 'R002', appliedRate: 120000, km: 3.0, hoursPerKm: 10 },
-      { id: 'ce_3', category: 'Cầu', rateId: 'R003', appliedRate: 100000, km: 2.5, hoursPerKm: 8 }
-    ];
-    const { projects } = getState();
-    const currentProj = (projects || []).find(p => p.id === projectId);
-    saveProjectCosting(projectId, entries, currentProj);
+    const proj = getProjectRevisions(projectId);
+    if (proj.revisions.length <= 1 && (!revisionId || revisionId === 'rev_0')) {
+      // Seed default sample data matching user spec with frozen appliedRate
+      entries = [
+        { id: 'ce_1', category: 'ATGT', rateId: 'R001', appliedRate: 150000, km: 5.2, hoursPerKm: 13 },
+        { id: 'ce_2', category: 'Đường', rateId: 'R002', appliedRate: 120000, km: 3.0, hoursPerKm: 10 },
+        { id: 'ce_3', category: 'Cầu', rateId: 'R003', appliedRate: 100000, km: 2.5, hoursPerKm: 8 }
+      ];
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === projectId);
+      saveProjectCosting(projectId, entries, currentProj, 'rev_0');
+    }
   }
-  return entries;
+  return entries || [];
 }
 
 /**
@@ -98,7 +106,10 @@ export function render() {
     `;
   }
 
-  currentEntries = getOrSeedEntries(project.id);
+  const projRevisions = getProjectRevisions(project.id);
+  const revisions = projRevisions.revisions || [];
+  const activeRevisionId = projRevisions.activeRevisionId || revisions[0]?.id || 'rev_0';
+  currentEntries = getOrSeedEntries(project.id, activeRevisionId);
   const { categories, rates } = costingData;
 
   // Compute totals
@@ -129,22 +140,48 @@ export function render() {
 
       <!-- Controls & Project Switcher -->
       <div class="costing-header-bar">
-        <div class="costing-project-selector-group">
-          <label for="costing-project-select" style="font-weight: 700; font-size: 0.9rem; color: var(--text-muted); white-space: nowrap;">
-            📂 Dự án:
-          </label>
-          <select id="costing-project-select" class="costing-project-select">
-            ${(projects || []).map(p => `
-              <option value="${p.id}" ${p.id === project.id ? 'selected' : ''}>
-                [${p.code || p.id}] ${p.name}
-              </option>
-            `).join('')}
-          </select>
+        <div class="costing-selector-bar">
+          <div class="costing-project-selector-group">
+            <label for="costing-project-select" style="font-weight: 700; font-size: 0.9rem; color: var(--text-muted); white-space: nowrap;">
+              📂 Dự án:
+            </label>
+            <select id="costing-project-select" class="costing-project-select">
+              ${(projects || []).map(p => `
+                <option value="${p.id}" ${p.id === project.id ? 'selected' : ''}>
+                  [${p.code || p.id}] ${p.name}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <div class="costing-revision-selector-group">
+            <label for="costing-revision-select" style="font-weight: 700; font-size: 0.88rem; color: var(--text-muted); white-space: nowrap;">
+              📑 Phiên bản:
+            </label>
+            <select id="costing-revision-select" class="costing-revision-select">
+              ${revisions.map(r => `
+                <option value="${r.id}" ${r.id === activeRevisionId ? 'selected' : ''}>
+                  ${r.name}
+                </option>
+              `).join('')}
+            </select>
+            <button class="costing-btn-new-rev" id="btn-costing-new-rev" title="Nhân bản bảng tính hiện tại sang phiên bản mới (Rev A, Rev B...)">
+              + Bản sao (New Rev)
+            </button>
+            ${revisions.length > 1 ? `
+              <button class="btn-costing-del-rev" id="btn-costing-del-rev" title="Xóa phiên bản này">
+                🗑️
+              </button>
+            ` : ''}
+          </div>
         </div>
 
         <div class="costing-action-buttons">
           <button class="btn btn-primary" id="btn-costing-add-row" title="Thêm dòng mới vào bảng tính">
             + Thêm dòng
+          </button>
+          <button class="btn btn-outline costing-btn-sync-wbs" id="btn-costing-sync-wbs" title="Đồng bộ giờ làm thực tế từ WBS / Bảng chấm công của dự án này">
+            🔄 Đồng bộ giờ từ WBS
           </button>
           <button class="btn btn-outline costing-btn-history" id="btn-costing-undo" title="Hoàn tác thao tác trước (Ctrl+Z)" disabled>
             ↶ Hoàn tác
@@ -611,7 +648,11 @@ export function init() {
 
       const { projects } = getState();
       const currentProj = (projects || []).find(p => p.id === selectedProjectId);
-      currentEntries = getOrSeedEntries(selectedProjectId);
+      updateRevisionSelectorDOM();
+
+      const projRev = getProjectRevisions(selectedProjectId);
+      const activeRevId = projRev.activeRevisionId || projRev.revisions[0]?.id || 'rev_0';
+      currentEntries = getOrSeedEntries(selectedProjectId, activeRevId);
       
       const tbody = document.getElementById('costing-table-body');
       if (tbody) {
@@ -624,7 +665,8 @@ export function init() {
       // Background check Cloud for project entries
       fetchProjectCostingFromCloud(selectedProjectId).then(cloudEntries => {
         if (cloudEntries && cloudEntries.length > 0 && selectedProjectId === e.target.value) {
-          currentEntries = cloudEntries;
+          updateRevisionSelectorDOM();
+          currentEntries = getProjectCosting(selectedProjectId);
           const currentTbody = document.getElementById('costing-table-body');
           if (currentTbody) {
             currentTbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
@@ -633,6 +675,83 @@ export function init() {
           updateTotalsDOM();
         }
       });
+    });
+  }
+
+  // 1b. Switch Revision
+  const revisionSelect = document.getElementById('costing-revision-select');
+  if (revisionSelect) {
+    revisionSelect.addEventListener('change', (e) => {
+      const revId = e.target.value;
+      setActiveRevision(selectedProjectId, revId);
+      currentEntries = getProjectCosting(selectedProjectId, revId);
+      undoStack = [];
+      redoStack = [];
+      updateHistoryButtonsState();
+
+      const tbody = document.getElementById('costing-table-body');
+      if (tbody) {
+        tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+        bindTableEvents();
+      }
+      updateTotalsDOM();
+      updateRevisionSelectorDOM();
+
+      const projRev = getProjectRevisions(selectedProjectId);
+      const rev = (projRev.revisions || []).find(r => r.id === revId);
+      showToast(`Đã chuyển sang phiên bản: "${rev ? rev.name : revId}"`);
+    });
+  }
+
+  // 1c. New Revision Button
+  const btnNewRev = document.getElementById('btn-costing-new-rev');
+  if (btnNewRev) {
+    btnNewRev.addEventListener('click', () => {
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === selectedProjectId) || { id: selectedProjectId, name: 'Dự án' };
+      openNewRevisionModal(currentProj);
+    });
+  }
+
+  // 1d. Delete Revision Button
+  const btnDelRev = document.getElementById('btn-costing-del-rev');
+  if (btnDelRev) {
+    btnDelRev.addEventListener('click', () => {
+      const projRev = getProjectRevisions(selectedProjectId);
+      const activeRevId = projRev.activeRevisionId;
+      const currentRev = (projRev.revisions || []).find(r => r.id === activeRevId);
+      if (!currentRev) return;
+
+      if (confirm(`Bạn có chắc chắn muốn xóa phiên bản "${currentRev.name}"? Thao tác này không thể hoàn tác.`)) {
+        const res = deleteProjectRevision(selectedProjectId, activeRevId);
+        if (res.success) {
+          currentEntries = getProjectCosting(selectedProjectId);
+          undoStack = [];
+          redoStack = [];
+          updateHistoryButtonsState();
+          updateRevisionSelectorDOM();
+
+          const tbody = document.getElementById('costing-table-body');
+          if (tbody) {
+            tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+            bindTableEvents();
+          }
+          updateTotalsDOM();
+          showToast(res.message);
+        } else {
+          alert(res.message);
+        }
+      }
+    });
+  }
+
+  // 1e. Sync Hours from WBS Button
+  const btnSyncWBS = document.getElementById('btn-costing-sync-wbs');
+  if (btnSyncWBS) {
+    btnSyncWBS.addEventListener('click', () => {
+      const { projects } = getState();
+      const currentProj = (projects || []).find(p => p.id === selectedProjectId) || { id: selectedProjectId, name: 'Dự án' };
+      openWBSSyncModal(currentProj);
     });
   }
 
@@ -931,6 +1050,260 @@ function bindTableEvents() {
       showToast('Đã xóa dòng khỏi bảng tính');
     });
   });
+}
+
+/**
+ * Update revision select dropdown and delete button visibility
+ */
+function updateRevisionSelectorDOM() {
+  if (!selectedProjectId) return;
+  const revSelect = document.getElementById('costing-revision-select');
+  const delBtn = document.getElementById('btn-costing-del-rev');
+  const projRev = getProjectRevisions(selectedProjectId);
+  const revisions = projRev.revisions || [];
+  const activeRevId = projRev.activeRevisionId || revisions[0]?.id || 'rev_0';
+
+  if (revSelect) {
+    revSelect.innerHTML = revisions.map(r => `
+      <option value="${r.id}" ${r.id === activeRevId ? 'selected' : ''}>
+        ${r.name}
+      </option>
+    `).join('');
+  }
+
+  if (delBtn) {
+    delBtn.style.display = revisions.length > 1 ? 'inline-block' : 'none';
+  }
+}
+
+/**
+ * Open Modal to Create New Revision
+ */
+function openNewRevisionModal(project) {
+  const projRev = getProjectRevisions(project.id);
+  const revisions = projRev.revisions || [];
+  const activeRevId = projRev.activeRevisionId || revisions[0]?.id || 'rev_0';
+  const currentRev = revisions.find(r => r.id === activeRevId) || revisions[0];
+  const nextIdx = revisions.length;
+  const letterCode = String.fromCharCode(65 + Math.min(nextIdx - 1, 25));
+  const defaultName = `Rev ${letterCode} - Bản sao điều chỉnh`;
+
+  const content = `
+    <div style="padding: 4px;">
+      <div class="costing-sync-summary-banner" style="margin-bottom: 16px;">
+        📑 <strong>Nhân bản phiên bản báo giá</strong><br/>
+        Tạo một phiên bản mới độc lập dựa trên: <strong>[${currentRev ? currentRev.name : 'Hiện tại'}]</strong> (${currentEntries.length} dòng). 
+        Toàn bộ định mức, hạng mục và đơn giá đóng băng sẽ được sao chép nguyên vẹn.
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label for="input-new-rev-name" style="display: block; font-weight: 600; margin-bottom: 8px; font-size: 0.92rem;">
+          Tên phiên bản mới:
+        </label>
+        <input type="text" id="input-new-rev-name" class="costing-input" value="${defaultName}"
+          style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1.5px solid var(--border-color); background: var(--bg-card); font-size: 0.95rem; font-weight: 600;" />
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" class="btn btn-outline" id="btn-cancel-new-rev">
+          Hủy bỏ
+        </button>
+        <button type="button" class="btn btn-primary" id="btn-submit-new-rev">
+          + Tạo Bản Sao Ngay
+        </button>
+      </div>
+    </div>
+  `;
+
+  openModal('📑 Tạo Bản Sao Phiên Bản Báo Giá Mới', content);
+
+  setTimeout(() => {
+    const input = document.getElementById('input-new-rev-name');
+    if (input) {
+      input.focus();
+      input.select();
+    }
+
+    document.getElementById('btn-cancel-new-rev')?.addEventListener('click', () => {
+      closeModal();
+    });
+
+    const handleSubmit = () => {
+      const name = (document.getElementById('input-new-rev-name')?.value || '').trim();
+      const newRev = createProjectRevision(project.id, activeRevId, name);
+      currentEntries = newRev.entries || [];
+      undoStack = [];
+      redoStack = [];
+      updateHistoryButtonsState();
+
+      updateRevisionSelectorDOM();
+      const tbody = document.getElementById('costing-table-body');
+      if (tbody) {
+        tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+        bindTableEvents();
+      }
+      updateTotalsDOM();
+      closeModal();
+      showToast(`🎉 Đã tạo và chuyển sang phiên bản mới: "${newRev.name}"`);
+    };
+
+    document.getElementById('btn-submit-new-rev')?.addEventListener('click', handleSubmit);
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSubmit();
+      }
+    });
+  }, 100);
+}
+
+/**
+ * Open Modal to Sync Actual Hours from WBS & Timesheet (STRICTLY READ-ONLY)
+ */
+function openWBSSyncModal(project) {
+  const result = aggregateWBSActualHours(project.id);
+  const { totalActualItems, totalActualHours, aggregatedList } = result;
+
+  if (aggregatedList.length === 0) {
+    const emptyContent = `
+      <div style="padding: 12px; text-align: center;">
+        <div style="font-size: 2.5rem; margin-bottom: 12px;">🔍</div>
+        <h4 style="margin-bottom: 8px;">Không tìm thấy giờ thực tế nào trong WBS / Timesheet</h4>
+        <p style="font-size: 0.9rem; color: var(--text-muted); max-width: 440px; margin: 0 auto 16px auto;">
+          Dự án <strong>[${project.name}]</strong> hiện chưa có bản ghi chấm công thực tế nào được ghi nhận từ nhân sự (hoặc các task chưa có giờ thực tế).
+        </p>
+        <button type="button" class="btn btn-primary" id="btn-close-empty-sync">
+          Đã hiểu
+        </button>
+      </div>
+    `;
+    openModal('🔄 Đồng Bộ Giờ Làm Thực Tế Từ WBS', emptyContent);
+    setTimeout(() => {
+      document.getElementById('btn-close-empty-sync')?.addEventListener('click', () => closeModal());
+    }, 100);
+    return;
+  }
+
+  const content = `
+    <div style="padding: 4px;">
+      <!-- Summary Banner -->
+      <div class="costing-sync-summary-banner">
+        🔄 <strong>Phát hiện dữ liệu chấm công thực tế từ WBS:</strong><br/>
+        Tìm thấy <strong>${totalActualItems}</strong> bản ghi chấm công thực tế với tổng cộng <strong>${totalActualHours.toFixed(1)} giờ</strong> làm việc của kỹ sư. Dữ liệu đã được gom nhóm tự động thành <strong>${aggregatedList.length} dòng</strong> theo Hạng mục & Cấp bậc.
+      </div>
+
+      <!-- Preview Table -->
+      <div class="costing-sync-table-wrap">
+        <table class="costing-sync-preview-table">
+          <thead>
+            <tr>
+              <th style="width: 40px; text-align: center;">STT</th>
+              <th>Hạng mục</th>
+              <th>Cấp bậc nhân sự</th>
+              <th style="text-align: right;">Đơn giá áp dụng</th>
+              <th style="text-align: right;">Số Km</th>
+              <th style="text-align: right;">Tổng giờ WBS</th>
+              <th style="text-align: right;">Giờ / Km</th>
+              <th style="text-align: right;">Thành tiền dự kiến</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${aggregatedList.map((item, idx) => `
+              <tr>
+                <td style="text-align: center; color: var(--text-muted); font-size: 0.8rem;">${idx + 1}</td>
+                <td style="font-weight: 600; color: var(--accent-primary);">${item.category}</td>
+                <td>
+                  <div style="font-weight: 500;">${item.rateName}</div>
+                  <div style="font-size: 0.72rem; color: var(--text-muted);">${item.users.slice(0, 2).join(', ')}${item.users.length > 2 ? ` +${item.users.length - 2}` : ''}</div>
+                </td>
+                <td style="text-align: right;">${formatVND(item.appliedRate)}/h</td>
+                <td style="text-align: right; font-weight: 600;">${item.km.toFixed(2)} Km</td>
+                <td style="text-align: right; color: #10b981; font-weight: 600;">${item.totalHours.toFixed(1)} h</td>
+                <td style="text-align: right; font-weight: 700;">${item.hoursPerKm.toFixed(1)} h/Km</td>
+                <td style="text-align: right; font-weight: 700; color: var(--accent-primary);">${formatVND(item.cost)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Sync Options -->
+      <div class="costing-sync-options">
+        <label class="costing-sync-option-label">
+          <input type="radio" name="sync-mode" value="overwrite" checked />
+          <span><strong>Ghi đè toàn bộ bảng tính hiện tại</strong> (Thay thế ${currentEntries.length} dòng hiện có bằng ${aggregatedList.length} dòng WBS)</span>
+        </label>
+        <label class="costing-sync-option-label">
+          <input type="radio" name="sync-mode" value="append" />
+          <span><strong>Thêm vào sau các dòng hiện tại</strong> (Giữ nguyên các dòng cũ và bổ sung thêm ${aggregatedList.length} dòng mới)</span>
+        </label>
+      </div>
+
+      <!-- Actions -->
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+        <div style="font-size: 0.82rem; color: var(--text-muted);">
+          💡 Thao tác này hỗ trợ Hoàn tác ngay lập tức với <strong>Ctrl + Z</strong>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" class="btn btn-outline" id="btn-cancel-sync">
+            Hủy bỏ
+          </button>
+          <button type="button" class="btn btn-primary" id="btn-confirm-sync">
+            ✅ Đồng Bộ Vào Bảng Tính
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  openModal(`🔄 Đồng Bộ Giờ Làm Thực Tế WBS — ${project.name}`, content, { width: '850px' });
+
+  setTimeout(() => {
+    document.getElementById('btn-cancel-sync')?.addEventListener('click', () => closeModal());
+
+    document.getElementById('btn-confirm-sync')?.addEventListener('click', () => {
+      const selectedMode = document.querySelector('input[name="sync-mode"]:checked')?.value || 'overwrite';
+
+      // Snapshot for Undo
+      pushHistory();
+
+      const newRows = aggregatedList.map((item, idx) => ({
+        id: `ce_wbs_${Date.now()}_${idx}`,
+        category: item.category,
+        rateId: item.rateId,
+        appliedRate: item.appliedRate,
+        km: item.km,
+        hoursPerKm: item.hoursPerKm
+      }));
+
+      if (selectedMode === 'overwrite') {
+        currentEntries = newRows;
+      } else {
+        currentEntries = [...currentEntries, ...newRows];
+      }
+
+      saveProjectCosting(project.id, currentEntries, project);
+
+      const tbody = document.getElementById('costing-table-body');
+      if (tbody) {
+        tbody.innerHTML = renderTableRowsHTML(currentEntries, costingData.categories, costingData.rates);
+        bindTableEvents();
+
+        // Flash highlight new rows
+        newRows.forEach(r => {
+          const tr = tbody.querySelector(`tr[data-id="${r.id}"]`);
+          if (tr) {
+            tr.classList.add('costing-row-pasted');
+            setTimeout(() => tr.classList.remove('costing-row-pasted'), 1500);
+          }
+        });
+      }
+
+      updateTotalsDOM();
+      closeModal();
+      showToast(`🔄 Đã đồng bộ thành công ${newRows.length} dòng từ WBS (Hỗ trợ Hoàn tác Ctrl+Z)!`);
+    });
+  }, 100);
 }
 
 /**

@@ -18,7 +18,7 @@ let taskGanttInstance = null;
 let hoursSummaryCache = { key: '', data: null };
 let currentTaskGroupBy = 'none'; // 'none' | 'milestone' | 'segment' | 'assignee' | 'status'
 let currentTaskStatusFilter = 'all'; // 'all' | 'overdue' | 'active' | 'completed' | 'unstarted'
-let isTaskTableCompactMode = true; // true: Hiển thị tinh gọn & trực quan | false: Chế độ sửa hàng loạt
+let isTaskTableCompactMode = localStorage.getItem('bimTransPM_taskCompactMode') !== 'false'; // true: Hiển thị tinh gọn & trực quan | false: Chế độ sửa trực tiếp trên bảng
 let taskGroupCollapsedMap = {}; // { [groupKey]: boolean }
 
 function getIsEditing() {
@@ -643,18 +643,22 @@ function renderCompactTaskRow(t, idx, project, personnel, formatDate, isEditing,
       </td>
       <td style="min-width: 260px;">
         <div>
-          <div class="task-name-text btn-task-detail" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: color 0.15s;" title="Nhấp để xem & chỉnh sửa chi tiết">
+          <div class="task-name-text btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); cursor: pointer; line-height: 1.4; transition: color 0.15s;" title="Bấm để chỉnh sửa công việc">
             ${t.name}
           </div>
           
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 5px;">
             ${seg ? `
-              <span class="badge" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(59, 130, 246, 0.08); color: var(--accent-primary); border: 1px solid rgba(59, 130, 246, 0.25);">
+              <span class="badge btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(59, 130, 246, 0.08); color: var(--accent-primary); border: 1px solid rgba(59, 130, 246, 0.25); cursor: pointer;" title="Bấm để đổi phân đoạn">
                 🏷️ ${seg}${subSeg ? ` / ${subSeg}` : ''}
               </span>
-            ` : ''}
+            ` : `
+              <span class="badge btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.7rem; padding: 2px 7px; background: var(--bg-tertiary); color: var(--text-muted); border: 1px dashed var(--border-color); cursor: pointer;" title="Bấm để thêm phân đoạn">
+                🏷️ + Thêm phân đoạn
+              </span>
+            `}
             ${ml ? `
-              <span class="badge" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.25);">
+              <span class="badge btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.7rem; padding: 2px 7px; background: rgba(139, 92, 246, 0.08); color: #8b5cf6; border: 1px solid rgba(139, 92, 246, 0.25); cursor: pointer;" title="Bấm để đổi cột mốc">
                 🎯 ${ml}
               </span>
             ` : ''}
@@ -672,14 +676,16 @@ function renderCompactTaskRow(t, idx, project, personnel, formatDate, isEditing,
 
       <td style="width: 170px;">
         ${t.assignee ? `
-          <div class="flex items-center gap-xs" title="${formatDisplayName(t.assignee)}">
+          <div class="flex items-center gap-xs btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="cursor: pointer;" title="Bấm để đổi nhân sự: ${formatDisplayName(t.assignee)}">
             <img src="${avatar}" style="width: 24px; height: 24px; border-radius: 50%; object-fit: cover;">
             <span style="font-size: 0.84rem; font-weight: 500; color: var(--text-primary); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
               ${formatDisplayName(t.assignee)}
             </span>
           </div>
         ` : `
-          <span style="font-size: 0.8rem; color: var(--text-muted); font-style: italic;">Chưa gán</span>
+          <button type="button" class="btn btn-ghost btn-xs btn-task-edit" data-id="${taskId}" data-idx="${idx}" style="font-size: 0.8rem; color: var(--text-muted); font-style: italic; padding: 2px 6px;" title="Bấm để gán nhân sự">
+            👤 + Gán nhân sự
+          </button>
         `}
       </td>
 
@@ -719,12 +725,15 @@ function renderCompactTaskRow(t, idx, project, personnel, formatDate, isEditing,
         </div>
       </td>
 
-      <td style="text-align: center; width: 100px;">
+      <td style="text-align: center; width: 110px;">
         <div class="flex items-center justify-center gap-xs">
-          <button class="btn btn-ghost btn-sm text-primary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem & chỉnh sửa chi tiết" style="padding: 4px 6px;">
+          <button class="btn btn-ghost btn-sm text-primary btn-task-edit" data-id="${taskId}" data-idx="${idx}" title="Chỉnh sửa công việc (Tên, Phân đoạn, Nhân sự, Hạn chót...)" style="padding: 4px 6px; font-size: 0.9rem;">
+            ✏️
+          </button>
+          <button class="btn btn-ghost btn-sm text-secondary btn-task-detail" data-id="${taskId}" data-idx="${idx}" title="Xem chi tiết & thảo luận" style="padding: 4px 6px; font-size: 0.9rem;">
             🔍
           </button>
-          <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px;">
+          <button class="btn btn-ghost btn-sm text-danger btn-delete-task" data-id="${taskId}" data-idx="${idx}" title="Xóa công việc này" style="padding: 4px 6px; font-size: 0.9rem;">
             🗑️
           </button>
         </div>
@@ -876,6 +885,19 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
           <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">Thao tác hàng loạt:</span>
         </div>
         <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <select id="bulk-segment-select" class="form-select" style="font-size: 0.8rem; padding: 4px 8px; width: 170px;">
+            <option value="">🏷️ Gán phân đoạn...</option>
+            <option value="-1">-- Bỏ phân đoạn --</option>
+            ${(project.segments || []).map((s, sIdx) => {
+              let html = `<option value="${sIdx}">▶ ${s.name}</option>`;
+              if (s.subSegments && s.subSegments.length > 0) {
+                s.subSegments.forEach((sub, subIdx) => {
+                  html += `<option value="${sIdx}_${subIdx}">&nbsp;&nbsp;↳ ${sub.name}</option>`;
+                });
+              }
+              return html;
+            }).join('')}
+          </select>
           <select id="bulk-assignee-select" class="form-select" style="font-size: 0.8rem; padding: 4px 8px; width: 160px;">
             <option value="">👥 Đổi nhân sự...</option>
             ${(personnel || []).map(p => `<option value="${p.name}">${formatDisplayName(p.name)}</option>`).join('')}
@@ -971,9 +993,14 @@ function renderTasksSection(project, isEditing, personnel, formatDate) {
             ` : ''}
 
             ${isEditing ? `
-              <button id="btn-toggle-compact-table" type="button" class="btn btn-sm ${isTaskTableCompactMode ? 'btn-outline' : 'btn-primary'}" title="Chuyển đổi giữa Chế độ xem tinh gọn trực quan và Chế độ nhập liệu hàng loạt" style="padding: 5px 11px; font-size: 0.8rem;">
-                ${isTaskTableCompactMode ? '✏️ Chế độ sửa hàng loạt' : '👁️ Chế độ tinh gọn'}
-              </button>
+              <div style="display: inline-flex; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px;">
+                <button id="btn-mode-compact" type="button" class="btn btn-xs ${isTaskTableCompactMode ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: 0.78rem; border-radius: 4px;" title="Chế độ xem bảng tinh gọn, mở modal sửa khi bấm vào hàng">
+                  👁️ Xem tinh gọn
+                </button>
+                <button id="btn-mode-editable" type="button" class="btn btn-xs ${!isTaskTableCompactMode ? 'btn-primary' : 'btn-ghost'}" style="padding: 4px 10px; font-size: 0.78rem; border-radius: 4px;" title="Chế độ chỉnh sửa trực tiếp tên, phân đoạn, nhân sự trên bảng">
+                  ✏️ Sửa trực tiếp trên bảng
+                </button>
+              </div>
             ` : ''}
           </div>
         </div>
@@ -2505,53 +2532,52 @@ function performSilentSave() {
     const newTasks = [];
 
     taskNames.forEach((el, idx) => {
-      const taskId = el.dataset.id || currentProject.tasks?.[idx]?.id;
-      const prevTask = (taskId ? currentProject.tasks?.find(t => t.id === taskId) : null) || currentProject.tasks?.[idx] || {};
-
-      // Nếu task này đã bị xóa khỏi currentProject.tasks, không phục hồi lại từ DOM
-      if (taskId && currentProject.tasks && !currentProject.tasks.some(t => t.id === taskId)) {
-        return;
+      const taskId = el.dataset.id;
+      const dataIdx = parseInt(el.dataset.idx, 10);
+      let prevTask = null;
+      if (taskId && currentProject.tasks) {
+        prevTask = currentProject.tasks.find(t => t.id === taskId);
+      }
+      if (!prevTask && !isNaN(dataIdx) && currentProject.tasks?.[dataIdx]) {
+        prevTask = currentProject.tasks[dataIdx];
+      }
+      if (!prevTask) {
+        prevTask = currentProject.tasks?.[idx] || {};
       }
 
       const segEl = (taskId ? document.querySelector(`.edit-task-segment[data-id="${taskId}"]`) : null) || taskSegments[idx];
       const segValStr = segEl?.value || "-1";
       const mlEl = (taskId ? document.querySelector(`.edit-task-milestone[data-id="${taskId}"]`) : null) || taskMilestones[idx];
-      const mlVal = parseInt(mlEl?.value);
+      const mlVal = parseInt(mlEl?.value, 10);
       let sIdx = null, subIdx = null;
       if (segValStr !== "-1") {
         const parts = segValStr.split('_');
-        sIdx = parseInt(parts[0]);
-        if (parts.length > 1) subIdx = parseInt(parts[1]);
+        sIdx = parseInt(parts[0], 10);
+        if (parts.length > 1) subIdx = parseInt(parts[1], 10);
       }
 
       const assigneeEl = (taskId ? document.querySelector(`.edit-task-assignee[data-id="${taskId}"]`) : null) || taskAssignees[idx];
       const chosenAssignee = assigneeEl ? assigneeEl.value : (prevTask.assignee || '');
 
       const progEl = (taskId ? document.querySelector(`.edit-task-progress[data-id="${taskId}"]`) : null) || taskProgresses[idx];
-      const progVal = progEl ? (parseInt(progEl.value) || 0) : (prevTask.progress || 0);
+      const progVal = progEl ? (parseInt(progEl.value, 10) || 0) : (prevTask.progress || 0);
 
       const dueEl = (taskId ? document.querySelector(`.edit-task-due[data-id="${taskId}"]`) : null) || taskDues[idx];
       const dueVal = dueEl ? dueEl.value : (prevTask.dueDate || '');
 
-      const cleanName = el.value !== undefined ? el.value : (prevTask.name || '');
+      const cleanName = el.value !== undefined ? el.value.trim() : (prevTask.name || '');
 
       newTasks.push({
-        id: taskId || prevTask.id || `t_${Date.now()}_${idx}`,
-        name: cleanName || '(Chưa đặt tên)',
+        ...prevTask,
+        id: prevTask.id || taskId || `t_${Date.now()}_${idx}`,
+        name: cleanName || prevTask.name || '(Chưa đặt tên)',
         assignee: chosenAssignee,
         progress: progVal,
         dueDate: dueVal,
-        status: progVal === 100 ? 'completed' : 'active',
+        status: progVal >= 100 ? 'completed' : 'active',
         segmentIdx: sIdx,
         subSegmentIdx: subIdx,
-        milestoneIdx: mlVal >= 0 ? mlVal : null,
-        phase: prevTask.phase || 'BVTC',
-        lod: prevTask.lod || 'LOD 300',
-        chainage: prevTask.chainage || '',
-        dailyHours_planned: prevTask.dailyHours_planned || {},
-        dailyHours_actual: prevTask.dailyHours_actual || {},
-        description: prevTask.description || '',
-        cloudLinks: prevTask.cloudLinks || ''
+        milestoneIdx: mlVal >= 0 ? mlVal : null
       });
     });
     updates.tasks = newTasks;
@@ -3031,9 +3057,22 @@ function bindTaskActions() {
     refreshDetail();
   });
 
-  // Chuyển đổi Chế độ Tinh gọn / Sửa hàng loạt
+  // Chuyển đổi Chế độ Xem tinh gọn / Sửa trực tiếp trên bảng
+  document.getElementById('btn-mode-compact')?.addEventListener('click', () => {
+    isTaskTableCompactMode = true;
+    localStorage.setItem('bimTransPM_taskCompactMode', 'true');
+    refreshDetail();
+  });
+
+  document.getElementById('btn-mode-editable')?.addEventListener('click', () => {
+    isTaskTableCompactMode = false;
+    localStorage.setItem('bimTransPM_taskCompactMode', 'false');
+    refreshDetail();
+  });
+
   document.getElementById('btn-toggle-compact-table')?.addEventListener('click', () => {
     isTaskTableCompactMode = !isTaskTableCompactMode;
+    localStorage.setItem('bimTransPM_taskCompactMode', isTaskTableCompactMode ? 'true' : 'false');
     refreshDetail();
   });
 
@@ -3164,6 +3203,36 @@ function bindTaskActions() {
     refreshDetail();
   });
 
+  // Bulk Segment (Gán phân đoạn hàng loạt)
+  document.getElementById('bulk-segment-select')?.addEventListener('change', (e) => {
+    const val = e.target.value;
+    if (val === '') return;
+    const checkedBoxes = document.querySelectorAll('.task-select-chk:checked');
+    if (!checkedBoxes.length) return;
+    const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+    if (!currentProj || !currentProj.tasks) return;
+
+    let sIdx = null, subIdx = null;
+    if (val !== "-1") {
+      const parts = val.split('_');
+      sIdx = parseInt(parts[0], 10);
+      if (parts.length > 1) subIdx = parseInt(parts[1], 10);
+    }
+
+    checkedBoxes.forEach(cb => {
+      const taskId = cb.dataset.id;
+      const idx = parseInt(cb.dataset.idx, 10);
+      const target = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      if (target) {
+        target.segmentIdx = sIdx;
+        target.subSegmentIdx = subIdx;
+      }
+    });
+    updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
+    showToast(`🏷️ Đã gán phân đoạn cho ${checkedBoxes.length} công việc!`);
+    refreshDetail();
+  });
+
   // Bulk Delete (Trực tiếp, không phụ thuộc nút phụ)
   document.getElementById('bulk-delete-btn')?.addEventListener('click', () => {
     const checkedBoxes = document.querySelectorAll('.task-select-chk:checked');
@@ -3201,8 +3270,8 @@ function bindTaskActions() {
     const currentProj = getState().projects.find(p => p.id === selectedProjectId);
     if (!currentProj) return;
     if (!currentProj.tasks) currentProj.tasks = [];
-    currentProj.tasks.push({ 
-      id: `t_${Date.now()}`,
+    const newTask = { 
+      id: `t_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
       name: 'Công việc mới', 
       assignee: currentProj.teamLead || '', 
       progress: 0, 
@@ -3210,10 +3279,14 @@ function bindTaskActions() {
       status: 'active',
       phase: 'BVTC',
       lod: 'LOD 300'
-    });
+    };
+    currentProj.tasks.push(newTask);
     updateProject(selectedProjectId, { tasks: [...currentProj.tasks] });
     showToast('➕ Đã thêm công việc mới!');
     refreshDetail();
+    // Mở ngay modal chỉnh sửa để thiết lập tên, phân đoạn, nhân sự
+    const newIdx = currentProj.tasks.length - 1;
+    showItemDetailModal(newTask, newIdx, 'task', currentProj, refreshDetail, true);
   });
 
   // 5. XÓA TỪNG CÔNG VIỆC (Định danh theo ID & Index an toàn)
@@ -3250,9 +3323,10 @@ function bindTaskActions() {
     }
   });
 
-  // 7. Xem & sửa modal chi tiết công việc
-  document.querySelectorAll('.btn-task-detail').forEach(btn => {
+  // 7. Chỉnh sửa chi tiết công việc (Mở trực tiếp form chỉnh sửa)
+  document.querySelectorAll('.btn-task-edit').forEach(btn => {
     btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const taskId = e.currentTarget.dataset.id;
       const idx = parseInt(e.currentTarget.dataset.idx, 10);
       const currentProj = getState().projects.find(p => p.id === selectedProjectId);
@@ -3260,7 +3334,23 @@ function bindTaskActions() {
       const targetTask = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
       const targetIdx = targetTask ? currentProj.tasks.indexOf(targetTask) : idx;
       if (targetTask && targetIdx >= 0) {
-        showItemDetailModal(targetTask, targetIdx, 'task', currentProj, refreshDetail);
+        showItemDetailModal(targetTask, targetIdx, 'task', currentProj, refreshDetail, true);
+      }
+    });
+  });
+
+  // 8. Xem chi tiết công việc (Mở chế độ xem)
+  document.querySelectorAll('.btn-task-detail').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const taskId = e.currentTarget.dataset.id;
+      const idx = parseInt(e.currentTarget.dataset.idx, 10);
+      const currentProj = getState().projects.find(p => p.id === selectedProjectId);
+      if (!currentProj || !currentProj.tasks) return;
+      const targetTask = (taskId ? currentProj.tasks.find(t => t.id === taskId) : null) || currentProj.tasks[idx];
+      const targetIdx = targetTask ? currentProj.tasks.indexOf(targetTask) : idx;
+      if (targetTask && targetIdx >= 0) {
+        showItemDetailModal(targetTask, targetIdx, 'task', currentProj, refreshDetail, false);
       }
     });
   });

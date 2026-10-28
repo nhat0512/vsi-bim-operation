@@ -53,8 +53,8 @@ async function handleRoute() {
 
   setState('currentPage', targetPage);
 
-  // Store project ID if navigating to project detail or costing
-  if ((targetPage === 'project-detail' || targetPage === 'project-costing') && params[0]) {
+  // Store project ID if navigating to project detail, costing or quality
+  if ((targetPage === 'project-detail' || targetPage === 'project-costing' || targetPage === 'quality') && params[0]) {
     setState('selectedProjectId', params[0]);
   }
 
@@ -72,8 +72,8 @@ async function handleRoute() {
   try {
     const module = await loader();
     currentPageModule = module;
-    container.innerHTML = module.render();
-    if (module.init) module.init();
+    container.innerHTML = module.render(params[0]);
+    if (module.init) module.init(params[0]);
   } catch (e) {
     console.error('Route error:', e);
     container.innerHTML = `

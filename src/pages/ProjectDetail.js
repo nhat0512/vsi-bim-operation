@@ -6,6 +6,7 @@ import { PROJECT_TYPES, PROJECT_STATUSES, BIM_PHASES } from '../data/constants.j
 import { showItemDetailModal } from '../components/ItemDetailModal.js';
 import { formatDisplayName, formatLocalDate, parseBudgetValue, formatCurrency } from '../utils/formatters.js';
 import { promptSafeDeleteProject } from './ProjectList.js';
+import { renderQualitySection, initQualitySection, destroy as destroyQuality } from './Quality.js';
 
 let hoursOverTimeChartInstance = null;
 let hoursByPhaseChartInstance = null;
@@ -241,6 +242,9 @@ export function render() {
         <button class="tab ${currentProjectTab === 'rfis' ? 'tab--active' : ''} btn-proj-tab" data-tab="rfis" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span>❓</span> <span>Yêu cầu RFI (${(project.rfis || []).length})</span>
         </button>
+        <button class="tab ${currentProjectTab === 'quality' ? 'tab--active' : ''} btn-proj-tab" data-tab="quality" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
+          <span>⚡</span> <span>Chất lượng & Clash</span>
+        </button>
         <button class="tab ${currentProjectTab === 'all' ? 'tab--active' : ''} btn-proj-tab" data-tab="all" style="font-size: 0.95rem; font-weight: 600; display: flex; align-items: center; gap: 6px;">
           <span>📄</span> <span>Xem tất cả</span>
         </button>
@@ -292,6 +296,8 @@ function renderTabContentHTML(tabName, project) {
       return renderSegmentsSection(project, isEditing);
     case 'rfis':
       return renderRfisSection(project, isEditing, personnel, formatDate);
+    case 'quality':
+      return renderQualitySection(project);
     case 'all':
     default:
       return `
@@ -2331,6 +2337,9 @@ function switchProjectTab(targetTab) {
   if (targetTab === 'rfis' || targetTab === 'all') {
     bindRfiActions();
   }
+  if (targetTab === 'quality') {
+    initQualitySection(project);
+  }
 }
 
 let projectAutoSaveTimer = null;
@@ -2721,6 +2730,11 @@ export function init() {
   // 5. Khởi tạo sự kiện RFI (nếu ở tab rfis hoặc all)
   if (currentProjectTab === 'rfis' || currentProjectTab === 'all') {
     bindRfiActions();
+  }
+
+  // 5b. Khởi tạo sự kiện Chất lượng & Clash (nếu ở tab quality)
+  if (currentProjectTab === 'quality') {
+    initQualitySection(project);
   }
 
   // 6. Xử lý chỉnh sửa chung (General Edit)
@@ -3941,5 +3955,6 @@ export function destroy() {
     try { hoursByMemberChartInstance.destroy(); } catch (e) {}
     hoursByMemberChartInstance = null;
   }
+  try { destroyQuality(); } catch (e) {}
   taskGanttInstance = null;
 }

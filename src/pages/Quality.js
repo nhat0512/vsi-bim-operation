@@ -25,6 +25,34 @@ function escapeHtml(str) {
 }
 
 /**
+ * Check if a clash belongs to a project (supports ID, Code, Name substring, and clashSummary cross-matching)
+ */
+function isClashBelongToProject(c, project, clashSummary = []) {
+  if (!project) return true;
+  if (c.projectId && c.projectId === project.id) return true;
+  if (c.project === project.id || c.project === project.code) return true;
+  if (!c.project) return false;
+
+  const cName = String(c.project).toLowerCase().trim();
+  const pName = String(project.name || '').toLowerCase().trim();
+  const pCode = String(project.code || '').toLowerCase().trim();
+
+  if (cName === pName || (pCode && cName === pCode)) return true;
+  if (pName.includes(cName) || cName.includes(pName)) return true;
+
+  // Cross check with clashSummary entries
+  const matchedSummary = clashSummary.find(s => s.projectId === project.id || (s.projectName && pName.includes(String(s.projectName).toLowerCase())));
+  if (matchedSummary && matchedSummary.projectName) {
+    const sName = String(matchedSummary.projectName).toLowerCase();
+    if (cName.includes(sName) || sName.includes(cName)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Filter and compute Quality Data based on project context
  */
 function getProjectQualityContext(projectId) {
@@ -37,7 +65,7 @@ function getProjectQualityContext(projectId) {
   // Filter clash summaries
   let clashSummary = qualityData.clashSummary || [];
   if (isSingleProject) {
-    const summaryItem = clashSummary.find(s => s.projectId === project.id || s.projectName === project.name);
+    const summaryItem = clashSummary.find(s => s.projectId === project.id || s.projectName === project.name || (project.name && project.name.includes(s.projectName)));
     clashSummary = summaryItem ? [summaryItem] : [{
       projectId: project.id,
       projectName: project.name,
@@ -52,9 +80,7 @@ function getProjectQualityContext(projectId) {
   // Filter recent clashes
   let recentClashes = qualityData.recentClashes || [];
   if (isSingleProject) {
-    recentClashes = recentClashes.filter(c => {
-      return c.projectId === project.id || c.project === project.name || c.project === project.id;
-    });
+    recentClashes = recentClashes.filter(c => isClashBelongToProject(c, project, qualityData.clashSummary || []));
   }
 
   // Filter LOD tracking
@@ -538,15 +564,13 @@ function renderBEPTab(ctx) {
  * Main Render function
  */
 export function render(projectId = null) {
-  // Read project ID from argument, or state, or URL hash
+  // Read project ID from argument, or URL hash (e.g. #quality/P002)
   let targetProjId = projectId;
   if (!targetProjId) {
     const hash = window.location.hash.slice(1) || '';
     const parts = hash.split('/');
     if (parts[0] === 'quality' && parts[1]) {
       targetProjId = parts[1];
-    } else {
-      targetProjId = getState().selectedProjectId || null;
     }
   }
 
@@ -903,13 +927,18 @@ function handleCreateTaskClick(btn) {
           return;
         }
 
+        let finalTaskName = taskName;
+        if (!finalTaskName.startsWith('[Rework - Clash]')) {
+          finalTaskName = `[Rework - Clash] ${finalTaskName}`;
+        }
+
         // Create new Task conforming 100% to WBS Schema
         const newTaskId = `t_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
         const newTask = {
           id: newTaskId,
-          name: taskName,
+          name: finalTaskName,
           clashId: clash.id,
-          description: `[Nguồn gốc Clash: ${clash.id} - ${clash.disciplines} - Mức độ: ${clash.severity}] ${clash.description}`,
+          description: `[Nguồn gốc Clash: ${clash.id} - ${clash.disciplines || 'General'} - Mức độ: ${clash.severity || 'Medium'}] ${clash.description}`,
           assignee: assignee,
           status: 'active',
           progress: 0, // Must be 0 to avoid NaN in EVM rollup
@@ -917,7 +946,7 @@ function handleCreateTaskClick(btn) {
           estimatedHours: hours,
           dailyHours_planned: dueDate ? { [dueDate]: hours } : {},
           dailyHours_actual: {},
-          segmentIdx: segmentIdxVal !== '' && segmentIdxVal != null ? parseInt(segmentIdxVal) : null,
+          segmentIdx: segmentIdxVal !== '' && segmentIdxVal != null ? parseInt(segmentIdxVal, 10) : null,
           subSegmentIdx: null,
           milestoneIdx: null,
           phase: projectObj.currentPhase || 'BVTC',
@@ -928,6 +957,12 @@ function handleCreateTaskClick(btn) {
         // Dispatch task into Project WBS
         const updatedTasks = [...(projectObj.tasks || []), newTask];
         updateProject(projectObj.id, { tasks: updatedTasks });
+
+        // Update task count in tab button if present
+        const taskTabBtn = document.querySelector('.btn-proj-tab[data-tab="tasks"]');
+        if (taskTabBtn) {
+          taskTabBtn.innerHTML = `<span>📌</span> <span>Công việc (${updatedTasks.length})</span>`;
+        }
 
         // Update Clash in Quality Data
         clash.status = 'in-progress';
